@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.4.3] – unreleased
+- **Fix – new VR photo not shown ("Take a photo in VR first"):** the app noticed the photo while it was still being written. It now waits until the file is complete; text/QR detection no longer runs on half-written files
+- VR layer saves photos atomically (hidden `.part` file → rename) – needs *Rebuild & install* once
+
 ## [v0.4.2] – 2026-09-27
 - **AppImage** (any distro, no Rust needed): the finished VR layer is inside; **Install** copies it to `~/.local`, after an AppImage update it is refreshed automatically
 - **Fix – VR layer not loaded in VRChat with the AUR package:** Steam/Proton games run in Steam's container and can't see `/usr`. The package no longer registers the layer system-wide; the app copies it to `~/.local` (like the AppImage). Old system-wide registrations are detected and shown

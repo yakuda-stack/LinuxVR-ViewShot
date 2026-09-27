@@ -7,7 +7,7 @@ import os
 import threading
 from pathlib import Path
 
-from PyQt6.QtCore import QProcess, QProcessEnvironment, Qt, QUrl, pyqtSignal
+from PyQt6.QtCore import QProcess, QProcessEnvironment, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices, QFontDatabase
 from PyQt6.QtWidgets import (QApplication, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
                              QLabel, QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget)
@@ -35,6 +35,7 @@ class MainPage(QWidget):
         self.tagger = tagger  # Bild-Erkennung (für das Info-Fenster)
         self.last_photo = None       # Pfad des angezeigten Fotos
         self.chosen = None           # per 📁/🖼 gewähltes Foto (None = immer das neueste)
+        self._not_ready = 0          # wie oft ein neues Foto noch nicht fertig war
         self.translating = None      # Foto, das gerade übersetzt wird
         self._translated.connect(self.on_translated)
         self._qr_found.connect(self.on_qr_found)
@@ -206,6 +207,18 @@ class MainPage(QWidget):
         self.reset_btn.setVisible(self.chosen is not None)
         self.info_btn.setEnabled(shown is not None)
         self.photo_label.setToolTip(str(shown) if shown else "")
+
+        # Neues Foto noch nicht fertig geschrieben? (ältere Layer schreiben die
+        # Datei direkt – der Ordner meldet sie, bevor sie vollständig ist.)
+        # Dann das bisherige Foto stehen lassen und gleich nochmal schauen,
+        # statt "Noch kein Foto" zu zeigen – und OCR/QR nicht auf eine halbe
+        # Datei loslassen (das Ergebnis würde im Cache hängen bleiben).
+        if shown is not None and not paths.photo_ready(shown):
+            self._not_ready += 1
+            if self._not_ready <= 40:          # max. ~10 s
+                QTimer.singleShot(250, self.refresh)
+            return
+        self._not_ready = 0
 
         # anderes Foto → neu laden, Übersetzung (Cache/automatisch), QR-Codes suchen
         if shown != self.last_photo or self.photo_label._full.isNull():

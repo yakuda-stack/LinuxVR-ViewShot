@@ -43,6 +43,23 @@ def photo_dir() -> Path:
     return Path(pictures or HOME / "Pictures") / "LinuxVR-ViewShot"
 
 
+def photo_ready(path: Path) -> bool:
+    """Ist das PNG vollständig geschrieben? Ein fertiges PNG endet immer mit
+    dem IEND-Block. Schnell (liest nur die letzten 12 Bytes) und ohne Qt –
+    darf also auch aus Hintergrund-Threads aufgerufen werden.
+    Andere Formate (per 📁 gewählte JPGs …) gelten als fertig."""
+    if Path(path).suffix.lower() != ".png":
+        return Path(path).is_file()
+    try:
+        with open(path, "rb") as f:
+            if f.read(8) != b"\x89PNG\r\n\x1a\n":
+                return False
+            f.seek(-12, os.SEEK_END)
+            return f.read(12)[4:8] == b"IEND"
+    except OSError:
+        return False
+
+
 def list_photos() -> list[Path]:
     """Alle Fotos, neueste zuerst."""
     folder = photo_dir()

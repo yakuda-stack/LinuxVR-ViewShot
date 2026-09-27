@@ -11,7 +11,7 @@ Neue Seite? 1) Datei in ui/pages/ anlegen  2) unten in PAGES eintragen
             3) Text für den Knopf in core/i18n.py eintragen.
 """
 
-from PyQt6.QtCore import QFileSystemWatcher, Qt
+from PyQt6.QtCore import QFileSystemWatcher, Qt, QTimer
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QMainWindow, QPushButton,
                              QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
@@ -39,6 +39,7 @@ class MainWindow(QMainWindow):
         # Foto-Ordner beobachten → neue Fotos erscheinen sofort in der UI
         self.watcher = QFileSystemWatcher(self)
         self.watcher.directoryChanged.connect(self.on_photos_changed)
+        self._waits = 0  # wie oft auf ein halb geschriebenes Foto gewartet wurde
         folder = paths.photo_dir()
         folder.mkdir(parents=True, exist_ok=True)
         self.watcher.addPath(str(folder))
@@ -138,7 +139,16 @@ class MainWindow(QMainWindow):
             btn.setChecked(i == index)
 
     # ------------------------------------------------------------------
-    def on_photos_changed(self, _path):
+    def on_photos_changed(self, _path=None):
+        # Der Ordner meldet ein neues Foto schon beim Anlegen. Ist es noch nicht
+        # fertig geschrieben (ältere Layer), kurz warten und nochmal – sonst
+        # blieben leere Vorschaubilder hängen (danach meldet der Ordner nichts mehr).
+        photos = paths.list_photos()
+        if photos and not paths.photo_ready(photos[0]) and self._waits < 40:
+            self._waits += 1
+            QTimer.singleShot(250, self.on_photos_changed)
+            return
+        self._waits = 0
         self.main_page.refresh()
         self.gallery_page.refresh()
         self.tagger.scan(paths.list_photos())  # neue Fotos erkennen

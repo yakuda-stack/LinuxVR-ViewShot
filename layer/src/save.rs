@@ -77,6 +77,11 @@ pub fn save_png_async(raw: Vec<u8>, format: i64, w: u32, h: u32, photo_type: Opt
 }
 
 /// RGB8-Pixel als PNG schreiben, optional mit Typ ("ViewShot-Type").
+///
+/// Erst in eine VERSTECKTE Hilfsdatei (".ViewShot_….png.part"), dann in
+/// einem Schritt umbenennen. Die UI beobachtet den Ordner und würde sonst
+/// eine halb geschriebene Datei öffnen (leeres Bild, OCR ohne Text).
+/// Die Hilfsdatei hat keine ".png"-Endung → die UI ignoriert sie.
 pub fn write_png(
     path: &std::path::Path,
     rgb: &[u8],
@@ -84,15 +89,30 @@ pub fn write_png(
     h: u32,
     photo_type: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let file = std::io::BufWriter::new(std::fs::File::create(path)?);
-    let mut enc = png::Encoder::new(file, w, h);
-    enc.set_color(png::ColorType::Rgb);
-    enc.set_depth(png::BitDepth::Eight);
-    if let Some(t) = photo_type {
-        enc.add_text_chunk("ViewShot-Type".into(), t.into())?;
+    use std::io::Write;
+    let name = path.file_name().ok_or("kein Dateiname")?.to_string_lossy();
+    let tmp = path.with_file_name(format!(".{name}.part"));
+    let result = (|| -> Result<(), Box<dyn std::error::Error>> {
+        let mut buf = std::io::BufWriter::new(std::fs::File::create(&tmp)?);
+        let mut enc = png::Encoder::new(&mut buf, w, h);
+        enc.set_color(png::ColorType::Rgb);
+        enc.set_depth(png::BitDepth::Eight);
+        if let Some(t) = photo_type {
+            enc.add_text_chunk("ViewShot-Type".into(), t.into())?;
+        }
+        let mut writer = enc.write_header()?;
+        writer.write_image_data(rgb)?;
+        writer.finish()?; // IEND schreiben – Fehler NICHT beim Drop verschlucken
+        buf.flush()?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => Ok(std::fs::rename(&tmp, path)?),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
     }
-    enc.write_header()?.write_image_data(rgb)?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -113,6 +133,25 @@ mod tests {
         let reader = dec.read_info().unwrap();
         let text = &reader.info().uncompressed_latin1_text;
         assert!(text.iter().any(|t| t.keyword == "ViewShot-Type" && t.text == "qr"));
+    }
+
+    #[test]
+    fn no_half_written_png_is_visible() {
+        // Nur die fertige Datei liegt am Ende da – keine .part-Reste
+        let dir = std::env::temp_dir().join("viewshot_atomic_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("ViewShot_test.png");
+        write_png(&path, &[7; 4 * 4 * 3], 4, 4, None).unwrap();
+        let names: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(names, vec![std::ffi::OsString::from("ViewShot_test.png")]);
+        // vollständig lesbar (IEND geschrieben)
+        let mut reader = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(&path).unwrap()))
+            .read_info()
+            .unwrap();
+        let mut buf = vec![0; reader.output_buffer_size().unwrap()];
+        reader.next_frame(&mut buf).unwrap();
+        assert!(buf.iter().all(|&b| b == 7));
     }
 
     #[test]

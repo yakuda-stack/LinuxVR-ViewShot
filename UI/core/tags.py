@@ -23,12 +23,13 @@ import logging
 import queue
 import re
 import threading
+import time
 from pathlib import Path
 
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtGui import QImageReader
 
-from core import ocr, qr, translation
+from core import ocr, paths, qr, translation
 from core.paths import CONFIG_DIR
 
 TAGS_FILE = CONFIG_DIR / "tags.json"
@@ -187,7 +188,13 @@ class Tagger(QObject):
         while True:
             photo = self._queue.get()
             try:
-                if photo.is_file():
+                # frisch aus VR: warten, bis die Datei fertig geschrieben ist
+                # (sonst: OCR findet nichts → falscher Tag bleibt hängen)
+                for _ in range(40):                     # max. ~10 s
+                    if not photo.is_file() or paths.photo_ready(photo):
+                        break
+                    time.sleep(0.25)
+                if photo.is_file() and paths.photo_ready(photo):
                     chosen = vr_type(photo)
                     if chosen:
                         # in VR gewählt = wie von Hand → keine OCR nötig
