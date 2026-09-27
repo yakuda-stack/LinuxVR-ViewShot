@@ -1,0 +1,8 @@
+PyQt6
+# optional – Texterkennung für die Übersetzung (Main-Seite):
+rapidocr
+onnxruntime
+# optional – DeepL über die offizielle Bibliothek (sonst direktes HTTP):
+# deepl
+# optional – Prozessname "LinuxVR-ViewShot" im Taskmanager (geht auch ohne):
+# setproctitle

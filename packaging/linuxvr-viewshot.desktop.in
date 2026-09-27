@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=LinuxVR-ViewShot
+GenericName=VR Photo Tool
+GenericName[de]=VR-Foto-Werkzeug
+Comment=Take photos in VR with a hand-frame gesture (WiVRn / Monado)
+Comment[de]=VR-Fotos per Hand-Rahmen-Geste (WiVRn / Monado)
+Exec=@START@
+Icon=linuxvr-viewshot
+Terminal=false
+Categories=Graphics;Photography;
+Keywords=VR;OpenXR;WiVRn;Monado;VRChat;screenshot;photo;
+StartupNotify=true
+StartupWMClass=LinuxVR-ViewShot

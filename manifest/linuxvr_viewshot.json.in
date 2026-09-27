@@ -1,0 +1,11 @@
+{
+    "file_format_version": "1.0.0",
+    "api_layer": {
+        "name": "XR_APILAYER_YAKUDA_linuxvr_viewshot",
+        "library_path": "@LIBRARY_PATH@",
+        "api_version": "1.0",
+        "implementation_version": "1",
+        "description": "LinuxVR-ViewShot: take photos in VR with a hand-frame gesture",
+        "disable_environment": "DISABLE_LINUXVR_VIEWSHOT"
+    }
+}
