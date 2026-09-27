@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.4.3] – unreleased
+## [v0.4.3] – 2026-09-27
 - **Fix – new VR photo not shown ("Take a photo in VR first"):** the app noticed the photo while it was still being written. It now waits until the file is complete; text/QR detection no longer runs on half-written files
 - VR layer saves photos atomically (hidden `.part` file → rename) – needs *Rebuild & install* once
 
