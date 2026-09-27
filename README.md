@@ -35,7 +35,8 @@ curl -fsSL https://raw.githubusercontent.com/yakuda-stack/LinuxVR-ViewShot/main/
 - Checks the dependencies and prints the install command for your distro if something is missing
 - Builds the OpenXR layer, adds **LinuxVR-ViewShot** to your app menu and the command `linuxvr-viewshot`
 - **Update:** run the same line again
-- **Arch Linux (AUR):** `yay -S linuxvr-viewshot` (system-wide, updates with your system)
+- **Arch Linux (AUR):** `yay -S linuxvr-viewshot`, then open the app once and press **Install**
+- **AppImage** (any distro, no Rust needed): download it from [Releases](https://github.com/yakuda-stack/LinuxVR-ViewShot/releases), `chmod +x`, start it and press **Install**
 
 **Needs:** `git`, `python3` + **PyQt6**, **rust/cargo** – Arch: `sudo pacman -S --needed git python-pyqt6 rust`
 **Optional:** text recognition for the translation – `pip install --user rapidocr onnxruntime`
@@ -89,6 +90,7 @@ cd LinuxVR-ViewShot && ./install.sh          # ./install.sh uninstall
 - Log file: `~/.local/state/linuxvr-viewshot/layer.log` · settings: `~/.config/linuxvr-viewshot/`
 
 ### ⚠️ Limits
+- The VR layer always lives in `~/.local` – Steam/Proton games (VRChat) run in Steam's container and can't see a layer in `/usr`
 - Vulkan games only, 8-bit colour formats (RGBA8 / BGRA8)
 - The trigger press also reaches the game
 
@@ -104,7 +106,8 @@ curl -fsSL https://raw.githubusercontent.com/yakuda-stack/LinuxVR-ViewShot/main/
 - Prüft die Abhängigkeiten und zeigt den Installationsbefehl für deine Distro, falls etwas fehlt
 - Baut den OpenXR-Layer, legt **LinuxVR-ViewShot** ins Startmenü und den Befehl `linuxvr-viewshot` an
 - **Update:** dieselbe Zeile nochmal ausführen
-- **Arch Linux (AUR):** `yay -S linuxvr-viewshot` (systemweit, Updates mit dem System)
+- **Arch Linux (AUR):** `yay -S linuxvr-viewshot`, dann die App einmal öffnen und **Installieren** drücken
+- **AppImage** (jede Distro, ohne Rust): unter [Releases](https://github.com/yakuda-stack/LinuxVR-ViewShot/releases) laden, `chmod +x`, starten und **Installieren** drücken
 
 **Braucht:** `git`, `python3` + **PyQt6**, **rust/cargo** – Arch: `sudo pacman -S --needed git python-pyqt6 rust`
 **Optional:** Texterkennung für die Übersetzung – `pip install --user rapidocr onnxruntime`
@@ -158,6 +161,7 @@ cd LinuxVR-ViewShot && ./install.sh          # ./install.sh uninstall
 - Log-Datei: `~/.local/state/linuxvr-viewshot/layer.log` · Einstellungen: `~/.config/linuxvr-viewshot/`
 
 ### ⚠️ Grenzen
+- Der VR-Layer liegt immer in `~/.local` – Steam-/Proton-Spiele (VRChat) laufen im Steam-Container und sehen einen Layer in `/usr` nicht
 - Nur Vulkan-Spiele, 8-Bit-Farbformate (RGBA8 / BGRA8)
 - Der Trigger-Druck kommt auch im Spiel an
 
@@ -210,7 +214,7 @@ UI/               desktop app (PyQt6)
   ui/               window, style, pages (main / gallery / options)
 manifest/         OpenXR layer manifest template
 packaging/        .desktop template, aur/PKGBUILD (+ README-AUR.md)
-scripts/          install-layer.sh, bump_version.py
+scripts/          install-layer.sh, build_appimage.sh, bump_version.py
 tests/            pytest + smoke test (python3 -m pytest -q, python3 tests/smoke.py)
 assets/           README screenshots
 ```

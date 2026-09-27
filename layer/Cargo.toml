@@ -1,6 +1,6 @@
 [package]
 name = "linuxvr-viewshot-layer"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "OpenXR API layer: take photos in VR with a hand-frame gesture"

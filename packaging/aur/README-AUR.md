@@ -3,19 +3,24 @@
 Paket: https://aur.archlinux.org/packages/linuxvr-viewshot (nach dem ersten Push)
 Installation für Nutzer: `yay -S linuxvr-viewshot` (oder paru).
 
-Das PKGBUILD baut den OpenXR-Layer aus dem GitHub-Tag (Rust, `cargo build --frozen`)
-und installiert alles **systemweit**:
+Das PKGBUILD baut den OpenXR-Layer aus dem GitHub-Tag (Rust, `cargo build --frozen`):
 
 | Was | Wohin |
 |---|---|
-| Layer | `/usr/lib/linuxvr-viewshot/liblinuxvr_viewshot_layer.so` |
-| Manifest (gilt für alle Benutzer) | `/usr/share/openxr/1/api_layers/implicit.d/linuxvr_viewshot.json` |
+| Layer (fertig gebaut) | `/usr/lib/linuxvr-viewshot/liblinuxvr_viewshot_layer.so` |
+| Manifest-**Vorlage** | `/usr/share/linuxvr-viewshot/manifest/linuxvr_viewshot.json.in` |
 | App | `/usr/share/linuxvr-viewshot/UI/` + Befehl `/usr/bin/linuxvr-viewshot` |
 | Startmenü + Icon | `/usr/share/applications/…`, `/usr/share/icons/hicolor/512x512/apps/…` |
 
-Die App merkt am fehlenden `scripts/`-Ordner, dass sie aus dem Paket kommt, und blendet
-„Neu bauen“ aus. War der Layer vorher schon per `install.sh` in `~/.local` installiert,
-zeigt sie „doppelt installiert“ + „Entfernen“ (entfernt nur die `~/.local`-Kopie).
+⚠️ **Kein systemweites Manifest in `/usr/share/openxr`!** Steam-/Proton-Spiele (VRChat)
+laufen im Steam-Container (pressure-vessel) – dort ist `/usr` nicht das `/usr` des Systems,
+ein systemweiter Layer wäre für sie unsichtbar. Der Home-Ordner ist sichtbar. Deshalb:
+**App einmal öffnen → „Installieren“** kopiert den Layer nach `~/.local` (wie bei der
+AppImage). Nach Paket-Updates zieht die App ihn beim nächsten Start selbst nach.
+Das sagt auch `linuxvr-viewshot.install` nach `pacman -S` / `-Syu` an.
+
+Paket-Version 0.4.1 (erste Fassung) hatte noch ein systemweites Manifest – die App erkennt
+das und zeigt „⚠ alte systemweite Kopie – Paket aktualisieren“.
 
 ---
 
@@ -30,7 +35,7 @@ zeigt sie „doppelt installiert“ + „Entfernen“ (entfernt nur die `~/.loca
    git clone ssh://aur@aur.archlinux.org/linuxvr-viewshot.git ~/aur/linuxvr-viewshot
    ```
    („warning: You appear to have cloned an empty repository“ ist richtig so.)
-4. **.gitignore anlegen** (nur PKGBUILD + .SRCINFO kommen ins AUR):
+4. **.gitignore anlegen** (nur PKGBUILD, linuxvr-viewshot.install + .SRCINFO kommen ins AUR):
    ```bash
    cp packaging/aur/gitignore-fuer-aur-repo ~/aur/linuxvr-viewshot/.gitignore
    ```
@@ -47,18 +52,20 @@ zeigt sie „doppelt installiert“ + „Entfernen“ (entfernt nur die `~/.loca
 2. `CHANGELOG.md` oben einen Block `## [vX.Y.Z] – Datum` schreiben
 3. **2 · Testen:** „Alle Tests nacheinander“ (pytest, Smoke-Test, Rust-Tests, shellcheck, Desktop-Datei)
 4. **3 · GitHub:** Verbotene Dateien? → Commit + Push → Tag setzen + Push
-5. **4 · Release:** Quell-Archiv packen → GitHub-Release-Seite öffnen (keine AppImage bei diesem Projekt)
-6. **5 · AUR:** PKGBUILD kopieren → Aufräumen → Version prüfen → updpkgsums → Bauen + installieren
-   → Installiertes Paket testen → .SRCINFO + Commit → AUR Push
+5. **4 · Release:** AppImage bauen → Quell-Archiv packen → GitHub-Release-Seite öffnen
+   (hochladen: AppImage + .zsync + .tar.gz, KEIN Pre-release)
+6. **5 · AUR:** PKGBUILD kopieren (nimmt die .install mit) → Aufräumen → Version prüfen → updpkgsums
+   → Bauen + installieren → Installiertes Paket testen → .SRCINFO + Commit → AUR Push
+7. App öffnen → **Installieren** (bzw. nach Updates passiert das beim Start automatisch)
 
 Von Hand (ohne Launcher):
 ```bash
-cp packaging/aur/PKGBUILD ~/aur/linuxvr-viewshot/
+cp packaging/aur/PKGBUILD packaging/aur/linuxvr-viewshot.install ~/aur/linuxvr-viewshot/
 cd ~/aur/linuxvr-viewshot
 updpkgsums                              # holt die sha256 des Tags
 makepkg -si                             # bauen + installieren, dann testen
 makepkg --printsrcinfo > .SRCINFO
-git add PKGBUILD .SRCINFO && git commit -m "Update to v0.4.0" && git push origin master
+git add PKGBUILD linuxvr-viewshot.install .SRCINFO && git commit -m "Update to v0.4.1" && git push origin master
 ```
 
 ## Regeln / Stolperfallen
@@ -66,7 +73,7 @@ git add PKGBUILD .SRCINFO && git commit -m "Update to v0.4.0" && git push origin
 - **.SRCINFO** bei JEDER Änderung neu erzeugen – sonst lehnt das AUR den Push ab.
 - **pkgrel:** neue App-Version → 1; nur Packaging geändert → +1.
 - **pkgver** ohne Bindestrich: `0.5.0_alpha` (der Tag `v0.5.0-alpha` wird über `_tag` gebaut).
-- Ins AUR-Repo **nur** PKGBUILD + .SRCINFO (+ .gitignore) – nie Quellcode, nie `src/`, `pkg/`, `*.pkg.tar.zst`.
+- Ins AUR-Repo **nur** PKGBUILD + linuxvr-viewshot.install + .SRCINFO (+ .gitignore) – nie Quellcode, nie `src/`, `pkg/`, `*.pkg.tar.zst`.
 - Branch: Projekt = `main`, AUR = `master`.
 - `namcap PKGBUILD` und `namcap *.pkg.tar.zst` zeigen typische Paketfehler (`sudo pacman -S namcap`).
 - Nach dem Push dauert `yay -Ss linuxvr-viewshot` manchmal Stunden (Suchindex);

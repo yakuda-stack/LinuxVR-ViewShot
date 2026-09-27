@@ -31,7 +31,7 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from core.paths import HOME, PROJECT_DIR
+from core.paths import HOME, app_command
 
 SOURCE_URL = "https://github.com/cubee-cb/linux-vr-compat/tree/master/dotfiles/wayvr"
 ZIP_URL = "https://codeload.github.com/cubee-cb/linux-vr-compat/zip/refs/heads/master"
@@ -39,7 +39,6 @@ SOURCE_PREFIX = "dotfiles/wayvr/"  # im Zip: linux-vr-compat-master/dotfiles/way
 
 WAYVR_DIR = Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config") / "wayvr"
 LAUNCHER = WAYVR_DIR / "theme" / "linuxvr-viewshot-open.sh"
-APP_START = PROJECT_DIR / "UI" / "start.sh"
 
 # Ordner, die komplett übernommen werden
 COPY_DIRS = ("theme/", "palettes/", "sound/")
@@ -136,7 +135,8 @@ def install(zip_bytes: bytes | None = None, log=lambda s: None) -> dict:
         target.write_bytes(data)
 
     # Start-Skript für den Uhr-Knopf
-    LAUNCHER.write_text(launcher_script(APP_START), encoding="utf-8")
+    # AppImage: die .AppImage-Datei starten, sonst UI/start.sh
+    LAUNCHER.write_text(launcher_script(app_command()), encoding="utf-8")
     LAUNCHER.chmod(LAUNCHER.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
     set_palette(backup)

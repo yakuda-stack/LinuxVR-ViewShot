@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.4.2] – 2026-09-27
+- **AppImage** (any distro, no Rust needed): the finished VR layer is inside; **Install** copies it to `~/.local`, after an AppImage update it is refreshed automatically
+- **Fix – VR layer not loaded in VRChat with the AUR package:** Steam/Proton games run in Steam's container and can't see `/usr`. The package no longer registers the layer system-wide; the app copies it to `~/.local` (like the AppImage). Old system-wide registrations are detected and shown
+- **Fix:** after *Rebuild & install* the button stayed disabled – *Remove → Install* works again
+- **Fix:** text recognition crashed with newer omegaconf versions ("PosixPath is not a supported primitive type")
+
 ## [v0.4.1] – 2026-09-27
 - Main: status, photo count and buttons in one compact row; new **Remove** button for the VR layer
 - AUR package `linuxvr-viewshot` (system-wide); the app hides "Rebuild" when installed from a package and warns if the layer is installed twice

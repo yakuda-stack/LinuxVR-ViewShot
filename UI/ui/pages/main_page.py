@@ -12,8 +12,9 @@ from PyQt6.QtGui import QDesktopServices, QFontDatabase
 from PyQt6.QtWidgets import (QApplication, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
                              QLabel, QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget)
 
-from core import config, layer_config, ocr, paths, qr, translation
+from core import config, layer_config, layer_install, ocr, paths, qr, translation
 from core.i18n import tr
+from core.version import VERSION
 from ui.widgets import make_card, open_path, page_title
 
 
@@ -151,30 +152,47 @@ class MainPage(QWidget):
         layout.addWidget(card)
 
         self.refresh()
+        # AppImage aktualisiert? → den Layer in ~/.local gleich mitziehen
+        if layer_install.needs_update():
+            self.install_bundled(updated=True)
 
     def refresh(self):
         """Alles neu einlesen – wird auch aufgerufen, wenn ein neues Foto kommt."""
-        packaged = paths.packaged()
-        if paths.layer_twice():
-            self.layer_label.setText(tr("layer_twice"))
-            self.layer_label.setObjectName("bad")
-        elif paths.layer_installed():
+        installed = paths.layer_installed()
+        if installed:
             self.layer_label.setText(tr("layer_ok"))
             self.layer_label.setObjectName("ok")
         else:
             self.layer_label.setText(tr("layer_missing"))
             self.layer_label.setObjectName("bad")
-        self.layer_label.setToolTip(tr("layer_packaged") if packaged else "")
+        # Alte Paket-Version (≤ 0.4.1) hat den Layer systemweit registriert:
+        # Proton-Spiele sehen den nicht, native Spiele laden ihn evtl. doppelt
+        tip = tr("layer_packaged") if paths.packaged() else ""
+        if paths.legacy_system_layer():
+            self.layer_label.setText(self.layer_label.text() + "   " + tr("layer_legacy"))
+            self.layer_label.setObjectName("bad")
+            tip = tr("layer_legacy_tip")
+        self.layer_label.setToolTip(tip)
         # Nach setObjectName muss Qt den Stil neu anwenden
         self.layer_label.style().polish(self.layer_label)
         if self.process is None:  # nicht während des Bauens umbenennen
-            key = "reinstall" if paths.MANIFEST.is_file() else "install"
-            self.install_btn.setText("🔧  " + tr(key).replace("&", "&&"))
-            # Paket (AUR): pacman kümmert sich um den Layer → kein Bauen
-            self.install_btn.setVisible(not packaged)
-            # Entfernen nur für den Layer in ~/.local (Skript) – auch im
-            # Paket-Modus, falls er zusätzlich doppelt da ist
-            self.uninstall_btn.setVisible(paths.MANIFEST.is_file())
+            if paths.copies_layer():
+                # AppImage / AUR-Paket: nichts bauen, fertigen Layer nur kopieren
+                if not installed:
+                    text = "🔧  " + tr("install")
+                elif layer_install.needs_update():
+                    text = "⬆  " + tr("layer_update")
+                else:
+                    text = "🔧  " + tr("layer_reinstall")
+            else:
+                key = "reinstall" if installed else "install"
+                text = "🔧  " + tr(key).replace("&", "&&")
+            self.install_btn.setText(text)
+            # nach dem Bauen (run_install) wieder anklickbar machen
+            can_install = paths.copies_layer() or paths.INSTALL_SCRIPT.is_file()
+            self.install_btn.setVisible(can_install)
+            self.install_btn.setEnabled(can_install)
+            self.uninstall_btn.setVisible(installed)
         photos = paths.list_photos()
         self.count_label.setText(tr("photo_count", n=len(photos)))
 
@@ -337,8 +355,31 @@ class MainPage(QWidget):
     # ------------------------------------------------------------------
     # Layer bauen + installieren (scripts/install-layer.sh)
     # ------------------------------------------------------------------
+    def install_bundled(self, updated: bool = False):
+        """AppImage: mitgelieferten Layer nach ~/.local kopieren (dauert < 1 s)."""
+        self.install_log.hide()
+        try:
+            layer_install.install_bundled()
+            ok = True
+        except OSError:
+            ok = False
+        if not ok:
+            text = tr("install_failed_copy")
+        elif updated:
+            text = tr("layer_updated", v=VERSION)
+        else:
+            text = tr("install_ok")
+        self.install_result.setText(text)
+        self.install_result.setObjectName("ok" if ok else "bad")
+        self.install_result.style().polish(self.install_result)
+        self.install_result.show()
+        self.refresh()
+
     def run_install(self):
         if self.process is not None:
+            return
+        if paths.copies_layer():
+            self.install_bundled()
             return
         self.install_log.clear()
         self.install_log.show()

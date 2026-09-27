@@ -25,10 +25,21 @@ TEXTS = {
                         "en": "✔ Done – restart the game to load the new layer"},
     "install_failed":  {"de": "✘ Fehlgeschlagen – siehe Ausgabe oben",
                         "en": "✘ Failed – see output above"},
-    "layer_twice":     {"de": "⚠  Layer doppelt installiert (Paket + ~/.local) – „Entfernen“ drücken",
-                        "en": "⚠  Layer installed twice (package + ~/.local) – press “Remove”"},
-    "layer_packaged":  {"de": "Installiert über ein Paket (AUR) – Updates kommen über pacman/yay.",
-                        "en": "Installed from a package (AUR) – updates come via pacman/yay."},
+    "layer_legacy":    {"de": "⚠ alte systemweite Kopie – Paket aktualisieren",
+                        "en": "⚠ old system-wide copy – update the package"},
+    "layer_legacy_tip": {"de": "Eine alte Version des AUR-Pakets hat den Layer in /usr/share/openxr "
+                               "registriert. Steam-/Proton-Spiele wie VRChat sehen das nicht, andere "
+                               "Programme laden ihn dann doppelt.\nAbhilfe: Paket aktualisieren "
+                               "(yay -Syu) oder entfernen (sudo pacman -R linuxvr-viewshot) und hier "
+                               "„Installieren“ drücken.",
+                         "en": "An old version of the AUR package registered the layer in "
+                               "/usr/share/openxr. Steam/Proton games like VRChat can't see it, other "
+                               "programs then load it twice.\nFix: update the package (yay -Syu) or "
+                               "remove it (sudo pacman -R linuxvr-viewshot) and press “Install” here."},
+    "layer_packaged":  {"de": "Installiert über ein Paket (AUR) – „Installieren“ kopiert den Layer "
+                              "nach ~/.local, nach Paket-Updates passiert das automatisch.",
+                        "en": "Installed from a package (AUR) – “Install” copies the layer to "
+                              "~/.local; after package updates this happens automatically."},
     "uninstall":       {"de": "Entfernen",       "en": "Remove"},
     "uninstall_question": {"de": "Den VR-Layer entfernen?\n\nViewShot ist danach in VR aus. Diese App, "
                                  "deine Fotos und Einstellungen bleiben – mit „Installieren“ ist er wieder da.",
@@ -37,6 +48,13 @@ TEXTS = {
     "uninstall_ok":    {"de": "✔ Layer entfernt – Spiel neu starten, dann ist ViewShot in VR aus",
                         "en": "✔ Layer removed – restart the game and ViewShot is off in VR"},
     "uninstall_failed": {"de": "✘ Entfernen fehlgeschlagen", "en": "✘ Removing failed"},
+    # AppImage: Layer liegt fertig bei und wird nur kopiert
+    "layer_update":    {"de": "Layer aktualisieren", "en": "Update layer"},
+    "layer_reinstall": {"de": "Layer neu installieren", "en": "Reinstall layer"},
+    "layer_updated":   {"de": "✔ Layer auf v{v} aktualisiert – Spiel neu starten",
+                        "en": "✔ Layer updated to v{v} – restart the game"},
+    "install_failed_copy": {"de": "✘ Layer konnte nicht nach ~/.local kopiert werden",
+                            "en": "✘ Could not copy the layer to ~/.local"},
     "no_script":       {"de": "Install-Skript nicht gefunden", "en": "Install script not found"},
     "photo_count":     {"de": "Fotos: {n}",      "en": "Photos: {n}"},
     "last_photo":      {"de": "Letztes Foto",    "en": "Last photo"},

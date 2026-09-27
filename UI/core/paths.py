@@ -53,31 +53,80 @@ def list_photos() -> list[Path]:
     return photos
 
 
-# Systemweit (AUR-Paket): Manifest in /usr/share, App ohne scripts/-Ordner
+# WICHTIG: Der Layer MUSS im Home-Ordner registriert sein (~/.local).
+# Steam-Spiele über Proton (z. B. VRChat) laufen im Steam-Container
+# (pressure-vessel) – dort ist /usr NICHT das /usr des Systems, ein Layer in
+# /usr/share/openxr bzw. /usr/lib wäre für sie unsichtbar. Der Home-Ordner
+# ist im Container sichtbar. Deshalb landet der Layer bei ALLEN Wegen
+# (Skript, AppImage, AUR-Paket) in ~/.local.
+LAYER_NAME = "liblinuxvr_viewshot_layer.so"
+USER_LIB = HOME / ".local/lib/linuxvr-viewshot" / LAYER_NAME
+# Welche Version dort liegt (schreiben install-layer.sh und layer_install.py)
+LAYER_VERSION_FILE = USER_LIB.parent / "VERSION"
+
+# Alte Paket-Versionen (bis 0.4.1) haben den Layer systemweit registriert –
+# das sehen Proton-Spiele nicht. Wird nur noch erkannt, um davor zu warnen.
 SYSTEM_MANIFEST = Path("/usr/share/openxr/1/api_layers/implicit.d/linuxvr_viewshot.json")
-# Vom Skript installierte .so (gehört zu MANIFEST)
-USER_LIB = HOME / ".local/lib/linuxvr-viewshot/liblinuxvr_viewshot_layer.so"
+
+# Fertig gebauter Layer, der nur noch nach ~/.local kopiert wird
+# (layer_install.py). Manifest-Vorlage jeweils in PROJECT_DIR/manifest/.
+APPIMAGE_LAYER = PROJECT_DIR / "lib" / LAYER_NAME             # in der AppImage
+PACKAGE_LAYER = Path("/usr/lib/linuxvr-viewshot") / LAYER_NAME  # AUR-Paket
+MANIFEST_TEMPLATE = PROJECT_DIR / "manifest" / "linuxvr_viewshot.json.in"
+
+
+def mode() -> str:
+    """Wie ist die App installiert?
+      "appimage" – Layer liegt fertig in der AppImage
+      "source"   – Projektordner / install.sh: Layer wird mit cargo gebaut
+      "package"  – AUR-Paket: Layer liegt fertig in /usr/lib/linuxvr-viewshot"""
+    if APPIMAGE_LAYER.is_file():
+        return "appimage"
+    if INSTALL_SCRIPT.is_file():
+        return "source"
+    return "package"
+
+
+def bundled_layer() -> Path | None:
+    """Der mitgelieferte, fertig gebaute Layer (AppImage / Paket), sonst None."""
+    layer = {"appimage": APPIMAGE_LAYER, "package": PACKAGE_LAYER}.get(mode())
+    return layer if layer is not None and layer.is_file() else None
+
+
+def copies_layer() -> bool:
+    """Wird "Installieren" den Layer nur kopieren (statt mit cargo zu bauen)?"""
+    return bundled_layer() is not None and MANIFEST_TEMPLATE.is_file()
 
 
 def packaged() -> bool:
-    """Läuft die App aus einem Paket (z. B. AUR)? Dann baut/entfernt pacman
-    den Layer – die Knöpfe dafür werden ausgeblendet."""
-    return not INSTALL_SCRIPT.is_file()
+    """Läuft die App aus einem Paket (z. B. AUR)?"""
+    return mode() == "package"
+
+
+def app_command() -> Path:
+    """Womit startet man diese App von außen (z. B. der WayVR-Uhrknopf)?
+    In der AppImage ist das die .AppImage-Datei selbst – der Ordner darin
+    verschwindet, sobald die App zu ist."""
+    appimage = os.environ.get("APPIMAGE")
+    if mode() == "appimage" and appimage:
+        return Path(appimage)
+    return PROJECT_DIR / "UI" / "start.sh"
 
 
 def layer_installed() -> bool:
-    return MANIFEST.is_file() or SYSTEM_MANIFEST.is_file()
+    """Nur die Registrierung in ~/.local zählt – die sehen alle Spiele."""
+    return MANIFEST.is_file()
 
 
-def layer_twice() -> bool:
-    """Paket UND Skript-Installation gleichzeitig → Layer liefe doppelt."""
-    return MANIFEST.is_file() and SYSTEM_MANIFEST.is_file()
+def legacy_system_layer() -> bool:
+    """Alte Paket-Version hat den Layer systemweit registriert (siehe oben)."""
+    return SYSTEM_MANIFEST.is_file()
 
 
 def uninstall_user_layer() -> None:
     """Entfernt den per Skript installierten Layer (~/.local). Das Paket,
     die App, Fotos und Einstellungen bleiben."""
-    for f in (MANIFEST, USER_LIB):
+    for f in (MANIFEST, USER_LIB, LAYER_VERSION_FILE):
         f.unlink(missing_ok=True)
     try:
         USER_LIB.parent.rmdir()

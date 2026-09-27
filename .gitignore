@@ -1,5 +1,8 @@
 # Rust
 target/
+
+# AppImage-Build (scripts/build_appimage.sh)
+build/
 *.so
 
 # Python
