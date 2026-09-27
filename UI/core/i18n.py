@@ -25,6 +25,18 @@ TEXTS = {
                         "en": "✔ Done – restart the game to load the new layer"},
     "install_failed":  {"de": "✘ Fehlgeschlagen – siehe Ausgabe oben",
                         "en": "✘ Failed – see output above"},
+    "layer_twice":     {"de": "⚠  Layer doppelt installiert (Paket + ~/.local) – „Entfernen“ drücken",
+                        "en": "⚠  Layer installed twice (package + ~/.local) – press “Remove”"},
+    "layer_packaged":  {"de": "Installiert über ein Paket (AUR) – Updates kommen über pacman/yay.",
+                        "en": "Installed from a package (AUR) – updates come via pacman/yay."},
+    "uninstall":       {"de": "Entfernen",       "en": "Remove"},
+    "uninstall_question": {"de": "Den VR-Layer entfernen?\n\nViewShot ist danach in VR aus. Diese App, "
+                                 "deine Fotos und Einstellungen bleiben – mit „Installieren“ ist er wieder da.",
+                           "en": "Remove the VR layer?\n\nViewShot is then off in VR. This app, your "
+                                 "photos and settings stay – “Install” brings it back."},
+    "uninstall_ok":    {"de": "✔ Layer entfernt – Spiel neu starten, dann ist ViewShot in VR aus",
+                        "en": "✔ Layer removed – restart the game and ViewShot is off in VR"},
+    "uninstall_failed": {"de": "✘ Entfernen fehlgeschlagen", "en": "✘ Removing failed"},
     "no_script":       {"de": "Install-Skript nicht gefunden", "en": "Install script not found"},
     "photo_count":     {"de": "Fotos: {n}",      "en": "Photos: {n}"},
     "last_photo":      {"de": "Letztes Foto",    "en": "Last photo"},
@@ -52,7 +64,7 @@ TEXTS = {
                               "im Rahmen um – 🖼 Bild → 📝 Text → 🔳 QR. Das Foto bekommt diesen Typ.",
                         "en": "4.  Manual: the type trigger (default: left) switches the icon in the frame's "
                               "bottom-right corner – 🖼 Image → 📝 Text → 🔳 QR. The photo gets that type."},
-    "open_folder":     {"de": "Foto-Ordner öffnen", "en": "Open photo folder"},
+    "open_folder":     {"de": "Foto-Ordner",     "en": "Photo folder"},
 
     # Galerie
     "refresh":         {"de": "Aktualisieren",   "en": "Refresh"},

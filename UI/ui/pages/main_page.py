@@ -9,8 +9,8 @@ from pathlib import Path
 
 from PyQt6.QtCore import QProcess, QProcessEnvironment, Qt, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices, QFontDatabase
-from PyQt6.QtWidgets import (QApplication, QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QLabel,
-                             QPlainTextEdit, QPushButton, QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QApplication, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
+                             QLabel, QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget)
 
 from core import config, layer_config, ocr, paths, qr, translation
 from core.i18n import tr
@@ -42,20 +42,30 @@ class MainPage(QWidget):
         layout.setSpacing(16)
         layout.addWidget(page_title(tr("nav_main")))
 
-        # --- Karte: Status -------------------------------------------
-        card, box = make_card(tr("status"))
-
-        # Zeile: Layer-Status  …  [Installieren / Neu bauen]
+        # --- Status: EINE kompakte Zeile -------------------------------
+        #   ✔ Layer ist installiert · Fotos: 50      [📁] [🔧 Neu bauen] [🗑 Entfernen]
+        card = QFrame()
+        card.setObjectName("card")
+        box = QVBoxLayout(card)
+        box.setContentsMargins(18, 10, 18, 10)
+        box.setSpacing(8)
         row = QHBoxLayout()
+        row.setSpacing(10)
         self.layer_label = QLabel()
         row.addWidget(self.layer_label)
+        dot = QLabel("·")
+        dot.setObjectName("dim")
+        row.addWidget(dot)
+        self.count_label = QLabel()
+        row.addWidget(self.count_label)
         row.addStretch()
-        self.install_btn = QPushButton()
-        self.install_btn.setObjectName("linkbtn")
-        self.install_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.install_btn.setMinimumHeight(40)
-        self.install_btn.clicked.connect(self.run_install)
+        folder_btn = self.make_status_btn("📁  " + tr("open_folder"), self.open_folder)
+        row.addWidget(folder_btn)
+        self.install_btn = self.make_status_btn("", self.run_install)
         row.addWidget(self.install_btn)
+        self.uninstall_btn = self.make_status_btn("🗑  " + tr("uninstall"), self.run_uninstall, "dangerbtn")
+        self.uninstall_btn.setStyleSheet("padding: 6px 16px; min-height: 26px; font-size: 14px;")
+        row.addWidget(self.uninstall_btn)
         box.addLayout(row)
 
         # Ausgabe des Skripts (erst sichtbar, wenn es läuft)
@@ -70,18 +80,6 @@ class MainPage(QWidget):
         self.install_result.hide()
         box.addWidget(self.install_result)
         self.process = None
-
-        self.count_label = QLabel()
-        box.addWidget(self.count_label)
-
-        btn = QPushButton(tr("open_folder"))
-        btn.setObjectName("sendbtn")
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.clicked.connect(self.open_folder)
-        row = QHBoxLayout()
-        row.addWidget(btn)
-        row.addStretch()
-        box.addLayout(row)
         layout.addWidget(card)
 
         # --- Karte: Letztes Foto -------------------------------------
@@ -156,21 +154,27 @@ class MainPage(QWidget):
 
     def refresh(self):
         """Alles neu einlesen – wird auch aufgerufen, wenn ein neues Foto kommt."""
-        if paths.layer_installed():
+        packaged = paths.packaged()
+        if paths.layer_twice():
+            self.layer_label.setText(tr("layer_twice"))
+            self.layer_label.setObjectName("bad")
+        elif paths.layer_installed():
             self.layer_label.setText(tr("layer_ok"))
             self.layer_label.setObjectName("ok")
         else:
             self.layer_label.setText(tr("layer_missing"))
             self.layer_label.setObjectName("bad")
+        self.layer_label.setToolTip(tr("layer_packaged") if packaged else "")
         # Nach setObjectName muss Qt den Stil neu anwenden
         self.layer_label.style().polish(self.layer_label)
         if self.process is None:  # nicht während des Bauens umbenennen
-            key = "reinstall" if paths.layer_installed() else "install"
+            key = "reinstall" if paths.MANIFEST.is_file() else "install"
             self.install_btn.setText("🔧  " + tr(key).replace("&", "&&"))
-            self.install_btn.setEnabled(paths.INSTALL_SCRIPT.is_file())
-            if not paths.INSTALL_SCRIPT.is_file():
-                self.install_btn.setToolTip(tr("no_script"))
-
+            # Paket (AUR): pacman kümmert sich um den Layer → kein Bauen
+            self.install_btn.setVisible(not packaged)
+            # Entfernen nur für den Layer in ~/.local (Skript) – auch im
+            # Paket-Modus, falls er zusätzlich doppelt da ist
+            self.uninstall_btn.setVisible(paths.MANIFEST.is_file())
         photos = paths.list_photos()
         self.count_label.setText(tr("photo_count", n=len(photos)))
 
@@ -291,6 +295,38 @@ class MainPage(QWidget):
     def set_chosen(self, photo):
         """photo = Path → dieses Foto zeigen/übersetzen,  None → wieder das neueste."""
         self.chosen = photo
+        self.refresh()
+
+    def make_status_btn(self, text: str, slot, style: str = "linkbtn") -> QPushButton:
+        btn = QPushButton(text)
+        btn.setObjectName(style)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setMinimumHeight(40)
+        btn.clicked.connect(slot)
+        return btn
+
+    def run_uninstall(self):
+        """Layer aus ~/.local entfernen (vorher fragen). App + Fotos bleiben."""
+        if self.process is not None:
+            return
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("uninstall"))
+        box.setText(tr("uninstall_question"))
+        yes = box.addButton(tr("yes"), QMessageBox.ButtonRole.YesRole)
+        box.addButton(tr("no"), QMessageBox.ButtonRole.NoRole)
+        box.exec()
+        if box.clickedButton() is not yes:
+            return
+        self.install_log.hide()
+        try:
+            paths.uninstall_user_layer()
+            ok = True
+        except OSError:
+            ok = False
+        self.install_result.setText(tr("uninstall_ok") if ok else tr("uninstall_failed"))
+        self.install_result.setObjectName("ok" if ok else "bad")
+        self.install_result.style().polish(self.install_result)
+        self.install_result.show()
         self.refresh()
 
     def open_folder(self):

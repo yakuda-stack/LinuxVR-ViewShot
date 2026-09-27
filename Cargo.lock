@@ -227,7 +227,7 @@ dependencies = [
 
 [[package]]
 name = "linuxvr-viewshot-layer"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "ash",
  "chrono",

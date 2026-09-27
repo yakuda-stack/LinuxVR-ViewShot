@@ -23,9 +23,9 @@ from core import config, i18n, layer_config, ocr, paths, translation
 from core import translators as T
 from core.custom_translator import LIBRE_EXAMPLE
 from core.i18n import tr
+from core.version import VERSION
 from ui.widgets import make_card, open_path, page_title
 
-VERSION = "0.4.0"  # gleich wie layer/Cargo.toml – bei einem Release beide anheben
 DISCORD_URL = "https://discord.gg/ShNKvvZu74"
 DONATE_URL = "https://ko-fi.com/yakuda_"
 VRCHAT_GROUP_URL = "https://vrchat.com/home/group/grp_829b7777-430d-48b2-8bf3-4e348d0dac9b"

@@ -23,13 +23,13 @@ APP_ICON = PROJECT_DIR / "UI" / "assets" / "linuxvr-viewshot.png"
 DESKTOP_ID = "linuxvr-viewshot"
 
 # Config der UI (Sprache usw.)
-CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config")) / "linuxvr-viewshot"
+CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config") / "linuxvr-viewshot"
 
 # Log des Layers
-LOG_FILE = Path(os.environ.get("XDG_STATE_HOME", HOME / ".local/state")) / "linuxvr-viewshot" / "layer.log"
+LOG_FILE = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local/state") / "linuxvr-viewshot" / "layer.log"
 
 # Manifest, das install-layer.sh anlegt – existiert es, ist der Layer installiert
-MANIFEST = (Path(os.environ.get("XDG_DATA_HOME", HOME / ".local/share"))
+MANIFEST = (Path(os.environ.get("XDG_DATA_HOME") or HOME / ".local/share")
             / "openxr/1/api_layers/implicit.d/linuxvr_viewshot.json")
 
 
@@ -53,5 +53,33 @@ def list_photos() -> list[Path]:
     return photos
 
 
+# Systemweit (AUR-Paket): Manifest in /usr/share, App ohne scripts/-Ordner
+SYSTEM_MANIFEST = Path("/usr/share/openxr/1/api_layers/implicit.d/linuxvr_viewshot.json")
+# Vom Skript installierte .so (gehört zu MANIFEST)
+USER_LIB = HOME / ".local/lib/linuxvr-viewshot/liblinuxvr_viewshot_layer.so"
+
+
+def packaged() -> bool:
+    """Läuft die App aus einem Paket (z. B. AUR)? Dann baut/entfernt pacman
+    den Layer – die Knöpfe dafür werden ausgeblendet."""
+    return not INSTALL_SCRIPT.is_file()
+
+
 def layer_installed() -> bool:
-    return MANIFEST.is_file()
+    return MANIFEST.is_file() or SYSTEM_MANIFEST.is_file()
+
+
+def layer_twice() -> bool:
+    """Paket UND Skript-Installation gleichzeitig → Layer liefe doppelt."""
+    return MANIFEST.is_file() and SYSTEM_MANIFEST.is_file()
+
+
+def uninstall_user_layer() -> None:
+    """Entfernt den per Skript installierten Layer (~/.local). Das Paket,
+    die App, Fotos und Einstellungen bleiben."""
+    for f in (MANIFEST, USER_LIB):
+        f.unlink(missing_ok=True)
+    try:
+        USER_LIB.parent.rmdir()
+    except OSError:
+        pass

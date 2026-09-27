@@ -37,7 +37,7 @@ SOURCE_URL = "https://github.com/cubee-cb/linux-vr-compat/tree/master/dotfiles/w
 ZIP_URL = "https://codeload.github.com/cubee-cb/linux-vr-compat/zip/refs/heads/master"
 SOURCE_PREFIX = "dotfiles/wayvr/"  # im Zip: linux-vr-compat-master/dotfiles/wayvr/…
 
-WAYVR_DIR = Path(os.environ.get("XDG_CONFIG_HOME", HOME / ".config")) / "wayvr"
+WAYVR_DIR = Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config") / "wayvr"
 LAUNCHER = WAYVR_DIR / "theme" / "linuxvr-viewshot-open.sh"
 APP_START = PROJECT_DIR / "UI" / "start.sh"
 

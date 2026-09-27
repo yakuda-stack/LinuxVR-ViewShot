@@ -20,7 +20,8 @@ from core import config, i18n, paths, tags
 from core.i18n import tr
 from ui.pages.gallery_page import GalleryPage
 from ui.pages.main_page import MainPage
-from ui.pages.options_page import VERSION, OptionsPage
+from core.version import VERSION
+from ui.pages.options_page import OptionsPage
 from ui.style import STYLE
 
 
