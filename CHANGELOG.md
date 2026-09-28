@@ -1,5 +1,8 @@
 # Changelog
 
+## [v0.4.6] – 2026-09-28
+- **RUST ERROR** new rust patch
+
 ## [v0.4.5] – 2026-09-28
 - **🔁 Lens** (live translation): the type trigger now works in automatic mode too – 🪄 Auto ↔ 🔁 Lens (manual: 🖼 → 📝 → 🔳 → 🔁 Lens). With 🔁 the shutter takes no photo but photographs the same area again every 1–10 s (Options → Shot; blue frame in VR, stays in front of your head) and the app translates it – fastest with LibreTranslate. Pictures go to `live/live.png`, not the gallery; unchanged text isn't translated again. Open a new frame to stop. New icons 🪄 Auto and 🔁 Lens. **Needs a layer rebuild.**
 - **AI answers appear live** while Claude / Gemini / a custom command (e.g. Ollama) is still writing (ChatGPT/Codex usually delivers the answer in one piece)

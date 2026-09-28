@@ -30,7 +30,8 @@ pub fn to_rgb(raw: &[u8], format: i64) -> Vec<u8> {
     let linear = matches!(format, R8G8B8A8_UNORM | B8G8R8A8_UNORM);
     let lut = linear_to_srgb_lut();
     let mut out = Vec::with_capacity(raw.len() / 4 * 3);
-    for px in raw.chunks_exact(4) {
+    // as_chunks: feste 4er-Stücke ([u8; 4]) – Rest (unvollständiges Pixel) fällt weg
+    for px in raw.as_chunks::<4>().0 {
         let (r, g, b) = if bgr { (px[2], px[1], px[0]) } else { (px[0], px[1], px[2]) };
         if linear {
             out.extend_from_slice(&[lut[r as usize], lut[g as usize], lut[b as usize]]);
