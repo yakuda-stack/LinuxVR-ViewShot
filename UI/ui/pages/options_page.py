@@ -2,7 +2,7 @@
 ui/pages/options_page.py – Optionen mit Tabs (wie bei OSC-DreamChatbox):
 
     ⚙ General      Community-Links (Discord, Ko-fi …), Sprache, Ordner, Über
-    📸 Shot        Rahmengröße, linkes/rechtes Auge, Symbol-Ecke, Ausnahme-Programme
+    📸 Shot        Rahmengröße, linkes/rechtes Auge, Symbol-Ecke, 🔁 Lens, Ausnahme-Programme
     🌐 Übersetzung Dienst (Lingva, Google, LibreTranslate, DeepL, eigene API,
                    KI: Claude Code / Gemini / ChatGPT / eigener Befehl), Zielsprache
 
@@ -272,8 +272,11 @@ class OptionsPage(QWidget):
         # --- Erkennung & Tasten ---
         self.add_buttons_card(lay)
 
-        # --- Icon-Position (nur im manuellen Modus) ---
+        # --- Ecke des Typ-Symbols ---
         self.add_icon_position_card(lay)
+
+        # --- 🔁 Lens ---
+        self.add_live_card(lay)
 
         # --- Ausnahmen ---
         card, box = make_card(tr("excluded"))
@@ -339,14 +342,10 @@ class OptionsPage(QWidget):
             combo.setCurrentIndex(max(0, combo.findData(fresh[key])))
             combo.blockSignals(False)
         manual = fresh["detect_mode"] == "manual"
-        self.layer_combos["mode_button"].setEnabled(manual)
         self.buttons_note.setText(tr("buttons_manual_note") if manual else tr("buttons_auto_note"))
-        # Icon-Position Card sichtbar nur im manuellen Modus
-        if hasattr(self, "icon_position_card"):
-            self.icon_position_card.setVisible(manual)
 
     def add_icon_position_card(self, lay: QVBoxLayout):
-        """Ecke für das Typ-Symbol (nur im manuellen Modus sichtbar)."""
+        """Ecke für das Typ-Symbol (🪄 / 🖼 / 📝 / 🔳 / 🔁)."""
         self.icon_position_card, box = make_card(tr("icon_position"))
         box.addWidget(dim(tr("icon_position_hint")))
         grid = QGridLayout()
@@ -366,7 +365,31 @@ class OptionsPage(QWidget):
             layer_config.ICON_POSITIONS.index(layer_config.DEFAULTS["icon_position"])].click),
             alignment=Qt.AlignmentFlag.AlignLeft)
         lay.addWidget(self.icon_position_card)
-        self.icon_position_card.setVisible(self.layer["detect_mode"] == "manual")
+
+    def add_live_card(self, lay: QVBoxLayout):
+        """🔁 Lens: statt eines Fotos denselben Bereich alle X s neu fotografieren + übersetzen."""
+        card, box = make_card("🔁  " + tr("live_card"))
+        box.addWidget(dim(tr("live_hint")))
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel(tr("live_every")))
+        slider = QSlider(Qt.Orientation.Horizontal)
+        slider.setRange(1, 10)  # Sekunden
+        slider.setValue(int(self.layer.get("live_interval_s", layer_config.DEFAULTS["live_interval_s"])))
+        row.addWidget(slider, 1)
+        value = QLabel()
+        value.setMinimumWidth(50)
+        row.addWidget(value)
+        box.addLayout(row)
+        box.addWidget(dim(tr("live_note")))
+
+        def interval_changed(secs: int):
+            value.setText(tr("live_seconds", s=secs))
+            self.layer["live_interval_s"] = layer_config.update("live_interval_s", secs)["live_interval_s"]
+
+        value.setText(tr("live_seconds", s=slider.value()))
+        slider.valueChanged.connect(interval_changed)
+        lay.addWidget(card)
 
     def icon_position_changed(self, position: str):
         """Neue Ecke → layer.json (der Layer übernimmt sie sofort)."""
@@ -610,6 +633,9 @@ class OptionsPage(QWidget):
         grid.addWidget(self.tr_target_combo, 2, 1)
         grid.setColumnStretch(1, 1)
         box.addLayout(grid)
+        # ☁ / 🔒 Wohin geht der Text? (wechselt mit dem gewählten Dienst)
+        self.privacy_note = dim("")
+        box.addWidget(self.privacy_note)
 
         auto = QCheckBox(tr("tr_auto"))
         auto.setChecked(bool(self.cfg["tr_auto"]))
@@ -965,6 +991,7 @@ class OptionsPage(QWidget):
     def show_method_block(self, method: str):
         for key, widget in self.method_blocks.items():
             widget.setVisible(key == method)
+        self.privacy_note.setText(translation.privacy_text(method))
         if method == T.METHOD_LIBRE:
             self.check_libre()
 

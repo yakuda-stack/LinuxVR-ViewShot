@@ -105,6 +105,18 @@ struct SessionData {
     icon_failed: bool,
     /// Weißes Aufblitzen nach dem Foto bis zu diesem Zeitpunkt
     flash_until: Option<Instant>,
+    /// Live-Modus läuft: derselbe Bildausschnitt wird immer wieder fotografiert
+    live: Option<Live>,
+}
+
+/// Live-Modus: Ausschnitt (am Kopf fest, wie ein Untertitel-Fenster) + nächstes Foto
+#[derive(Clone, Copy, Debug)]
+struct Live {
+    img: frame::Rect,
+    rect: frame::Rect,
+    /// Entfernung, in der der blaue Rahmen gezeichnet wird (Meter)
+    depth: f32,
+    next: Instant,
 }
 
 /// Zustand pro OpenXR-Instanz. Ein Programm kann MEHRERE Instanzen
@@ -668,6 +680,10 @@ unsafe fn update_gesture(nx: &Next, session: xr::Session) {
     match s.gesture.update(&inputs, Instant::now(), &buttons) {
         gesture::Event::FrameActivated => {
             vibrate(nx, session, a, 40, 0.3);
+            if s.live.take().is_some() {
+                save::remove_live_png();
+                log!("Lens beendet (neuer Rahmen)");
+            }
             log!("Rahmen aktiv");
         }
         gesture::Event::TakePhoto => {
@@ -679,7 +695,7 @@ unsafe fn update_gesture(nx: &Next, session: xr::Session) {
         }
         gesture::Event::CycleType => {
             vibrate(nx, session, a, 25, 0.4);
-            log!("Typ gewechselt: {}", icons::cycle().as_str());
+            log!("Typ gewechselt: {}", icons::cycle(config::get().manual()).as_str());
         }
         gesture::Event::FrameClosed => log!("Rahmen geschlossen"),
         gesture::Event::None => {}
@@ -744,6 +760,7 @@ unsafe extern "system" fn create_session(
             frame_failed: false,
             icon_sc: None,
             icon_failed: false,
+            live: None,
             flash_until: None,
         });
     }
@@ -1065,7 +1082,7 @@ unsafe fn make_static_swapchain(
 }
 
 /// Legt die kleine Swapchain für den Rahmen an und färbt sie ein (einmalig).
-/// Ebene 0 = rot, 1 = weiß (Blitz)
+/// Ebene 0 = rot, 1 = weiß (Blitz), 2 = blau (🔁 Lens)
 unsafe fn ensure_frame_swapchain(nx: &Next, session: xr::Session, s: &mut SessionData) -> Option<xr::Swapchain> {
     if let Some(sc) = s.frame_sc {
         return Some(sc);
@@ -1076,7 +1093,8 @@ unsafe fn ensure_frame_swapchain(nx: &Next, session: xr::Session, s: &mut Sessio
     let vk = s.vk.as_ref()?;
     let red = [1.0, 0.05, 0.05, 1.0];
     let white = [1.0, 1.0, 1.0, 1.0];
-    match make_static_swapchain(nx, session, vk, (4, 4, 2), &|vk, image, _| vk.fill_layers(image, &[red, white])) {
+    let blue = [0.2, 0.55, 1.0, 1.0];
+    match make_static_swapchain(nx, session, vk, (4, 4, 3), &|vk, image, _| vk.fill_layers(image, &[red, white, blue])) {
         Ok(sc) => {
             log!("Rahmen-Anzeige bereit");
             s.frame_sc = Some(sc);
@@ -1128,10 +1146,15 @@ unsafe fn build_frame_quads(nx: &Next, session: xr::Session, info: &xr::FrameEnd
         s.gesture.state,
         gesture::State::Active | gesture::State::Pressing(..) | gesture::State::Cooldown
     );
-    if s.actions.is_none() || !(active || flash) {
+    if s.actions.is_none() {
         return Vec::new();
     }
     let Some(proj) = find_projection(info) else { return Vec::new() };
+    if !(active || flash) {
+        // Live-Modus: blauer Rahmen um den Bereich, der immer wieder fotografiert wird
+        let Some(live) = s.live else { return Vec::new() };
+        return live_frame_quads(nx, session, s, proj, live);
+    }
     let Some((img, rect, eye, fov, depth)) = frame_geometry(nx, s, proj, info.display_time) else {
         return Vec::new();
     };
@@ -1165,7 +1188,7 @@ unsafe fn build_frame_quads(nx: &Next, session: xr::Session, info: &xr::FrameEnd
         .map(|e| quad(e, sc, 4, if flash { 1 } else { 0 }))
         .collect();
 
-    // Manueller Modus: Typ-Symbol innen in der gewählten Ecke (Optionen → Shot)
+    // Typ-Symbol (🪄/🖼/📝/🔳/🔁) innen in der gewählten Ecke (Optionen → Shot)
     let cfg = config::get();
     if cfg.buttons().mode.is_some() {
         if let Some(icon_sc) = ensure_icon_swapchain(nx, session, s) {
@@ -1173,10 +1196,48 @@ unsafe fn build_frame_quads(nx: &Next, session: xr::Session, info: &xr::FrameEnd
             let (w, h) = frame_size_m(&fov, img, rect, depth);
             let size = (depth * 0.09).min(w.min(h) * 0.25);
             let e = frame::corner_quad(&eye, &fov, img, rect, depth, size, thickness * 1.5, cfg.icon_position);
-            quads.push(quad(&e, icon_sc, icons::ICON_SIZE as i32, icons::current().index()));
+            quads.push(quad(&e, icon_sc, icons::ICON_SIZE as i32, icons::current(cfg.manual()).index()));
         }
     }
     quads
+}
+
+/// Dünner blauer Rahmen für den Live-Modus (am Kopf fest, keine Hände nötig).
+unsafe fn live_frame_quads(
+    nx: &Next,
+    session: xr::Session,
+    s: &mut SessionData,
+    proj: &xr::CompositionLayerProjection,
+    live: Live,
+) -> Vec<xr::CompositionLayerQuad> {
+    let cfg = config::get();
+    let (view, eye) = choose_view(proj, cfg.eye_t());
+    if image_rect(view) != live.img {
+        return Vec::new();
+    }
+    let fov = view.fov;
+    let Some(sc) = ensure_frame_swapchain(nx, session, s) else { return Vec::new() };
+    let thickness = live.depth * 0.005;
+    frame::edge_quads(&eye, &fov, live.img, live.rect, live.depth, thickness)
+        .iter()
+        .map(|e| xr::CompositionLayerQuad {
+            ty: xr::CompositionLayerQuad::TYPE,
+            next: std::ptr::null(),
+            layer_flags: xr::CompositionLayerFlags::EMPTY,
+            space: proj.space,
+            eye_visibility: xr::EyeVisibility::BOTH,
+            sub_image: xr::SwapchainSubImage {
+                swapchain: sc,
+                image_rect: xr::Rect2Di {
+                    offset: xr::Offset2Di { x: 0, y: 0 },
+                    extent: xr::Extent2Di { width: 4, height: 4 },
+                },
+                image_array_index: 2,
+            },
+            pose: e.pose,
+            size: xr::Extent2Df { width: e.width, height: e.height },
+        })
+        .collect()
 }
 
 /// Breite/Höhe des Rahmens in Metern (in Tiefe `depth`)
@@ -1206,15 +1267,24 @@ unsafe fn try_capture(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) 
     if s.frames == 1 {
         log!("Erster Frame auf Session {}", session.into_raw());
     }
-    if !s.capture_pending {
+    let cfg = config::get();
+    // Live-Modus: ist das nächste Foto vom selben Ausschnitt fällig?
+    let live_due = !s.capture_pending && s.live.is_some_and(|l| Instant::now() >= l.next);
+    if !s.capture_pending && !live_due {
         return;
     }
-    s.pending_frames += 1;
-    // Nach ~2 s ohne passendes Bild aufgeben (sonst hängt es ewig)
-    if s.pending_frames > 180 {
-        log!("Aufgegeben: 180 Frames ohne 3D-Bild");
-        s.capture_pending = false;
-        return;
+    if live_due {
+        if info.layers.is_null() || info.layer_count == 0 {
+            return; // nächsten Frame nochmal versuchen
+        }
+    } else {
+        s.pending_frames += 1;
+        // Nach ~2 s ohne passendes Bild aufgeben (sonst hängt es ewig)
+        if s.pending_frames > 180 {
+            log!("Aufgegeben: 180 Frames ohne 3D-Bild");
+            s.capture_pending = false;
+            return;
+        }
     }
     if info.layers.is_null() || info.layer_count == 0 {
         if s.pending_frames == 1 {
@@ -1231,7 +1301,7 @@ unsafe fn try_capture(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) 
         .find(|p| (***p).ty == xr::CompositionLayerProjection::TYPE)
         .map(|p| &*(*p as *const xr::CompositionLayerProjection))
     else {
-        if s.pending_frames == 1 {
+        if s.pending_frames == 1 && !live_due {
             let types: Vec<String> = layers
                 .iter()
                 .filter(|p| !p.is_null())
@@ -1241,28 +1311,60 @@ unsafe fn try_capture(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) 
         }
         return; // beim nächsten Frame nochmal versuchen
     };
-    s.capture_pending = false;
-    log!("Projektions-Ebene gefunden nach {} Frame(s), {} Views", s.pending_frames, proj.view_count);
     if proj.view_count == 0 || proj.views.is_null() {
-        log!("Projektions-Ebene ohne Views – kein Foto");
+        if !live_due {
+            s.capture_pending = false;
+            log!("Projektions-Ebene ohne Views – kein Foto");
+        }
         return;
     }
-    // Auge wählen (Optionen → ViewShot) und Hände ins Bild projizieren → Ausschnitt
-    let cfg = config::get();
+    // Auge wählen (Optionen → ViewShot)
     let (view, eye) = choose_view(proj, cfg.eye_t());
     let sub = view.sub_image;
     let img = image_rect(view);
-    let hand = |i: usize| {
-        locate(nx, s.spaces[i], proj.space, info.display_time).and_then(|p| frame::project(&eye, &view.fov, p))
+    let now = Instant::now();
+    let rect = if let Some(live) = s.live.as_mut().filter(|_| live_due) {
+        // Live: derselbe Ausschnitt wie beim Start (am Kopf fest)
+        if live.img != img {
+            s.live = None;
+            save::remove_live_png();
+            log!("Lens beendet (Bildgröße hat sich geändert)");
+            return;
+        }
+        live.next = now + cfg.live_interval();
+        live.rect
+    } else {
+        s.capture_pending = false;
+        log!("Projektions-Ebene gefunden nach {} Frame(s), {} Views", s.pending_frames, proj.view_count);
+        // Hände ins Bild projizieren → Ausschnitt
+        let hand = |i: usize| {
+            locate(nx, s.spaces[i], proj.space, info.display_time).and_then(|p| frame::project(&eye, &view.fov, p))
+        };
+        let (h0, h1) = (hand(0), hand(1));
+        let inset = cfg.inset_m();
+        let rect = frame::crop_rect(img, &view.fov, h0, h1, inset);
+        log!(
+            "Bild {img:?}, Hände {h0:?} {h1:?}, Rand {:.0} cm, Auge {:.0} % rechts → Ausschnitt {rect:?}",
+            inset * 100.0,
+            cfg.eye_mix
+        );
+        if cfg.buttons().mode.is_some() && icons::current(cfg.manual()) == icons::PhotoType::Lens {
+            // 🔁 Lens: KEIN Foto für die Galerie – ab jetzt denselben Ausschnitt
+            // immer wieder fotografieren (das erste Mal gleich im nächsten Frame)
+            if rect == img {
+                log!("Lens: Hände zu nah / außerhalb – nicht gestartet");
+                return;
+            }
+            let depth = match (h0, h1) {
+                (Some(a), Some(b)) => (a.depth + b.depth) * 0.5,
+                _ => 0.6,
+            };
+            s.live = Some(Live { img, rect, depth, next: now });
+            log!("Lens gestartet: alle {:?} dieser Ausschnitt", cfg.live_interval());
+            return;
+        }
+        rect
     };
-    let (h0, h1) = (hand(0), hand(1));
-    let inset = cfg.inset_m();
-    let rect = frame::crop_rect(img, &view.fov, h0, h1, inset);
-    log!(
-        "Bild {img:?}, Hände {h0:?} {h1:?}, Rand {:.0} cm, Auge {:.0} % rechts → Ausschnitt {rect:?}",
-        inset * 100.0,
-        cfg.eye_mix
-    );
 
     let Some(sc) = s.swapchains.get(&sub.swapchain.into_raw()) else {
         log!("Swapchain unbekannt – kein Foto");
@@ -1294,10 +1396,11 @@ unsafe fn try_capture(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) 
         sub.image_array_index,
         (rect.x, rect.y, rect.w as u32, rect.h as u32),
     ) {
+        Ok(raw) if live_due => save::save_live_png_async(raw, format, rect.w as u32, rect.h as u32),
         Ok(raw) => {
             log!("Bild kopiert in {:?} ({}x{})", started.elapsed(), rect.w, rect.h);
             // manueller Modus → gewählten Typ ins PNG schreiben
-            let photo_type = cfg.buttons().mode.is_some().then(|| icons::current().as_str());
+            let photo_type = cfg.manual().then(|| icons::current(true).tag()).flatten();
             save::save_png_async(raw, format, rect.w as u32, rect.h as u32, photo_type);
         }
         Err(e) => log!("Kopieren fehlgeschlagen: {e}"),

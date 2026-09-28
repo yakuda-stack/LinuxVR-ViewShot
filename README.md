@@ -68,7 +68,8 @@ cd LinuxVR-ViewShot && ./install.sh          # ./install.sh uninstall
 - 📸 Photo of the area **between** your hands – fingers stay outside, like a camera frame
 - 👀 Frame matches what you see with both eyes; the red frame is never in the photo
 - 🎮 Shutter on left / right / both triggers
-- ✋ **Manual mode:** an icon (🖼 / 📝 / 🔳) in the frame corner (corner selectable: bottom-left/right, top-left/right), a second trigger switches the type – the photo is tagged with it
+- 🔁 **Lens** (live translation): switch the frame icon to 🔁 with the type trigger, then press the shutter – instead of a photo the area is translated again every 1–10 s (blue frame); open a new frame to stop
+- 🔀 **Type trigger** (default: left) switches the icon in the frame corner (corner selectable): automatic 🪄 Auto ↔ 🔁 Lens · ✋ manual 🖼 → 📝 → 🔳 → 🔁 Lens – the photo is tagged with the type
 - ⚙️ Frame size and eye change **live**, even while the game is running
 - Works with OpenXR games and OpenVR games via xrizer / OpenComposite · Quest/Touch, Pico, Index, Vive, WMR
 
@@ -76,7 +77,7 @@ cd LinuxVR-ViewShot && ./install.sh          # ./install.sh uninstall
 
 - 🏠 **Main:** newest photo, status in one row (📁 photo folder · 🔧 rebuild · 🗑 remove layer), pick another photo with 📁 / 🖼
 - 🌐 **Translation:** text in the photo is recognised (RapidOCR) and translated – Lingva, Google, LibreTranslate (local/Docker on port 5000 is found automatically), DeepL or your own API; *From → To* and *Service* right next to the photo – the dropdown only lists services that are set up – or only your ⭐ **favourites** (Options → Translation)
-- 🤖 **AI translation:** Claude Code (Opus / Sonnet / Haiku), Gemini CLI, ChatGPT (Codex CLI) with your own login – or any command (e.g. `ollama run … {prompt}`). **Install** and **Sign in** buttons (npm, no sudo), model choice right next to *Service*; if the AI fails, the service switches to the one that translated
+- 🤖 **AI translation:** Claude Code (Opus / Sonnet / Haiku), Gemini CLI, ChatGPT (Codex CLI) with your own login – or any command (e.g. `ollama run … {prompt}`). **Install** and **Sign in** buttons (npm, no sudo), model choice right next to *Service*; if the AI fails, the service switches to the one that translated · the answer shows up **live while the AI is still writing** · ☁/🔒 note whether the text leaves your PC (only text, never the photo)
 - 🧠 **AI task** next to it: translate · explain context · answer a question in the photo (quiz, riddle …)
 - 📋 **Copy** button right above the translation · *Recognised text* folds away (▸, folded by default)
 - ↻ **Send again** (fresh answer); stuck AI requests are re-sent automatically (optional, per AI)
@@ -146,7 +147,8 @@ cd LinuxVR-ViewShot && ./install.sh          # ./install.sh uninstall
 - 📸 Foto vom Bereich **zwischen** den Händen – Finger bleiben draußen, wie bei einem Kamera-Rahmen
 - 👀 Ausschnitt passt zu dem, was du mit beiden Augen siehst; der rote Rahmen ist nie im Foto
 - 🎮 Auslöser auf linkem / rechtem / beiden Triggern
-- ✋ **Manueller Modus:** Symbol in der Rahmen-Ecke (🖼 / 📝 / 🔳, Ecke wählbar: unten links/rechts, oben links/rechts), ein zweiter Trigger schaltet den Typ um – das Foto wird damit getaggt
+- 🔁 **Lens** (Live-Übersetzung): Rahmen-Symbol mit dem Typ-Trigger auf 🔁 stellen, dann Auslöser – statt eines Fotos wird der Bereich alle 1–10 s neu übersetzt (blauer Rahmen); neuen Rahmen aufziehen beendet es
+- 🔀 **Typ-Trigger** (Standard: links) schaltet das Symbol in der Rahmen-Ecke um (Ecke wählbar): automatisch 🪄 Auto ↔ 🔁 Lens · ✋ manuell 🖼 → 📝 → 🔳 → 🔁 Lens – das Foto wird mit dem Typ getaggt
 - ⚙️ Rahmengröße und Auge ändern sich **live**, auch während das Spiel läuft
 - Läuft mit OpenXR-Spielen und OpenVR-Spielen über xrizer / OpenComposite · Quest/Touch, Pico, Index, Vive, WMR
 
@@ -154,7 +156,7 @@ cd LinuxVR-ViewShot && ./install.sh          # ./install.sh uninstall
 
 - 🏠 **Main:** neuestes Foto, Status in einer Zeile (📁 Foto-Ordner · 🔧 Neu bauen · 🗑 Layer entfernen), anderes Foto über 📁 / 🖼 wählen
 - 🌐 **Übersetzung:** Text im Foto wird erkannt (RapidOCR) und übersetzt – Lingva, Google, LibreTranslate (lokal/Docker auf Port 5000 wird automatisch gefunden), DeepL oder eigene API; *Von → Nach* und *Dienst* direkt neben dem Foto – im Dropdown stehen nur eingerichtete Dienste – oder nur deine ⭐ **Favoriten** (Optionen → Übersetzung)
-- 🤖 **KI-Übersetzung:** Claude Code (Opus / Sonnet / Haiku), Gemini CLI, ChatGPT (Codex CLI) mit deinem Login – oder ein beliebiger Befehl (z. B. `ollama run … {prompt}`). Knöpfe **Installieren** und **Anmelden** (npm, ohne sudo), Modell direkt neben *Dienst*; geht die KI nicht, stellt sich der Dienst auf den um, der übersetzt hat
+- 🤖 **KI-Übersetzung:** Claude Code (Opus / Sonnet / Haiku), Gemini CLI, ChatGPT (Codex CLI) mit deinem Login – oder ein beliebiger Befehl (z. B. `ollama run … {prompt}`). Knöpfe **Installieren** und **Anmelden** (npm, ohne sudo), Modell direkt neben *Dienst*; geht die KI nicht, stellt sich der Dienst auf den um, der übersetzt hat · die Antwort erscheint **schon, während die KI noch schreibt** · ☁/🔒 Hinweis, ob der Text deinen PC verlässt (nur Text, nie das Foto)
 - 🧠 **KI-Aufgabe** daneben: übersetzen · Kontext erklären · Frage im Foto beantworten (Quiz, Rätsel …)
 - 📋 **Kopieren**-Knopf direkt über der Übersetzung · *Erkannter Text* einklappbar (▸, standardmäßig zu)
 - ↻ **Nochmal senden** (neue Antwort); hängt die KI, wird automatisch neu gesendet (optional, je KI)
@@ -226,10 +228,12 @@ UI/               desktop app (PyQt6)
   start.sh          start (sets the process name, see starter.py)
   core/             paths, config, EN/DE texts, OCR, translation, tags, WayVR theme
   ui/               window, style, pages (main / gallery / options)
+  ui/pages/main_*.py  Main page parts: translation, history, install, Lens
 manifest/         OpenXR layer manifest template
 packaging/        .desktop template, aur/PKGBUILD (+ README-AUR.md)
 scripts/          install-layer.sh, build_appimage.sh, bump_version.py
 tests/            pytest + smoke test (python3 -m pytest -q, python3 tests/smoke.py)
+.github/workflows/ runs cargo test + clippy + pytest + smoke test on every push
 assets/           README screenshots
 ```
 

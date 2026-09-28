@@ -89,6 +89,21 @@ def is_configured(method: str, cfg: dict) -> bool:
     return False
 
 
+def privacy(method: str) -> str:
+    """Wohin geht der erkannte Text? (Hinweis in der UI) – verschickt wird nur Text, nie das Foto.
+    "local" = bleibt auf dem PC · "cloud" = Internet-Dienst · "custom" = hängt von der Einrichtung ab"""
+    if method == T.METHOD_LIBRE:
+        return "local"
+    if method in (T.METHOD_CUSTOM, L.METHOD_LLM_CUSTOM):
+        return "custom"
+    return "cloud"
+
+
+def privacy_text(method: str) -> str:
+    from core.i18n import tr
+    return tr("privacy_" + privacy(method), service=tr("tr_m_" + method))
+
+
 def configured_methods(cfg: dict) -> list[str]:
     """Eingerichtete Dienste – der gerade gewählte ist immer dabei."""
     return [m for m in METHODS if m == cfg.get("tr_method") or is_configured(m, cfg)]
@@ -120,7 +135,9 @@ def _try(method: str, text: str, cfg: dict,
     if L.is_llm(method):
         try:
             return L.translate(method, cfg, text, src, tgt,
-                               on_retry=lambda n: progress("retry", f"{method}:{n}")), ""
+                               on_retry=lambda n: progress("retry", f"{method}:{n}"),
+                               # Antwort schon beim Schreiben zeigen (Statuszeile/Feld)
+                               on_partial=lambda s: progress("partial", s)), ""
         except L.LLMError as e:
             return None, str(e)
     tr = T.get_translator(method, deepl_key=cfg["tr_deepl_key"], libre_url=cfg["tr_libre_url"],

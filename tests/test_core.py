@@ -48,6 +48,51 @@ def test_shutter_and_mode_button_never_equal(tmp_path, monkeypatch):
     assert cfg["mode_button"] == "left" and cfg["shutter"] != "left"
 
 
+def _rust_value(src: str):
+    """Rust-Standardwert aus config.rs → Python-Wert wie in layer.json.
+    7.0 → 7.0 · vec!["wayvr".into()] → ["wayvr"] · IconPosition::BottomLeft → "bottom_left" """
+    src = src.strip()
+    if src in ("true", "false"):
+        return src == "true"
+    if src.startswith("vec!["):
+        return re.findall(r'"([^"]*)"', src)
+    if re.fullmatch(r"-?\d+(\.\d+)?", src):
+        return float(src)
+    enum = re.fullmatch(r"\w+::(\w+)", src)
+    if enum:  # CamelCase → snake_case (wie serde rename_all)
+        return re.sub(r"(?<!^)(?=[A-Z])", "_", enum.group(1)).lower()
+    raise AssertionError(f"unbekannter Rust-Wert: {src}")
+
+
+def test_layer_defaults_match_rust():
+    """layer_config.py und layer/src/config.rs müssen dieselben Namen + Standardwerte haben –
+    sonst liest der Layer eine Einstellung nicht oder startet mit einem anderen Wert."""
+    from core import layer_config
+    rs = (ROOT / "layer/src/config.rs").read_text(encoding="utf-8")
+    body = re.search(r"impl Default for LayerConfig \{.*?Self \{(.*?)\n\s*\}", rs, re.S).group(1)
+    rust = {k: _rust_value(v) for k, v in re.findall(r"^\s*(\w+):\s*(.+?),\s*$", body, re.M)}
+    struct = re.search(r"pub struct LayerConfig \{(.*?)\n\}", rs, re.S).group(1)
+    fields = re.findall(r"pub (\w+):", struct)
+    # Zahlen als float vergleichen (Python 7 == Rust 7.0)
+    python = {k: float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v
+              for k, v in layer_config.DEFAULTS.items()}
+    assert sorted(fields) == sorted(rust), "impl Default in config.rs vergisst ein Feld"
+    assert python == rust
+
+
+def test_layer_choices_match_rust_enums():
+    """Auswahl-Listen in Python = Varianten der Rust-Enums."""
+    from core import layer_config
+    rs = (ROOT / "layer/src/config.rs").read_text(encoding="utf-8")
+
+    def variants(name):
+        body = re.search(rf"pub enum {name} \{{(.*?)\}}", rs, re.S).group(1)
+        return tuple(_rust_value("X::" + v) for v in re.findall(r"(\w+),", body))
+
+    assert variants("Combo") == layer_config.COMBOS
+    assert set(variants("IconPosition")) == set(layer_config.ICON_POSITIONS)
+
+
 # ------------------------------------------------------- WayVR-Knopf
 def test_chat_button_is_replaced():
     from core import wayvr_theme
@@ -344,3 +389,71 @@ def test_corrected_ocr_replaces_old_translations(tmp_path, monkeypatch):
     assert translation.ocr_text(photo) == "Helo wrld"
     translation.set_ocr(photo, "Hello world")
     assert translation.ocr_text(photo) == "Hello world"
+
+
+def test_privacy_note_for_every_service():
+    """Jeder Dienst hat einen ☁/🔒-Hinweis; lokales LibreTranslate verschickt nichts."""
+    from core import translation
+    for m in translation.METHODS:
+        text = translation.privacy_text(m)
+        assert text and not text.startswith("privacy_") and "{" not in text, m
+    assert translation.privacy("libre") == "local"
+    assert translation.privacy("llm_chatgpt") == "cloud"
+
+
+# ------------------------------------------------ KI-Antwort live (Stream)
+@pytest.mark.parametrize("method, script, expected", [
+    ("llm_claude",
+     'echo \'{"type":"system","subtype":"init"}\'\n'
+     'echo \'{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hal"}}}\'\n'
+     'sleep 0.3\n'
+     'echo \'{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"lo Welt"}}}\'\n'
+     'echo \'{"type":"result","subtype":"success","is_error":false,"result":"Hallo Welt"}\'\n',
+     "Hallo Welt"),
+    ("llm_gemini",
+     'echo "Loaded cached credentials."\n'
+     'echo \'{"type":"init","session_id":"x"}\'\n'
+     'echo \'{"type":"message","role":"user","content":"prompt"}\'\n'
+     'echo \'{"type":"message","role":"assistant","content":"Hal","delta":true}\'\n'
+     'sleep 0.3\n'
+     'echo \'{"type":"message","role":"assistant","content":"lo Welt","delta":true}\'\n'
+     'echo \'{"type":"result","status":"success"}\'\n',
+     "Hallo Welt"),
+    ("llm_custom", 'printf "Hal"; sleep 0.3; printf "lo Welt"\n', "Hallo Welt"),
+])
+def test_llm_streams_partial_answer(tmp_path, monkeypatch, method, script, expected):
+    """Falsche KI-Programme schreiben die Antwort in Häppchen → on_partial sieht Zwischenstände,
+    das Endergebnis ist die ganze Antwort."""
+    from core import llm_translator as L
+    name = {"llm_claude": "claude", "llm_gemini": "gemini", "llm_custom": "fakellm"}[method]
+    fake = tmp_path / name
+    fake.write_text("#!/bin/sh\n" + script)
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}:/usr/bin:/bin")
+    monkeypatch.setattr(L._Stream, "EVERY", 0)
+    seen = []
+    cfg = {"tr_llm_custom_cmd": "fakellm {prompt}"}
+    assert L.translate(method, cfg, "Hello", "", "de", on_partial=seen.append) == expected
+    assert "Hal" in seen and seen[-1] == expected
+
+
+def test_llm_stream_error_is_reported(tmp_path, monkeypatch):
+    from core import llm_translator as L
+    fake = tmp_path / "gemini"
+    fake.write_text('#!/bin/sh\necho \'{"type":"result","status":"error","error":{"message":"Quota exceeded"}}\'\nexit 1\n')
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}:/usr/bin:/bin")
+    with pytest.raises(L.LLMError, match="Quota exceeded"):
+        L.translate(L.METHOD_GEMINI, {}, "Hello", "", "de", on_partial=lambda s: None)
+
+
+def test_llm_stream_flags():
+    from core import llm_translator as L
+    argv, _ = L.build_command(L.METHOD_CLAUDE, {}, "P", "t", "", "de", stream=True)
+    assert "stream-json" in argv and "--include-partial-messages" in argv
+    argv, _ = L.build_command(L.METHOD_GEMINI, {}, "P", "t", "", "de", stream=True)
+    assert argv[argv.index("--output-format") + 1] == "stream-json"
+    argv, stdin = L.build_command(L.METHOD_CHATGPT, {}, "P", "t", "", "de", stream=True)
+    assert "--json" in argv and argv[-1] == "-" and stdin == "P"
+    # ohne Stream wie bisher
+    assert "stream-json" not in L.build_command(L.METHOD_CLAUDE, {}, "P", "t", "", "de")[0]

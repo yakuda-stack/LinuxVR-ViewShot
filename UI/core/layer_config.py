@@ -20,8 +20,9 @@ DEFAULTS = {
     "excluded_apps": ["wayvr"],   # hier ist ViewShot aus
     "detect_mode": "auto",        # "auto" = App erkennt Text/QR/Bild, "manual" = in VR wählen
     "shutter": "right",           # Auslöser: "left" / "right" / "both"
-    "mode_button": "left",        # Typ wechseln (nur manual): "left" / "right" / "both"
-    "icon_position": "bottom_left",  # Ecke des Typ-Symbols (nur manual), siehe ICON_POSITIONS
+    "mode_button": "left",        # Typ wechseln (auto: 🪄↔🔁, manual: 🖼📝🔳🔁): "left" / "right" / "both"
+    "icon_position": "bottom_left",  # Ecke des Typ-Symbols, siehe ICON_POSITIONS
+    "live_interval_s": 3,         # 🔁 Lens: alle so viele Sekunden neu fotografieren + übersetzen
 }
 
 COMBOS = ("left", "right", "both")

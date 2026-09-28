@@ -76,6 +76,27 @@ pub fn save_png_async(raw: Vec<u8>, format: i64, w: u32, h: u32, photo_type: Opt
     });
 }
 
+/// Live-Modus: immer DIESELBE Datei überschreiben (live/live.png) – landet nicht in
+/// der Galerie. Die UI schaut auf die Änderungszeit und übersetzt das neue Bild.
+pub fn save_live_png_async(raw: Vec<u8>, format: i64, w: u32, h: u32) {
+    std::thread::spawn(move || {
+        let rgb = to_rgb(&raw, format);
+        let dir = output_dir().join("live");
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            crate::log!("Ordner {} kann nicht angelegt werden: {e}", dir.display());
+            return;
+        }
+        if let Err(e) = write_png(&dir.join("live.png"), &rgb, w, h, None) {
+            crate::log!("Live-Bild speichern fehlgeschlagen: {e}");
+        }
+    });
+}
+
+/// Lens beendet → Live-Bild löschen, damit die UI zurück zum normalen Foto schaltet.
+pub fn remove_live_png() {
+    let _ = std::fs::remove_file(output_dir().join("live").join("live.png"));
+}
+
 /// RGB8-Pixel als PNG schreiben, optional mit Typ ("ViewShot-Type").
 ///
 /// Erst in eine VERSTECKTE Hilfsdatei (".ViewShot_….png.part"), dann in

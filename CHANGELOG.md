@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+- **🔁 Lens** (live translation): the type trigger now works in automatic mode too – 🪄 Auto ↔ 🔁 Lens (manual: 🖼 → 📝 → 🔳 → 🔁 Lens). With 🔁 the shutter takes no photo but photographs the same area again every 1–10 s (Options → Shot; blue frame in VR, stays in front of your head) and the app translates it – fastest with LibreTranslate. Pictures go to `live/live.png`, not the gallery; unchanged text isn't translated again. Open a new frame to stop. New icons 🪄 Auto and 🔁 Lens. **Needs a layer rebuild.**
+- **AI answers appear live** while Claude / Gemini / a custom command (e.g. Ollama) is still writing (ChatGPT/Codex usually delivers the answer in one piece)
+- **☁/🔒 privacy note** for every service (Options → Translation + tooltip in the Main dropdown): whether the recognised text is sent to the internet – only text, never the photo
+- Tests: layer.json defaults in Python and Rust are compared automatically; new GitHub Actions workflow runs `cargo test`, `clippy`, `pytest` and the smoke test on every push
+- Code: `main_page.py` split into `main_translation.py`, `main_history.py`, `main_install.py`, `main_live.py` (Lens) (+ `ui/panel_window.py`)
+
 ## [v0.4.3] – 2026-09-28
 - **⭐ Favourite services** (Options → Translation): tick services – then only those appear in the Main dropdown; nothing ticked = as before
 - Main: **🕘 History pop-out** – ⧉ opens the history in its own window (in VR its own panel); closing it docks it back

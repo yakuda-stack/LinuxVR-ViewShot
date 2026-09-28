@@ -25,6 +25,8 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 METHOD_CLAUDE = "llm_claude"
@@ -323,25 +325,31 @@ def make_prompt(text: str, source: str, target: str, mode: str = MODE_TRANSLATE,
 
 
 def build_command(method: str, cfg: dict, prompt: str, text: str, source: str,
-                  target: str) -> tuple[list[str], str | None]:
-    """(argv, stdin) für die gewählte Vorlage."""
+                  target: str, stream: bool = False) -> tuple[list[str], str | None]:
+    """(argv, stdin) für die gewählte Vorlage.
+    stream=True: Ausgabe als JSON-Ereignisse, damit die Antwort schon beim Schreiben
+    angezeigt werden kann (siehe _Stream)."""
     model = model_of(method, cfg)
     if method == METHOD_CLAUDE:
         argv = ["claude", "-p", prompt]
         if model:
             argv += ["--model", model]
+        if stream:
+            argv += ["--output-format", "stream-json", "--verbose", "--include-partial-messages"]
         return argv, None
     if method == METHOD_GEMINI:
         argv = ["gemini"]
         if model:
             argv += ["-m", model]
         # JSON: sonst können Status-/Statistik-Zeilen mit in der Ausgabe landen
-        return argv + ["-p", prompt, "--output-format", "json"], None
+        return argv + ["-p", prompt, "--output-format", "stream-json" if stream else "json"], None
     if method == METHOD_CHATGPT:
         argv = ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only",
                 "-c", "model_reasoning_effort=low"]  # Übersetzen braucht kein langes Nachdenken
         if model:
             argv += ["-m", model]
+        if stream:
+            argv += ["--json"]  # Ereignisse als JSON-Zeilen
         return argv + ["-"], prompt  # "-" = Prompt kommt über stdin
     # eigener Befehl
     cmd = (cfg.get("tr_llm_custom_cmd") or "").strip()
@@ -401,6 +409,152 @@ def _run(argv, stdin, timeout, cwd, env) -> subprocess.CompletedProcess:
     return subprocess.CompletedProcess(argv, proc.returncode, out, err)
 
 
+class _Stream:
+    """Liest die Ausgabe der KI Stück für Stück und meldet den bisherigen Text
+    über on_partial(text) – so sieht man die Antwort schon, während sie entsteht.
+
+    Claude:  {"type": "stream_event", "event": {"delta": {"type": "text_delta", "text": …}}}
+             … am Ende {"type": "result", "result": "…", "is_error": false}
+    Gemini:  {"type": "message", "role": "assistant", "content": "…", "delta": true}
+             … bei Fehler {"type": "result", "status": "error", "error": {"message": …}}
+    ChatGPT: {"type": "item.completed", "item": {"type": "agent_message", "text": …}}
+             (Codex liefert die Antwort meist erst am Stück)
+    eigener Befehl: normaler Text (z. B. ollama run schreibt Wort für Wort)"""
+
+    EVERY = 0.15  # höchstens so oft an die UI melden (Sekunden)
+
+    def __init__(self, method: str, on_partial):
+        self.method = method
+        self.on_partial = on_partial
+        self.buf = ""        # angefangene JSON-Zeile
+        self.text = ""       # bisherige Antwort
+        self.result = None   # Endergebnis (Claude "result")
+        self.error = ""      # Fehler aus dem Stream
+        self.saw_json = False
+        self._last = 0.0
+
+    def feed(self, chunk: str):
+        if self.method == METHOD_LLM_CUSTOM:
+            self.text += chunk
+            self._emit()
+            return
+        self.buf += chunk
+        while "\n" in self.buf:
+            line, self.buf = self.buf.split("\n", 1)
+            self._line(line)
+
+    def _line(self, line: str):
+        line = line.strip()
+        if not line.startswith("{"):
+            return  # Hinweiszeilen (z. B. "Loaded cached credentials.")
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            return
+        if not isinstance(ev, dict):
+            return
+        self.saw_json = True
+        kind = ev.get("type")
+        if self.method == METHOD_CLAUDE:
+            if kind == "stream_event":
+                delta = (ev.get("event") or {}).get("delta") or {}
+                if delta.get("type") == "text_delta":
+                    self.text += delta.get("text", "")
+                    self._emit()
+            elif kind == "assistant" and not self.text:  # ältere CLI ohne Häppchen
+                content = (ev.get("message") or {}).get("content") or []
+                parts = [c.get("text", "") for c in content
+                         if isinstance(c, dict) and c.get("type") == "text"]
+                if parts:
+                    self.text = "".join(parts)
+                    self._emit()
+            elif kind == "result":
+                if ev.get("is_error"):
+                    self.error = str(ev.get("result") or ev.get("subtype") or "Fehler")
+                elif isinstance(ev.get("result"), str):
+                    self.result = ev["result"]
+        elif self.method == METHOD_GEMINI:
+            if kind == "message" and ev.get("role") == "assistant":
+                content = ev.get("content") or ""
+                self.text = self.text + content if ev.get("delta") else content
+                self._emit()
+            elif kind == "result" and ev.get("status") == "error":
+                err = ev.get("error") or {}
+                self.error = str(err.get("message") if isinstance(err, dict) else err)
+        elif self.method == METHOD_CHATGPT:
+            item = ev.get("item") or {}
+            if kind in ("item.updated", "item.completed") and item.get("type") == "agent_message":
+                self.text = item.get("text") or self.text
+                self._emit()
+
+    def _emit(self, force: bool = False):
+        now = time.monotonic()
+        if force or now - self._last >= self.EVERY:
+            self._last = now
+            self.on_partial(_clean(self.text).strip())
+
+    def finish(self) -> str:
+        """Rest verarbeiten, letzten Stand melden, Endergebnis zurückgeben."""
+        if self.buf:
+            self._line(self.buf)
+            self.buf = ""
+        if self.text:
+            self._emit(force=True)
+        return self.result if self.result is not None else self.text
+
+
+def _run_stream(argv, stdin, timeout, cwd, env, on_chunk) -> subprocess.CompletedProcess:
+    """Wie _run, gibt stdout aber schon WÄHREND des Laufs an on_chunk(text) weiter."""
+    import codecs
+    import signal
+    proc = subprocess.Popen(argv, stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd, env=env,
+                            start_new_session=True)
+    out, err = [], []
+
+    def read_out():
+        dec = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        while True:
+            data = os.read(proc.stdout.fileno(), 4096)
+            text = dec.decode(data, final=not data)
+            if text:
+                out.append(text)
+                on_chunk(text)
+            if not data:
+                break
+
+    def read_err():
+        err.append(proc.stderr.read().decode("utf-8", errors="replace"))
+
+    def write_in():
+        try:
+            proc.stdin.write(stdin.encode("utf-8"))
+            proc.stdin.close()
+        except OSError:
+            pass  # Programm hat stdin nicht gelesen
+
+    threads = [threading.Thread(target=read_out, daemon=True),
+               threading.Thread(target=read_err, daemon=True)]
+    if stdin is not None:
+        threads.append(threading.Thread(target=write_in, daemon=True))
+    for th in threads:
+        th.start()
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)  # ganze Gruppe (Unterprozesse!)
+        except OSError:
+            proc.kill()
+        proc.wait()
+        for th in threads:
+            th.join(timeout=2)
+        raise subprocess.TimeoutExpired(argv, timeout, output="".join(out), stderr="".join(err))
+    for th in threads:
+        th.join(timeout=5)
+    return subprocess.CompletedProcess(argv, proc.returncode, "".join(out), "".join(err))
+
+
 def retry_settings(method: str, cfg: dict) -> tuple[bool, int]:
     """(Neu senden an?, nach wie vielen Sekunden)."""
     keys = RETRY_KEYS.get(method)
@@ -415,11 +569,13 @@ def retry_settings(method: str, cfg: dict) -> tuple[bool, int]:
 
 
 def translate(method: str, cfg: dict, text: str, source: str, target: str,
-              on_retry=lambda attempt: None) -> str:
+              on_retry=lambda attempt: None, on_partial=None) -> str:
     """Übersetzt mit der KI. Wirft LLMError mit lesbarem Grund.
-    on_retry(Versuch) wird vor jedem erneuten Senden aufgerufen (für die Statuszeile)."""
+    on_retry(Versuch) wird vor jedem erneuten Senden aufgerufen (für die Statuszeile).
+    on_partial(bisheriger Text): Antwort schon beim Schreiben zeigen (None = am Stück wie früher)."""
     prompt = make_prompt(text, source, target, cfg.get("tr_llm_mode") or MODE_TRANSLATE, method)
-    argv, stdin = build_command(method, cfg, prompt, text, source, target)
+    streaming = on_partial is not None
+    argv, stdin = build_command(method, cfg, prompt, text, source, target, stream=streaming)
     exe = find_binary(argv[0])
     if not exe:
         raise LLMError(f"Programm nicht gefunden: {argv[0]}")
@@ -439,11 +595,16 @@ def translate(method: str, cfg: dict, text: str, source: str, target: str,
         timeout = secs if retry else TIMEOUT
         attempts = 1 + RETRIES if retry else 1
         res = None
+        stream = None
         for attempt in range(1, attempts + 1):
             if attempt > 1:
                 on_retry(attempt)  # hängt → abbrechen und nochmal senden
             try:
-                res = _run(argv, stdin, timeout, tmp, env)
+                if streaming:
+                    stream = _Stream(method, on_partial)  # jeder Versuch fängt leer an
+                    res = _run_stream(argv, stdin, timeout, tmp, env, stream.feed)
+                else:
+                    res = _run(argv, stdin, timeout, tmp, env)
                 break
             except FileNotFoundError:
                 raise LLMError(f"Programm nicht gefunden: {argv[0]}")
@@ -459,6 +620,9 @@ def translate(method: str, cfg: dict, text: str, source: str, target: str,
             tries = f" ({attempts} Versuche)" if attempts > 1 else ""
             raise LLMError(f"{Path(argv[0]).name} hat länger als {timeout} s gebraucht"
                            f"{tries}{hint}")
+        streamed = stream.finish() if stream is not None else ""
+        if stream is not None and stream.error and not streamed:
+            raise LLMError(f"{Path(argv[0]).name}: {_clean(stream.error).strip()[:200]}")
         if res.returncode != 0:
             err = _clean(res.stderr or res.stdout or "").strip().splitlines()
             raise LLMError(f"{Path(argv[0]).name} beendet mit Fehler {res.returncode}"
@@ -466,8 +630,10 @@ def translate(method: str, cfg: dict, text: str, source: str, target: str,
         out = ""
         if last_msg is not None and last_msg.is_file():
             out = last_msg.read_text(encoding="utf-8", errors="replace")
+        if not out and stream is not None and (stream.saw_json or method == METHOD_LLM_CUSTOM):
+            out = streamed
         out = _clean(out or res.stdout or "").strip()
-        if method == METHOD_GEMINI:
+        if method == METHOD_GEMINI and not (stream is not None and stream.saw_json):
             out = _gemini_response(out)
     if not out:
         raise LLMError(f"{Path(argv[0]).name} hat nichts geantwortet")

@@ -13,6 +13,7 @@
 //!   "shutter": "right",           Auslöser: "left" / "right" / "both"
 //!   "mode_button": "left",        Typ wechseln (nur manual): "left" / "right" / "both"
 //!   "icon_position": "bottom_left" Symbol-Position (manual): "bottom_left" / "bottom_right" / "top_left" / "top_right"
+//!   "live_interval_s": 3          🔁 Lens: alle so viele Sekunden neu fotografieren (→ live/live.png)
 //! }
 
 use serde::Deserialize;
@@ -64,6 +65,7 @@ pub struct LayerConfig {
     pub shutter: Combo,
     pub mode_button: Combo,
     pub icon_position: IconPosition,
+    pub live_interval_s: f32,
 }
 
 impl Default for LayerConfig {
@@ -76,6 +78,7 @@ impl Default for LayerConfig {
             shutter: Combo::Right,
             mode_button: Combo::Left,
             icon_position: IconPosition::BottomLeft,
+            live_interval_s: 3.0,
         }
     }
 }
@@ -90,11 +93,20 @@ impl LayerConfig {
         cm.clamp(0.0, 30.0) / 100.0
     }
 
-    /// Tasten für die Geste. Typ-Wechsel nur im manuellen Modus – und nie
-    /// auf derselben Taste wie der Auslöser (dann gewinnt der Auslöser).
+    /// Tasten für die Geste. Typ-Wechsel (auto: 🪄 ↔ 🔁 Lens, manuell: 🖼 📝 🔳 🔁) –
+    /// nie auf derselben Taste wie der Auslöser (dann gewinnt der Auslöser).
     pub fn buttons(&self) -> crate::gesture::Buttons {
-        let manual = self.detect_mode == DetectMode::Manual && self.mode_button != self.shutter;
-        crate::gesture::Buttons { shutter: self.shutter, mode: manual.then_some(self.mode_button) }
+        let mode = (self.mode_button != self.shutter).then_some(self.mode_button);
+        crate::gesture::Buttons { shutter: self.shutter, mode }
+    }
+
+    pub fn manual(&self) -> bool {
+        self.detect_mode == DetectMode::Manual
+    }
+
+    /// Abstand zwischen zwei Live-Fotos (1–30 s)
+    pub fn live_interval(&self) -> Duration {
+        Duration::from_secs_f32(self.live_interval_s.clamp(1.0, 30.0))
     }
 
     /// 0.0 = linkes Auge, 1.0 = rechtes Auge
@@ -186,6 +198,13 @@ mod tests {
     }
 
     #[test]
+    fn live_interval_is_clamped() {
+        let c: LayerConfig = serde_json::from_str(r#"{"live_interval_s": 0.2}"#).unwrap();
+        assert_eq!(c.live_interval(), Duration::from_secs(1));
+        assert_eq!(LayerConfig::default().live_interval(), Duration::from_secs(3));
+    }
+
+    #[test]
     fn icon_position_from_json() {
         let c: LayerConfig = serde_json::from_str(r#"{"icon_position": "top_right"}"#).unwrap();
         assert_eq!(c.icon_position, IconPosition::TopRight);
@@ -202,7 +221,7 @@ mod tests {
         let c: LayerConfig =
             serde_json::from_str(r#"{"detect_mode": "manual", "shutter": "left", "mode_button": "left"}"#).unwrap();
         assert_eq!(c.buttons().mode, None);
-        // auto → kein Typ-Wechsel
-        assert_eq!(LayerConfig::default().buttons().mode, None);
+        // auto → Typ-Wechsel auch (🪄 Auto ↔ 🔁 Lens)
+        assert_eq!(LayerConfig::default().buttons().mode, Some(Combo::Left));
     }
 }

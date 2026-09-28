@@ -78,10 +78,18 @@ TEXTS = {
                         "en": "2.  Hands apart → short vibration, red frame appears"},
     "howto_3":         {"de": "3.  Auslöser-Trigger drücken (Standard: rechts) → Foto! Der Rahmen blitzt weiß",
                         "en": "3.  Press the shutter trigger (default: right) → photo! The frame flashes white"},
-    "howto_4":         {"de": "4.  Manuell: Typ-Trigger (Standard: links) schaltet das Symbol in der Ecke "
-                              "des Rahmens um – 🖼 Bild → 📝 Text → 🔳 QR. Das Foto bekommt diesen Typ.",
-                        "en": "4.  Manual: the type trigger (default: left) switches the icon in the frame's "
-                              "corner – 🖼 Image → 📝 Text → 🔳 QR. The photo gets that type."},
+    "howto_4":         {"de": "4.  Manuell: Typ-Trigger (Standard: links) schaltet das Symbol im Rahmen um – "
+                              "🖼 Bild → 📝 Text → 🔳 QR → 🔁 Lens. Das Foto bekommt diesen Typ.",
+                        "en": "4.  Manual: the type trigger (default: left) switches the icon in the frame – "
+                              "🖼 Image → 📝 Text → 🔳 QR → 🔁 Lens. The photo gets that type."},
+    "howto_4_auto":    {"de": "4.  Typ-Trigger (Standard: links) schaltet das Symbol im Rahmen um: "
+                              "🪄 Auto (Foto) ↔ 🔁 Lens (Live-Übersetzung).",
+                        "en": "4.  The type trigger (default: left) switches the icon in the frame: "
+                              "🪄 Auto (photo) ↔ 🔁 Lens (live translation)."},
+    "howto_5":         {"de": "5.  🔁 Lens + Auslöser → kein Foto, sondern ein blauer Rahmen: der Bereich wird "
+                              "alle paar Sekunden neu übersetzt. Neuer Rahmen = Lens aus.",
+                        "en": "5.  🔁 Lens + shutter → no photo but a blue frame: the area is translated again "
+                              "every few seconds. New frame = Lens off."},
     "open_folder":     {"de": "Foto-Ordner",     "en": "Photo folder"},
 
     # Galerie
@@ -144,11 +152,13 @@ TEXTS = {
     "combo_left":      {"de": "Linker Trigger",  "en": "Left trigger"},
     "combo_right":     {"de": "Rechter Trigger", "en": "Right trigger"},
     "combo_both":      {"de": "Beide Trigger gleichzeitig", "en": "Both triggers together"},
-    "buttons_auto_note": {"de": "Typ wechseln gibt es nur im manuellen Modus.",
-                          "en": "Switching type is only available in manual mode."},
-    "buttons_manual_note": {"de": "Im Rahmen erscheint ein Symbol (🖼 / 📝 / 🔳) – Ecke siehe unten. "
+    "buttons_auto_note": {"de": "Im Rahmen erscheint ein Symbol: 🪄 Auto (Foto, die App erkennt den Typ) ↔ "
+                                "🔁 Lens. Auslöser und Typ-Taste können nicht gleich sein.",
+                          "en": "An icon appears in the frame: 🪄 Auto (photo, the app detects the type) ↔ "
+                                "🔁 Lens. Shutter and type button can't be the same."},
+    "buttons_manual_note": {"de": "Im Rahmen erscheint ein Symbol: 🖼 / 📝 / 🔳 / 🔁 Lens. "
                                   "Auslöser und Typ-Taste können nicht gleich sein.",
-                            "en": "An icon (🖼 / 📝 / 🔳) appears in a corner of the frame – see below. "
+                            "en": "An icon appears in the frame: 🖼 / 📝 / 🔳 / 🔁 Lens. "
                                   "Shutter and type button can't be the same."},
     "icon_position":   {"de": "Symbol-Position",   "en": "Icon position"},
     "icon_position_hint": {"de": "In welcher Ecke des Rahmens das Typ-Symbol sitzt. Wirkt sofort.",
@@ -363,6 +373,7 @@ TEXTS = {
     "tr_refresh":      {"de": "Nochmal senden (neue Antwort holen)",
                         "en": "Send again (get a new answer)"},
     "tr_step_service": {"de": "Übersetzt mit {name} …", "en": "Translating with {name} …"},
+    "tr_step_partial": {"de": "KI schreibt noch …", "en": "AI is still writing …"},
     "ui_log":          {"de": "App-Log",         "en": "App log"},
     "tr_fallback_once": {"de": "⚠ {failed} ging nicht – diesmal mit {used} übersetzt. {error}",
                          "en": "⚠ {failed} failed – translated with {used} this time. {error}"},
@@ -375,6 +386,34 @@ TEXTS = {
                            "en": "Any program. {prompt} = finished translation instruction incl. "
                                  "text. Also: {text} {source} {target}. Without {prompt}/{text} the "
                                  "prompt goes to stdin. The output is the translation."},
+    "privacy_local":   {"de": "🔒 Läuft auf deinem PC – der erkannte Text verlässt ihn nicht.",
+                        "en": "🔒 Runs on your PC – the recognised text never leaves it."},
+    "privacy_cloud":   {"de": "☁ Der erkannte Text (nicht das Foto) wird zum Übersetzen an {service} "
+                              "im Internet geschickt.",
+                        "en": "☁ The recognised text (not the photo) is sent to {service} "
+                              "on the internet for translation."},
+    "privacy_custom":  {"de": "ℹ Hängt von deiner Einrichtung ab: lokal (z. B. Ollama, eigener Server) "
+                              "oder im Internet. Verschickt wird nur der erkannte Text, nie das Foto.",
+                        "en": "ℹ Depends on your setup: local (e.g. Ollama, your own server) or on the "
+                              "internet. Only the recognised text is sent, never the photo."},
+    "live_card":       {"de": "Lens (Live-Übersetzung)", "en": "Lens (live translation)"},
+    "live_hint":       {"de": "Im Rahmen mit der Typ-Taste auf 🔁 Lens schalten, dann Auslöser: statt eines "
+                              "Fotos wird der Bereich immer wieder fotografiert und übersetzt – z. B. für Welten "
+                              "mit viel wechselndem Text. Ein blauer Rahmen zeigt ihn (bleibt vor deinem Kopf).",
+                        "en": "In the frame, switch to 🔁 Lens with the type button, then press the shutter: "
+                              "instead of a photo the area is photographed and translated again and again – "
+                              "e.g. for worlds with lots of changing text. A blue frame shows it "
+                              "(stays in front of your head)."},
+    "live_every":      {"de": "Alle",             "en": "Every"},
+    "live_seconds":    {"de": "{s} s",            "en": "{s} s"},
+    "live_note":       {"de": "Beenden: neuen Rahmen aufziehen. Lens-Bilder landen nicht in der Galerie. "
+                              "Gleicher Text wird nicht nochmal übersetzt. Am schnellsten mit LibreTranslate – "
+                              "kurze Abstände + KI-Dienste = viele Anfragen.",
+                        "en": "Stop: open a new frame. Lens pictures don't go to the gallery. Unchanged text "
+                              "isn't translated again. Fastest with LibreTranslate – short intervals + AI "
+                              "services = many requests."},
+    "live_title":      {"de": "Lens",             "en": "Lens"},
+    "live_status":     {"de": "Lens",             "en": "Lens"},
     "tr_favorites":    {"de": "Favoriten",        "en": "Favourites"},
     "tr_favorites_hint": {"de": "Nur angehakte Dienste stehen auf der Main-Seite im Dropdown. "
                                 "Nichts angehakt = alle eingerichteten Dienste (wie bisher). "
