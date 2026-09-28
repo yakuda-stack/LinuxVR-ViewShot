@@ -6,6 +6,7 @@ Start:  python3 starter.py  (setzt den Prozessnamen)
    oder python3 main.py / ./start.sh
 """
 
+import logging
 import sys
 
 from PyQt6.QtGui import QIcon
@@ -16,7 +17,18 @@ from ui import nowheel
 from ui.mainwindow import MainWindow
 
 
+def setup_log():
+    """ui.log: was die App wann macht (Texterkennung, Übersetzung) – für Fehlersuche."""
+    try:
+        paths.UI_LOG.parent.mkdir(parents=True, exist_ok=True)
+        logging.basicConfig(filename=paths.UI_LOG, filemode="w", level=logging.INFO,
+                            format="%(asctime)s %(threadName)s %(message)s")
+    except OSError:
+        pass
+
+
 def run_app():
+    setup_log()
     app = QApplication(sys.argv)
     app.setApplicationName("LinuxVR-ViewShot")
     # Taskleiste: Wayland ordnet das Fenster über diese ID der .desktop-Datei zu

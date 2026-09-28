@@ -68,15 +68,22 @@ cd LinuxVR-ViewShot && ./install.sh          # ./install.sh uninstall
 - 📸 Photo of the area **between** your hands – fingers stay outside, like a camera frame
 - 👀 Frame matches what you see with both eyes; the red frame is never in the photo
 - 🎮 Shutter on left / right / both triggers
-- ✋ **Manual mode:** an icon in the frame corner (🖼 / 📝 / 🔳), a second trigger switches the type – the photo is tagged with it
+- ✋ **Manual mode:** an icon (🖼 / 📝 / 🔳) in the frame corner (corner selectable: bottom-left/right, top-left/right), a second trigger switches the type – the photo is tagged with it
 - ⚙️ Frame size and eye change **live**, even while the game is running
 - Works with OpenXR games and OpenVR games via xrizer / OpenComposite · Quest/Touch, Pico, Index, Vive, WMR
 
 **Desktop app**
 
 - 🏠 **Main:** newest photo, status in one row (📁 photo folder · 🔧 rebuild · 🗑 remove layer), pick another photo with 📁 / 🖼
-- 🌐 **Translation:** text in the photo is recognised (RapidOCR) and translated – Lingva, Google, LibreTranslate (local/Docker on port 5000 is found automatically), DeepL or your own API; *From → To* and *Service* right next to the photo
-- 🔳 **QR codes** in a photo → **Open** / **Copy** button
+- 🌐 **Translation:** text in the photo is recognised (RapidOCR) and translated – Lingva, Google, LibreTranslate (local/Docker on port 5000 is found automatically), DeepL or your own API; *From → To* and *Service* right next to the photo – the dropdown only lists services that are set up – or only your ⭐ **favourites** (Options → Translation)
+- 🤖 **AI translation:** Claude Code (Opus / Sonnet / Haiku), Gemini CLI, ChatGPT (Codex CLI) with your own login – or any command (e.g. `ollama run … {prompt}`). **Install** and **Sign in** buttons (npm, no sudo), model choice right next to *Service*; if the AI fails, the service switches to the one that translated
+- 🧠 **AI task** next to it: translate · explain context · answer a question in the photo (quiz, riddle …)
+- 📋 **Copy** button right above the translation · *Recognised text* folds away (▸, folded by default)
+- ↻ **Send again** (fresh answer); stuck AI requests are re-sent automatically (optional, per AI)
+- 🕘 **History** (optional): past translations, tap to show them again, ⧉ opens it in its own window · ✏ fix the **recognised text** yourself and translate it again
+- ⧉ **Pop out** the translation into its own window (in VR: its own panel)
+- 🔳 **QR codes** in a photo appear as **clickable links** right in the translation (📋 copy)
+- 📋 **Clipboard from WayVR:** copied things also land on the desktop (via `wl-copy`, package `wl-clipboard` – **install button** in Options for Arch, Fedora, Debian/Ubuntu, openSUSE) – Ctrl+V works there
 - 🖼 **Gallery:** equal tiles with size slider, large view with ‹ ›, **Copy · Share · Upload & copy link** ([directupload.eu](https://www.directupload.eu/), incl. delete link) **· Info · Delete** (trash)
 - 🏷️ **Image detection:** every photo gets 📝 text / 🔳 QR / 🖼 image – VRChat nameplates don't count as text; filter the gallery, change tags in *Info*
 - ☑ **Bulk select:** tap tiles → delete them all or set their type
@@ -139,15 +146,22 @@ cd LinuxVR-ViewShot && ./install.sh          # ./install.sh uninstall
 - 📸 Foto vom Bereich **zwischen** den Händen – Finger bleiben draußen, wie bei einem Kamera-Rahmen
 - 👀 Ausschnitt passt zu dem, was du mit beiden Augen siehst; der rote Rahmen ist nie im Foto
 - 🎮 Auslöser auf linkem / rechtem / beiden Triggern
-- ✋ **Manueller Modus:** Symbol in der Rahmen-Ecke (🖼 / 📝 / 🔳), ein zweiter Trigger schaltet den Typ um – das Foto wird damit getaggt
+- ✋ **Manueller Modus:** Symbol in der Rahmen-Ecke (🖼 / 📝 / 🔳, Ecke wählbar: unten links/rechts, oben links/rechts), ein zweiter Trigger schaltet den Typ um – das Foto wird damit getaggt
 - ⚙️ Rahmengröße und Auge ändern sich **live**, auch während das Spiel läuft
 - Läuft mit OpenXR-Spielen und OpenVR-Spielen über xrizer / OpenComposite · Quest/Touch, Pico, Index, Vive, WMR
 
 **Desktop-App**
 
 - 🏠 **Main:** neuestes Foto, Status in einer Zeile (📁 Foto-Ordner · 🔧 Neu bauen · 🗑 Layer entfernen), anderes Foto über 📁 / 🖼 wählen
-- 🌐 **Übersetzung:** Text im Foto wird erkannt (RapidOCR) und übersetzt – Lingva, Google, LibreTranslate (lokal/Docker auf Port 5000 wird automatisch gefunden), DeepL oder eigene API; *Von → Nach* und *Dienst* direkt neben dem Foto
-- 🔳 **QR-Codes** im Foto → Knopf **Öffnen** / **Kopieren**
+- 🌐 **Übersetzung:** Text im Foto wird erkannt (RapidOCR) und übersetzt – Lingva, Google, LibreTranslate (lokal/Docker auf Port 5000 wird automatisch gefunden), DeepL oder eigene API; *Von → Nach* und *Dienst* direkt neben dem Foto – im Dropdown stehen nur eingerichtete Dienste – oder nur deine ⭐ **Favoriten** (Optionen → Übersetzung)
+- 🤖 **KI-Übersetzung:** Claude Code (Opus / Sonnet / Haiku), Gemini CLI, ChatGPT (Codex CLI) mit deinem Login – oder ein beliebiger Befehl (z. B. `ollama run … {prompt}`). Knöpfe **Installieren** und **Anmelden** (npm, ohne sudo), Modell direkt neben *Dienst*; geht die KI nicht, stellt sich der Dienst auf den um, der übersetzt hat
+- 🧠 **KI-Aufgabe** daneben: übersetzen · Kontext erklären · Frage im Foto beantworten (Quiz, Rätsel …)
+- 📋 **Kopieren**-Knopf direkt über der Übersetzung · *Erkannter Text* einklappbar (▸, standardmäßig zu)
+- ↻ **Nochmal senden** (neue Antwort); hängt die KI, wird automatisch neu gesendet (optional, je KI)
+- 🕘 **Verlauf** (optional): frühere Übersetzungen, antippen zeigt sie wieder, ⧉ öffnet ihn in einem eigenen Fenster · ✏ **erkannten Text** selbst korrigieren und neu übersetzen
+- ⧉ Übersetzung in ein **eigenes Fenster** ausklinken (in VR: eigenes Panel)
+- 🔳 **QR-Codes** im Foto stehen als **anklickbare Links** direkt in der Übersetzung (📋 kopieren)
+- 📋 **Zwischenablage aus WayVR:** Kopiertes landet auch auf dem Desktop (per `wl-copy`, Paket `wl-clipboard` – **Installier-Knopf** in den Optionen für Arch, Fedora, Debian/Ubuntu, openSUSE) – Strg+V klappt dort
 - 🖼 **Galerie:** gleich große Kacheln mit Größen-Slider, große Ansicht mit ‹ ›, **Kopieren · Teilen · Hochladen & Link kopieren** ([directupload.eu](https://www.directupload.eu/), inkl. Lösch-Link) **· Info · Löschen** (Papierkorb)
 - 🏷️ **Bild-Erkennung:** jedes Foto bekommt 📝 Text / 🔳 QR / 🖼 Bild – VRChat-Namensschilder zählen nicht als Text; Galerie danach filtern, Tags unter *Info* ändern
 - ☑ **Mehrfach-Auswahl:** Kacheln antippen → alle löschen oder ihren Typ setzen

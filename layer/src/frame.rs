@@ -92,16 +92,28 @@ pub fn edge_quads(eye: &xr::Posef, fov: &xr::Fovf, img: Rect, rect: Rect, depth:
     ]
 }
 
-/// Quadrat für das Typ-Symbol: INNEN in der Ecke unten rechts des Rahmens.
+/// Quadrat für das Typ-Symbol: INNEN in einer Ecke des Rahmens (`corner`).
 /// `size` = Kantenlänge in Metern (in Tiefe `depth`), `gap` = Abstand zu den Linien.
-pub fn corner_quad(eye: &xr::Posef, fov: &xr::Fovf, img: Rect, rect: Rect, depth: f32, size: f32, gap: f32) -> EdgeQuad {
+#[allow(clippy::too_many_arguments)]
+pub fn corner_quad(
+    eye: &xr::Posef,
+    fov: &xr::Fovf,
+    img: Rect,
+    rect: Rect,
+    depth: f32,
+    size: f32,
+    gap: f32,
+    corner: crate::config::IconPosition,
+) -> EdgeQuad {
     let (l, r) = (fov.angle_left.tan(), fov.angle_right.tan());
     let (up, dn) = (fov.angle_up.tan(), fov.angle_down.tan());
     let ex = |px: i32| (l + (px - img.x) as f32 / img.w as f32 * (r - l)) * depth;
     let ey = |py: i32| (up - (py - img.y) as f32 / img.h as f32 * (up - dn)) * depth;
-    let x1 = ex(rect.x + rect.w); // rechter Rand
-    let y1 = ey(rect.y + rect.h); // unterer Rand
-    let (x, y) = (x1 - gap - size * 0.5, y1 + gap + size * 0.5);
+    let (x0, x1) = (ex(rect.x), ex(rect.x + rect.w)); // linker / rechter Rand
+    let (y0, y1) = (ey(rect.y), ey(rect.y + rect.h)); // oberer / unterer Rand
+    let d = gap + size * 0.5; // Mitte des Symbols: so weit von beiden Linien weg
+    let x = if corner.is_left() { x0 + d } else { x1 - d };
+    let y = if corner.is_top() { y0 - d } else { y1 + d };
     let off = rotate(eye.orientation, [x, y, -depth]);
     EdgeQuad {
         pose: xr::Posef {
@@ -204,6 +216,7 @@ pub fn crop_rect(img: Rect, fov: &xr::Fovf, a: Option<Projected>, b: Option<Proj
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::IconPosition;
 
     fn pose(x: f32) -> xr::Posef {
         xr::Posef {
@@ -306,11 +319,25 @@ mod tests {
         // Ausschnitt ±0,5 m bei 1 m Tiefe → Symbol 0,1 m, 0,02 m Abstand
         let img = Rect { x: 0, y: 0, w: 1000, h: 1000 };
         let rect = Rect { x: 250, y: 250, w: 500, h: 500 };
-        let q = corner_quad(&pose(0.0), &fov(), img, rect, 1.0, 0.1, 0.02);
+        let q = corner_quad(&pose(0.0), &fov(), img, rect, 1.0, 0.1, 0.02, IconPosition::BottomRight);
         assert!((q.pose.position.x - 0.43).abs() < 1e-5, "{:?}", q.pose.position);
         assert!((q.pose.position.y + 0.43).abs() < 1e-5);
         assert!((q.pose.position.z + 1.0).abs() < 1e-5);
         assert_eq!((q.width, q.height), (0.1, 0.1));
+    }
+
+    #[test]
+    fn corner_follows_icon_position() {
+        let img = Rect { x: 0, y: 0, w: 1000, h: 1000 };
+        let rect = Rect { x: 250, y: 250, w: 500, h: 500 };
+        let at = |c| {
+            let q = corner_quad(&pose(0.0), &fov(), img, rect, 1.0, 0.1, 0.02, c);
+            (q.pose.position.x, q.pose.position.y)
+        };
+        let near = |(x, y): (f32, f32), (ex, ey): (f32, f32)| (x - ex).abs() < 1e-5 && (y - ey).abs() < 1e-5;
+        assert!(near(at(IconPosition::BottomLeft), (-0.43, -0.43)));
+        assert!(near(at(IconPosition::TopLeft), (-0.43, 0.43)));
+        assert!(near(at(IconPosition::TopRight), (0.43, 0.43)));
     }
 
     #[test]

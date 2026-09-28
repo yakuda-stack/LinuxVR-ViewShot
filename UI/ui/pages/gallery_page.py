@@ -16,13 +16,13 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import QBuffer, QFile, QIODevice, QMimeData, QObject, QSize, Qt, QTimer, QUrl, pyqtSignal
+from PyQt6.QtCore import QBuffer, QFile, QIODevice, QObject, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QImage, QImageReader, QKeySequence, QPainter, QPixmap, QShortcut
-from PyQt6.QtWidgets import (QApplication, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+from PyQt6.QtWidgets import (QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
                              QListWidget, QListWidgetItem, QMenu, QMessageBox, QPushButton,
                              QSizePolicy, QSlider, QStackedWidget, QVBoxLayout, QWidget)
 
-from core import config, paths, share, tags, uploader
+from core import clipboard, config, paths, share, tags, uploader
 from core.i18n import tr
 from ui.widgets import open_path, page_title
 
@@ -665,15 +665,13 @@ class GalleryPage(QWidget):
         self.toast_timer.start(3000)
 
     def copy_text(self, text: str):
-        QApplication.clipboard().setText(text)
+        clipboard.set_text(text)
         self.notify(tr("copied_link"))
 
     def copy_photo(self):
-        """Bild in die Zwischenablage – als Bild UND als Datei (für Dolphin)."""
-        mime = QMimeData()
-        mime.setImageData(QImage(str(self.photo())))
-        mime.setUrls([QUrl.fromLocalFile(str(self.photo()))])
-        QApplication.clipboard().setMimeData(mime)
+        """Bild in die Zwischenablage – als Bild UND als Datei (für Dolphin).
+        clipboard gibt es zusätzlich an den Desktop (wichtig in WayVR)."""
+        clipboard.set_image(self.photo())
         self.notify(tr("copied_image"))
 
     def fill_share_menu(self):
@@ -728,7 +726,7 @@ class GalleryPage(QWidget):
     def on_upload_done(self, photo: str, links: dict):
         self.uploading.discard(Path(photo))
         if self.photos and str(self.photo()) == photo:
-            QApplication.clipboard().setText(links["view"])
+            clipboard.set_text(links["view"])
             self.notify(tr("upload_done"))
         self.update_upload_state()
 

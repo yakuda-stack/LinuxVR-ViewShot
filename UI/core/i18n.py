@@ -78,10 +78,10 @@ TEXTS = {
                         "en": "2.  Hands apart → short vibration, red frame appears"},
     "howto_3":         {"de": "3.  Auslöser-Trigger drücken (Standard: rechts) → Foto! Der Rahmen blitzt weiß",
                         "en": "3.  Press the shutter trigger (default: right) → photo! The frame flashes white"},
-    "howto_4":         {"de": "4.  Manuell: Typ-Trigger (Standard: links) schaltet das Symbol unten rechts "
-                              "im Rahmen um – 🖼 Bild → 📝 Text → 🔳 QR. Das Foto bekommt diesen Typ.",
+    "howto_4":         {"de": "4.  Manuell: Typ-Trigger (Standard: links) schaltet das Symbol in der Ecke "
+                              "des Rahmens um – 🖼 Bild → 📝 Text → 🔳 QR. Das Foto bekommt diesen Typ.",
                         "en": "4.  Manual: the type trigger (default: left) switches the icon in the frame's "
-                              "bottom-right corner – 🖼 Image → 📝 Text → 🔳 QR. The photo gets that type."},
+                              "corner – 🖼 Image → 📝 Text → 🔳 QR. The photo gets that type."},
     "open_folder":     {"de": "Foto-Ordner",     "en": "Photo folder"},
 
     # Galerie
@@ -146,10 +146,17 @@ TEXTS = {
     "combo_both":      {"de": "Beide Trigger gleichzeitig", "en": "Both triggers together"},
     "buttons_auto_note": {"de": "Typ wechseln gibt es nur im manuellen Modus.",
                           "en": "Switching type is only available in manual mode."},
-    "buttons_manual_note": {"de": "Im Rahmen erscheint unten rechts ein Symbol (🖼 / 📝 / 🔳). "
+    "buttons_manual_note": {"de": "Im Rahmen erscheint ein Symbol (🖼 / 📝 / 🔳) – Ecke siehe unten. "
                                   "Auslöser und Typ-Taste können nicht gleich sein.",
-                            "en": "An icon (🖼 / 📝 / 🔳) appears in the frame's bottom-right corner. "
+                            "en": "An icon (🖼 / 📝 / 🔳) appears in a corner of the frame – see below. "
                                   "Shutter and type button can't be the same."},
+    "icon_position":   {"de": "Symbol-Position",   "en": "Icon position"},
+    "icon_position_hint": {"de": "In welcher Ecke des Rahmens das Typ-Symbol sitzt. Wirkt sofort.",
+                           "en": "Which corner of the frame shows the type icon. Applies instantly."},
+    "bottom_left":     {"de": "↙ Unten links",     "en": "↙ Bottom left"},
+    "bottom_right":    {"de": "↘ Unten rechts",    "en": "↘ Bottom right"},
+    "top_left":        {"de": "↖ Oben links",      "en": "↖ Top left"},
+    "top_right":       {"de": "↗ Oben rechts",     "en": "↗ Top right"},
     "filter_all":      {"de": "Alle",            "en": "All"},
     "select":          {"de": "Auswählen",       "en": "Select"},
     "select_all":      {"de": "Alle",            "en": "All"},
@@ -278,6 +285,107 @@ TEXTS = {
     "tr_m_deepl":      {"de": "DeepL (API-Key nötig)", "en": "DeepL (API key required)"},
     "tr_m_custom":     {"de": "Eigene API (LibreTranslate als Vorlage)",
                         "en": "Custom API (LibreTranslate as template)"},
+    "tr_m_llm_claude": {"de": "KI: Claude Code (Opus / Sonnet / Haiku)",
+                        "en": "AI: Claude Code (Opus / Sonnet / Haiku)"},
+    "tr_m_llm_gemini": {"de": "KI: Gemini CLI", "en": "AI: Gemini CLI"},
+    "tr_m_llm_chatgpt": {"de": "KI: ChatGPT (Codex CLI)", "en": "AI: ChatGPT (Codex CLI)"},
+    "tr_m_llm_custom": {"de": "KI: eigener Befehl (z. B. Ollama)",
+                        "en": "AI: custom command (e.g. Ollama)"},
+    "tr_task":         {"de": "Aufgabe",         "en": "Task"},
+    "tr_mode_translate": {"de": "🌐 Übersetzen", "en": "🌐 Translate"},
+    "tr_mode_explain": {"de": "💡 Kontext erklären", "en": "💡 Explain context"},
+    "tr_mode_answer":  {"de": "❓ Frage beantworten (sonst übersetzen)",
+                        "en": "❓ Answer question (else translate)"},
+    "tr_model":        {"de": "Modell",          "en": "Model"},
+    "tr_model_other":  {"de": "Anderes Modell …", "en": "Other model …"},
+    "tr_llm_info":     {"de": "Nutzt das installierte Programm mit deinem Login – kein API-Key in "
+                              "dieser App. Einmal auf „Anmelden“ klicken. Dauert ein paar "
+                              "Sekunden. Klappt es nicht, übernimmt automatisch Lingva.",
+                        "en": "Uses the installed program with your login – no API key in this app. "
+                              "Click “Sign in” once. Takes a few seconds. "
+                              "If it fails, Lingva takes over automatically."},
+    "tr_llm_found":    {"de": "✔ {cmd} ist installiert", "en": "✔ {cmd} is installed"},
+    "tr_llm_missing":  {"de": "✘ {cmd} nicht gefunden – installieren:  {hint}",
+                        "en": "✘ {cmd} not found – install:  {hint}"},
+    "tr_llm_install":  {"de": "Installieren",    "en": "Install"},
+    "tr_llm_installing": {"de": "Installiere:  {cmd}  (kann 1–2 Minuten dauern) …",
+                          "en": "Installing:  {cmd}  (may take 1–2 minutes) …"},
+    "tr_llm_reinstall": {"de": "Neu installieren", "en": "Reinstall"},
+    "tr_llm_broken":   {"de": "✘ {cmd} ist installiert, startet aber nicht (npm-Version unvollständig) "
+                              "– auf „Neu installieren“ klicken",
+                        "en": "✘ {cmd} is installed but doesn't start (incomplete npm version) "
+                              "– click “Reinstall”"},
+    "tr_llm_install_failed": {"de": "✘ Installieren fehlgeschlagen", "en": "✘ Install failed"},
+    "tr_llm_login_btn": {"de": "Anmelden",       "en": "Sign in"},
+    "tr_llm_logged_in": {"de": "✔ angemeldet – fertig eingerichtet", "en": "✔ signed in – ready"},
+    "tr_llm_not_logged_in": {"de": "✘ noch nicht angemeldet – auf „Anmelden“ klicken",
+                             "en": "✘ not signed in yet – click “Sign in”"},
+    "tr_llm_login_unknown": {"de": "Anmeldung nicht erkennbar – falls es nicht geht: „Anmelden“ ({cmd})",
+                             "en": "Can't tell if signed in – if it fails: “Sign in” ({cmd})"},
+    "tr_llm_login_running": {"de": "Terminal ist offen: dort anmelden (öffnet den Browser). "
+                                    "Danach das Terminal schließen – hier wird es automatisch erkannt.",
+                             "en": "Terminal is open: sign in there (opens the browser). "
+                                   "Then close the terminal – it is detected here automatically."},
+    "tr_no_terminal":  {"de": "✘ Kein Terminal gefunden – selbst öffnen und  {cmd}  eingeben",
+                        "en": "✘ No terminal found – open one and type  {cmd}"},
+    "tr_press_enter":  {"de": "Fertig – Enter zum Schließen", "en": "Done – press Enter to close"},
+    "tr_npm_missing":  {"de": "npm fehlt – der Knopf installiert es mit ({cmd})",
+                        "en": "npm is missing – the button installs it too ({cmd})"},
+    "tr_step_ocr":     {"de": "Liest Text im Foto …", "en": "Reading text in the photo …"},
+    "tr_step_ocr_wait": {"de": "Liest Text im Foto … (Bild-Erkennung ist gerade noch bei einem "
+                               "anderen Foto)",
+                         "en": "Reading text in the photo … (image detection is still busy with "
+                               "another photo)"},
+    "tr_step_retry":   {"de": "{name} hängt – sende neu (Versuch {n}) …",
+                        "en": "{name} is stuck – sending again (attempt {n}) …"},
+    "tr_retry":        {"de": "Neu senden, wenn länger als", "en": "Send again if it takes longer than"},
+    "tr_retry_hint":   {"de": "Hängt die KI, wird bis zu {n}× neu gefragt, danach übernimmt Lingva/Google. "
+                              "Aus = warten (max. {max} s).",
+                        "en": "If the AI is stuck it is asked again up to {n}×, then Lingva/Google "
+                              "takes over. Off = wait (max. {max} s)."},
+    "tr_copy_tip":     {"de": "Übersetzung kopieren", "en": "Copy translation"},
+    "tr_copied":       {"de": "✔ Übersetzung kopiert", "en": "✔ Translation copied"},
+    "history":         {"de": "Verlauf",          "en": "History"},
+    "history_hint":    {"de": "Antippen zeigt erkannten Text + Übersetzung (ohne Bild).",
+                        "en": "Tap to show recognised text + translation (without image)."},
+    "history_clear":   {"de": "Verlauf leeren",   "en": "Clear history"},
+    "history_popout":  {"de": "Verlauf in eigenem Fenster öffnen",
+                        "en": "Open history in its own window"},
+    "history_popped_out": {"de": "Der Verlauf ist in einem eigenen Fenster.",
+                           "en": "The history is in its own window."},
+    "history_showing": {"de": "🕘 Aus dem Verlauf: {time}  {service}",
+                        "en": "🕘 From history: {time}  {service}"},
+    "history_option":  {"de": "🕘 Verlauf auf der Main-Seite (Übersetzungen merken)",
+                        "en": "🕘 History on the Main page (remember translations)"},
+    "ocr_edit_hint":   {"de": "Text hier eintippen oder korrigieren …",
+                        "en": "Type or correct the text here …"},
+    "ocr_retranslate": {"de": "Korrigierten Text übersetzen", "en": "Translate corrected text"},
+    "tr_refresh":      {"de": "Nochmal senden (neue Antwort holen)",
+                        "en": "Send again (get a new answer)"},
+    "tr_step_service": {"de": "Übersetzt mit {name} …", "en": "Translating with {name} …"},
+    "ui_log":          {"de": "App-Log",         "en": "App log"},
+    "tr_fallback_once": {"de": "⚠ {failed} ging nicht – diesmal mit {used} übersetzt. {error}",
+                         "en": "⚠ {failed} failed – translated with {used} this time. {error}"},
+    "tr_no_answer":    {"de": "keine Antwort", "en": "no answer"},
+    "tr_fallback_used": {"de": "⚠ {failed} ging nicht – übersetzt mit {used}. {error}",
+                         "en": "⚠ {failed} failed – translated with {used}. {error}"},
+    "tr_llm_custom_info": {"de": "Beliebiges Programm. {prompt} = fertige Übersetzungs-Anweisung "
+                                 "mit Text. Außerdem: {text} {source} {target}. Ohne {prompt}/{text} "
+                                 "kommt der Prompt über stdin. Die Ausgabe ist die Übersetzung.",
+                           "en": "Any program. {prompt} = finished translation instruction incl. "
+                                 "text. Also: {text} {source} {target}. Without {prompt}/{text} the "
+                                 "prompt goes to stdin. The output is the translation."},
+    "tr_favorites":    {"de": "Favoriten",        "en": "Favourites"},
+    "tr_favorites_hint": {"de": "Nur angehakte Dienste stehen auf der Main-Seite im Dropdown. "
+                                "Nichts angehakt = alle eingerichteten Dienste (wie bisher). "
+                                "Nicht eingerichtete Favoriten erscheinen erst, wenn sie eingerichtet sind.",
+                          "en": "Only ticked services appear in the Main page dropdown. "
+                                "Nothing ticked = all services that are set up (as before). "
+                                "Favourites that aren't set up only appear once they are."},
+    "tr_only_configured": {"de": "Auf der Main-Seite stehen nur Dienste, die eingerichtet sind "
+                                 "(Key eingetragen / Programm installiert).",
+                           "en": "The Main page only lists services that are set up "
+                                 "(key entered / program installed)."},
     "tr_source":       {"de": "Übersetzen von",  "en": "Translate from"},
     "tr_target":       {"de": "Übersetzen nach", "en": "Translate to"},
     "tr_from":         {"de": "Von",             "en": "From"},
@@ -348,6 +456,33 @@ TEXTS = {
     "no_text":         {"de": "Kein Text im Foto gefunden.", "en": "No text found in the photo."},
     "recognized":      {"de": "Erkannter Text",  "en": "Recognised text"},
     "tr_failed":       {"de": "✘ Übersetzen fehlgeschlagen", "en": "✘ Translation failed"},
+    "tr_popout":       {"de": "Übersetzung in eigenem Fenster öffnen",
+                        "en": "Open translation in its own window"},
+    "tr_dock":         {"de": "Zurück ins Hauptfenster", "en": "Back into the main window"},
+    "tr_popped_out":   {"de": "Die Übersetzung ist in einem eigenen Fenster.",
+                        "en": "The translation is in its own window."},
+    "qr_in_text":      {"de": "QR-Code",         "en": "QR code"},
+    "qr_copied":       {"de": "✔ QR-Inhalt kopiert", "en": "✔ QR content copied"},
+
+    # Optionen – Zwischenablage
+    "clip_title":      {"de": "Zwischenablage", "en": "Clipboard"},
+    "clip_mirror":     {"de": "Kopiertes auch auf dem Desktop einfügbar machen (WayVR)",
+                        "en": "Make copied things pasteable on the desktop too (WayVR)"},
+    "clip_hint":       {"de": "In WayVR hat die App eine eigene Zwischenablage – Strg+V auf dem "
+                              "Desktop findet dann nichts. Mit dieser Option wird zusätzlich per "
+                              "wl-copy an den Desktop gegeben.",
+                        "en": "Inside WayVR the app has its own clipboard – Ctrl+V on the desktop "
+                              "finds nothing. With this option everything is also handed to the "
+                              "desktop via wl-copy."},
+    "clip_ok":         {"de": "✔ wl-copy ist installiert", "en": "✔ wl-copy is installed"},
+    "clip_missing":    {"de": "✘ wl-copy fehlt – installieren:  {cmd}",
+                        "en": "✘ wl-copy missing – install:  {cmd}"},
+    "clip_install":    {"de": "wl-clipboard installieren", "en": "Install wl-clipboard"},
+    "clip_installing": {"de": "Installiere …",   "en": "Installing …"},
+    "clip_password":   {"de": "Passwort-Fenster erscheint auf dem Desktop …",
+                        "en": "Password window appears on the desktop …"},
+    "clip_install_failed": {"de": "✘ Installieren abgebrochen oder fehlgeschlagen",
+                            "en": "✘ Install cancelled or failed"},
 
     # Optionen
     "language":        {"de": "Sprache",         "en": "Language"},

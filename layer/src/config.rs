@@ -11,7 +11,8 @@
 //!   "detect_mode": "auto",        "auto" = UI erkennt Text/QR/Bild,
 //!                                 "manual" = Typ in VR wählen (Symbol am Rahmen)
 //!   "shutter": "right",           Auslöser: "left" / "right" / "both"
-//!   "mode_button": "left"         Typ wechseln (nur manual): "left" / "right" / "both"
+//!   "mode_button": "left",        Typ wechseln (nur manual): "left" / "right" / "both"
+//!   "icon_position": "bottom_left" Symbol-Position (manual): "bottom_left" / "bottom_right" / "top_left" / "top_right"
 //! }
 
 use serde::Deserialize;
@@ -35,6 +36,24 @@ pub enum DetectMode {
     Manual,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IconPosition {
+    BottomLeft,
+    BottomRight,
+    TopLeft,
+    TopRight,
+}
+
+impl IconPosition {
+    pub fn is_left(self) -> bool {
+        matches!(self, Self::BottomLeft | Self::TopLeft)
+    }
+    pub fn is_top(self) -> bool {
+        matches!(self, Self::TopLeft | Self::TopRight)
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default)]
 pub struct LayerConfig {
@@ -44,6 +63,7 @@ pub struct LayerConfig {
     pub detect_mode: DetectMode,
     pub shutter: Combo,
     pub mode_button: Combo,
+    pub icon_position: IconPosition,
 }
 
 impl Default for LayerConfig {
@@ -55,6 +75,7 @@ impl Default for LayerConfig {
             detect_mode: DetectMode::Auto,
             shutter: Combo::Right,
             mode_button: Combo::Left,
+            icon_position: IconPosition::BottomLeft,
         }
     }
 }
@@ -161,6 +182,14 @@ mod tests {
         assert_eq!(c.frame_inset_cm, 7.0);
         assert_eq!(c.excluded_apps, vec!["wayvr".to_string()]);
         assert_eq!(c.detect_mode, DetectMode::Auto);
+        assert_eq!(c.icon_position, IconPosition::BottomLeft);
+    }
+
+    #[test]
+    fn icon_position_from_json() {
+        let c: LayerConfig = serde_json::from_str(r#"{"icon_position": "top_right"}"#).unwrap();
+        assert_eq!(c.icon_position, IconPosition::TopRight);
+        assert!(c.icon_position.is_top() && !c.icon_position.is_left());
     }
 
     #[test]

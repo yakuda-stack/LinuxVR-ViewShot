@@ -1,5 +1,37 @@
 # Changelog
 
+## [v0.4.3] – 2026-09-28
+- **⭐ Favourite services** (Options → Translation): tick services – then only those appear in the Main dropdown; nothing ticked = as before
+- Main: **🕘 History pop-out** – ⧉ opens the history in its own window (in VR its own panel); closing it docks it back
+- **Fix – AI task *Answer question* (ChatGPT only):** with a blank (○○) plus answer buttons ChatGPT now names the WHOLE button to click (e.g. 下暗し), not just the missing character; its old saved answers are asked again
+- **Fix – Options → Shot:** moving *Frame size* changed the *Eye* label instead of its own, and its *Default* button reset the eye slider
+- **Manual mode: icon corner selectable** (Options → Shot): bottom left (new default) / bottom right / top left / top right – applies instantly in VR
+- **Fix – history missed photos:** results that were already saved (e.g. text read earlier) now go into the history too; duplicates (same photo + same translation) are skipped
+- Main: **🕘 History** card above *How it works* (off by default – Options → Translation): scrollable list of past translations; tap one to show recognised text + translation (no image, the photo may be gone)
+- Main: **recognised text is editable** – fix OCR mistakes or type text yourself, then *Translate corrected text* (the correction is remembered for that photo)
+- Main: *Recognised text* can be folded (▸ / ▾), folded by default – more room for the translation in VR; the choice is remembered
+- Main: **📋 Copy** button right above the translation
+- AI: **Send again if it takes longer than … s** (Options → Translation, per AI; off by default, 60 s): a stuck request is cancelled (whole process group) and sent again up to 2×, then Lingva/Google; off = wait up to 300 s
+- Main: **↻** button next to the pop-out button – sends again and gets a fresh answer
+- AI prompts: short answers, no tools / web search / file reading (Gemini sometimes took minutes); AI timeout 120 s → 60 s, a timeout says when the rate limit (429) was hit
+- Main shows what the translation is doing right now (reading text / waiting for image detection / translating with X); new **app log** `~/.local/state/linuxvr-viewshot/ui.log` with timings (Options → General → Folders)
+- AI task *Answer question*: made for quiz / puzzle / escape rooms – names the button to click EXACTLY as written in the photo, or what to type into a gap (○○), first line starts with ➜; old saved answers are asked again
+- **Fix – Gemini "not running in a trusted directory" (error 55):** the app now runs Gemini in trusted mode; a Gemini API-key login (settings.json / ~/.gemini/.env) counts as signed in; colour codes removed from error messages; the Sign-in terminal starts in the home folder
+- **Fix – "No text found" for minutes after start:** at start the background detection reads ALL photos; the translation had to wait until it was done and showed "No text found" meanwhile. The translation now goes first, and "No text found" only appears after text recognition really ran
+- **Translation pop-out:** ⧉ opens the translation in its own window (in VR its own panel); closing it docks it back
+- **QR codes inside the translation:** links are clickable right in the translation field, 📋 copies – no extra box anymore
+- **AI task** (Main, only with an AI service): 🌐 translate · 💡 explain context · ❓ answer a question in the photo (quiz, riddle …, otherwise translate)
+- **AI translation:** Claude Code (Opus / Sonnet / Haiku), Gemini CLI, ChatGPT (Codex CLI) with model choice, plus a custom command (e.g. Ollama). Falls back to Lingva/Google if it fails
+- Main: the service dropdown only lists services that are set up (key entered / program installed); model dropdown right next to it
+- Models: Gemini `flash` / `pro` / `flash-lite` (CLI aliases, always the current model), ChatGPT `gpt-5.6-luna` (fast, default) / `terra` / `sol` / `gpt-5.5`; Codex gets the prompt via stdin and low reasoning effort, Gemini answers as JSON (no status lines in the translation)
+- Model dropdown is a normal dropdown again (click opens the list); new model names via *✏ Other model …*
+- AI tools get a **Sign in** button (opens a terminal with `claude` / `gemini` / `codex login`) and show whether you are signed in; not signed in → skipped right away, Lingva takes over
+- Claude Code is installed with the official installer (`curl -fsSL https://claude.ai/install.sh | bash`) instead of npm – the npm version could end up without its program ("claude native binary not installed"); a broken install is detected and offered as **Reinstall**. npm installs for Gemini/Codex now force optional deps + install scripts
+- AI tools get an **Install** button (`npm install -g --prefix ~/.local …`, installs npm via pkexec if missing)
+- Options → Translation: *Test* checks ONLY the chosen service (no Lingva/Google stand-in), and the service is never switched automatically while Options is open
+- If the chosen service fails, Main switches the service to the one that actually translated (e.g. Claude Code → Lingva) and says why
+- **Fix – copy in WayVR didn't reach the desktop:** copied text/images are also handed to the desktop clipboard via `wl-copy` (Options → General → Clipboard) – with a button that installs `wl-clipboard` (pacman / dnf / apt / zypper, password via pkexec)
+
 ## [v0.4.3] – 2026-09-27
 - **Fix – new VR photo not shown ("Take a photo in VR first"):** the app noticed the photo while it was still being written. It now waits until the file is complete; text/QR detection no longer runs on half-written files
 - VR layer saves photos atomically (hidden `.part` file → rename) – needs *Rebuild & install* once

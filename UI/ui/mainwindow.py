@@ -16,7 +16,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QMainWindow, QPushButton,
                              QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
-from core import config, i18n, paths, tags
+from core import clipboard, config, i18n, paths, tags
 from core.i18n import tr
 from ui.pages.gallery_page import GalleryPage
 from ui.pages.main_page import MainPage
@@ -30,6 +30,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.cfg = config.load()
         i18n.set_language(self.cfg["language"])
+        clipboard.enabled = bool(self.cfg["clipboard_mirror"])
 
         self.setWindowTitle("LinuxVR-ViewShot")
         self.resize(1200, 780)

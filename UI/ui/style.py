@@ -94,7 +94,17 @@ QPlainTextEdit {
     background: #14161c; border: 1px solid #2c313c; border-radius: 8px;
     padding: 6px; color: #aeb4bf;
 }
+QTextBrowser {
+    background: #14161c; border: 1px solid #2c313c; border-radius: 8px;
+    padding: 6px; color: #aeb4bf;
+}
 #translation { color: #ffffff; font-size: 17px; }
+#trwindow { background: #191c24; }
+#foldbtn {
+    background: transparent; border: none; color: #7a8290; font-size: 13px;
+    padding: 2px 4px; text-align: left;
+}
+#foldbtn:hover { color: #d7dbe2; }
 QCheckBox { spacing: 10px; font-size: 15px; }
 QCheckBox::indicator {
     width: 22px; height: 22px; border: 1px solid #444c5c; border-radius: 5px; background: #14161c;

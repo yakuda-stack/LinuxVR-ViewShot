@@ -27,6 +27,8 @@ CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config") / "linu
 
 # Log des Layers
 LOG_FILE = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local/state") / "linuxvr-viewshot" / "layer.log"
+# Log der Desktop-App (Zeiten von Texterkennung / Übersetzung) – bei jedem Start neu
+UI_LOG = LOG_FILE.parent / "ui.log"
 
 # Manifest, das install-layer.sh anlegt – existiert es, ist der Layer installiert
 MANIFEST = (Path(os.environ.get("XDG_DATA_HOME") or HOME / ".local/share")

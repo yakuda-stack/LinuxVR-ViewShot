@@ -11,11 +11,18 @@ Aufrufe sind langsam (≈ 1–2 s) → nur im Hintergrund-Thread benutzen!
 import importlib.util
 import logging
 import threading
+import time
+from pathlib import Path
 
 INSTALL_HINT = "pip install rapidocr onnxruntime"
 
 _engine = None
 _lock = threading.Lock()  # RapidOCR ist nicht für parallele Aufrufe gedacht
+# Vorrang: Die Übersetzung auf der Main-Seite (priority=True) darf nicht warten,
+# bis die Bild-Erkennung im Hintergrund ALLE Fotos durch hat. Solange eine
+# Vorrang-Anfrage wartet, lässt der Hintergrund dem Vortritt.
+_turn = threading.Condition()
+_priority_waiting = 0
 
 
 class OcrUnavailable(Exception):
@@ -50,10 +57,40 @@ def _model_params() -> dict:
     return {"Global.model_root_dir": str(models)}
 
 
-def read_text(path) -> str:
-    """Erkannter Text, eine Zeile pro Textblock ("" = kein Text gefunden)."""
+def busy() -> bool:
+    """Liest gerade jemand (z. B. die Bild-Erkennung im Hintergrund)?"""
+    return _lock.locked()
+
+
+def read_text(path, priority: bool = False) -> str:
+    """Erkannter Text, eine Zeile pro Textblock ("" = kein Text gefunden).
+    priority=True: für die Übersetzung – kommt vor der Hintergrund-Erkennung dran."""
+    global _priority_waiting
+    start = time.monotonic()
+    with _turn:
+        if priority:
+            _priority_waiting += 1
+        else:
+            # Hintergrund: warten, bis keine Vorrang-Anfrage mehr ansteht
+            _turn.wait_for(lambda: _priority_waiting == 0)
+    try:
+        text = _read(path, start)
+        logging.info("OCR %s %s: %.1f s gesamt, %d Zeichen", "Main" if priority else "Hintergrund",
+                     Path(str(path)).name, time.monotonic() - start, len(text))
+        return text
+    finally:
+        if priority:
+            with _turn:
+                _priority_waiting -= 1
+                _turn.notify_all()
+
+
+def _read(path, start: float) -> str:
     global _engine
     with _lock:
+        waited = time.monotonic() - start
+        if waited > 1:
+            logging.info("OCR: %.1f s auf die Texterkennung gewartet", waited)
         if _engine is None:
             try:
                 from rapidocr import RapidOCR
@@ -61,7 +98,9 @@ def read_text(path) -> str:
                 raise OcrUnavailable(INSTALL_HINT) from e
             # RapidOCR schreibt sonst viele INFO-Zeilen ins Terminal
             logging.getLogger("RapidOCR").setLevel(logging.WARNING)
+            t = time.monotonic()
             _engine = RapidOCR(params=_model_params())
+            logging.info("OCR: Modell geladen in %.1f s", time.monotonic() - t)
         result = _engine(str(path))
     lines = [t.strip() for t in (getattr(result, "txts", None) or ()) if t and t.strip()]
     return "\n".join(lines)

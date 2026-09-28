@@ -2,8 +2,9 @@
 ui/pages/options_page.py – Optionen mit Tabs (wie bei OSC-DreamChatbox):
 
     ⚙ General      Community-Links (Discord, Ko-fi …), Sprache, Ordner, Über
-    📸 Shot        Rahmengröße, linkes/rechtes Auge, Ausnahme-Programme
-    🌐 Übersetzung Dienst (Lingva, Google, LibreTranslate, DeepL, eigene API), Zielsprache
+    📸 Shot        Rahmengröße, linkes/rechtes Auge, Symbol-Ecke, Ausnahme-Programme
+    🌐 Übersetzung Dienst (Lingva, Google, LibreTranslate, DeepL, eigene API,
+                   KI: Claude Code / Gemini / ChatGPT / eigener Befehl), Zielsprache
 
 Die Shot-Einstellungen werden in layer.json gespeichert – der Layer übernimmt
 Änderungen sofort, auch während das Spiel läuft.
@@ -11,15 +12,17 @@ Die Shot-Einstellungen werden in layer.json gespeichert – der Layer übernimmt
 Neuer Tab? In build_tabs() eine Zeile ("Name", self.build_xyz()) ergänzen.
 """
 
+import shutil
 import threading
 
 from PyQt6.QtCore import QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QGridLayout, QHBoxLayout, QLabel,
-                             QLineEdit, QListWidget, QPlainTextEdit, QPushButton, QSlider,
+                             QLineEdit, QListWidget, QPlainTextEdit, QPushButton, QRadioButton, QSlider,
                              QVBoxLayout, QWidget)
 
-from core import config, i18n, layer_config, ocr, paths, translation
+from core import clipboard, config, i18n, layer_config, ocr, paths, translation
+from core import llm_translator as L
 from core import translators as T
 from core.custom_translator import LIBRE_EXAMPLE
 from core.i18n import tr
@@ -54,6 +57,48 @@ def language_combo(with_auto: bool) -> QComboBox:
     entries = ([translation.AUTO] if with_auto else []) + translation.LANGUAGES
     for code, de, en in entries:
         combo.addItem(de if i18n._lang == "de" else en, code)
+    return combo
+
+
+CUSTOM_MODEL = "__custom__"  # Eintrag "✏ Anderes Modell …" (öffnet ein Eingabefeld)
+
+
+def fill_model_combo(combo: QComboBox, method: str, current: str):
+    """Modelle der KI-Vorlage ins Dropdown. Leer = Standard-Modell der Vorlage.
+    Ein selbst eingetipptes Modell steht zusätzlich mit in der Liste."""
+    current = (current or L.DEFAULTS.get(L.MODEL_KEYS.get(method, ""), "")).strip()
+    models = list(L.MODELS.get(method, []))
+    if current and current not in models:
+        models.append(current)
+    combo.blockSignals(True)
+    combo.clear()
+    combo.setProperty("llm_method", method)
+    for model in models:
+        combo.addItem(model, model)
+    combo.addItem("✏  " + tr("tr_model_other"), CUSTOM_MODEL)
+    combo.setCurrentIndex(max(0, combo.findData(current)))
+    combo.setProperty("llm_model", combo.currentData())
+    combo.blockSignals(False)
+
+
+def model_combo(method: str, current: str, on_change) -> QComboBox:
+    """Modell-Dropdown (Klick öffnet die Liste); on_change(neues_modell) nach Auswahl.
+    "✏ Anderes Modell …" fragt nach einem Namen – für neue Modelle."""
+    combo = QComboBox()
+    fill_model_combo(combo, method, current)
+
+    def chosen(_index):
+        model = combo.currentData()
+        if model == CUSTOM_MODEL:
+            from PyQt6.QtWidgets import QInputDialog
+            text, ok = QInputDialog.getText(combo, tr("tr_model"), tr("tr_model_other"))
+            text = text.strip()
+            model = text if ok and text else combo.property("llm_model")
+            fill_model_combo(combo, combo.property("llm_method"), model)
+        combo.setProperty("llm_model", model)
+        on_change(model)
+
+    combo.activated.connect(chosen)
     return combo
 
 
@@ -151,6 +196,7 @@ class OptionsPage(QWidget):
         self.add_folders_card(lay)
         self.add_cleanup_card(lay)
         self.add_wayvr_card(lay)
+        self.add_clipboard_card(lay)
 
         card, box = make_card(tr("about"))
         box.addWidget(QLabel(f"LinuxVR-ViewShot  v{VERSION}"))
@@ -169,26 +215,26 @@ class OptionsPage(QWidget):
 
         row = QHBoxLayout()
         row.addWidget(QLabel(tr("frame_bigger")))
-        slider = QSlider(Qt.Orientation.Horizontal)
-        slider.setRange(0, 15)  # cm
-        slider.setValue(int(self.layer["frame_inset_cm"]))
-        row.addWidget(slider, 1)
+        frame_slider = QSlider(Qt.Orientation.Horizontal)
+        frame_slider.setRange(0, 15)  # cm
+        frame_slider.setValue(int(self.layer["frame_inset_cm"]))
+        row.addWidget(frame_slider, 1)
         row.addWidget(QLabel(tr("frame_smaller")))
         box.addLayout(row)
 
-        value = QLabel()
-        value.setObjectName("cardtitle")
-        value.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        box.addWidget(value)
+        frame_value = QLabel()
+        frame_value.setObjectName("cardtitle")
+        frame_value.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        box.addWidget(frame_value)
 
-        def changed(cm: int):
-            value.setText(tr("frame_value", cm=cm))
+        def frame_changed(cm: int):
+            frame_value.setText(tr("frame_value", cm=cm))
             self.layer["frame_inset_cm"] = cm
             self.save_layer()
 
-        slider.valueChanged.connect(changed)
-        value.setText(tr("frame_value", cm=slider.value()))
-        box.addWidget(button("↺  " + tr("reset"), lambda: slider.setValue(layer_config.DEFAULTS["frame_inset_cm"])),
+        frame_slider.valueChanged.connect(frame_changed)
+        frame_value.setText(tr("frame_value", cm=frame_slider.value()))
+        box.addWidget(button("↺  " + tr("reset"), lambda: frame_slider.setValue(layer_config.DEFAULTS["frame_inset_cm"])),
                       alignment=Qt.AlignmentFlag.AlignLeft)
         lay.addWidget(card)
 
@@ -197,34 +243,37 @@ class OptionsPage(QWidget):
         box.addWidget(dim(tr("eye_hint")))
         row = QHBoxLayout()
         row.addWidget(QLabel("👁 " + tr("left")))
-        slider = QSlider(Qt.Orientation.Horizontal)
-        slider.setRange(0, 100)
-        slider.setSingleStep(5)
-        slider.setPageStep(25)
-        slider.setValue(int(self.layer["eye_mix"]))
-        row.addWidget(slider, 1)
+        eye_slider = QSlider(Qt.Orientation.Horizontal)
+        eye_slider.setRange(0, 100)
+        eye_slider.setSingleStep(5)
+        eye_slider.setPageStep(25)
+        eye_slider.setValue(int(self.layer["eye_mix"]))
+        row.addWidget(eye_slider, 1)
         row.addWidget(QLabel(tr("right") + " 👁"))
         box.addLayout(row)
 
-        value = QLabel()
-        value.setObjectName("cardtitle")
-        value.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        box.addWidget(value)
+        eye_value = QLabel()
+        eye_value.setObjectName("cardtitle")
+        eye_value.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        box.addWidget(eye_value)
 
-        def changed(right: int):
+        def eye_changed(right: int):
             source = tr("right") if right > 50 else tr("left")
-            value.setText(tr("eye_value", left=100 - right, right=right, source=source))
+            eye_value.setText(tr("eye_value", left=100 - right, right=right, source=source))
             self.layer["eye_mix"] = right
             self.save_layer()
 
-        slider.valueChanged.connect(changed)
-        changed(slider.value())
-        box.addWidget(button("↺  " + tr("reset"), lambda: slider.setValue(layer_config.DEFAULTS["eye_mix"])),
+        eye_slider.valueChanged.connect(eye_changed)
+        eye_changed(eye_slider.value())
+        box.addWidget(button("↺  " + tr("reset"), lambda: eye_slider.setValue(layer_config.DEFAULTS["eye_mix"])),
                       alignment=Qt.AlignmentFlag.AlignLeft)
         lay.addWidget(card)
 
         # --- Erkennung & Tasten ---
         self.add_buttons_card(lay)
+
+        # --- Icon-Position (nur im manuellen Modus) ---
+        self.add_icon_position_card(lay)
 
         # --- Ausnahmen ---
         card, box = make_card(tr("excluded"))
@@ -292,6 +341,36 @@ class OptionsPage(QWidget):
         manual = fresh["detect_mode"] == "manual"
         self.layer_combos["mode_button"].setEnabled(manual)
         self.buttons_note.setText(tr("buttons_manual_note") if manual else tr("buttons_auto_note"))
+        # Icon-Position Card sichtbar nur im manuellen Modus
+        if hasattr(self, "icon_position_card"):
+            self.icon_position_card.setVisible(manual)
+
+    def add_icon_position_card(self, lay: QVBoxLayout):
+        """Ecke für das Typ-Symbol (nur im manuellen Modus sichtbar)."""
+        self.icon_position_card, box = make_card(tr("icon_position"))
+        box.addWidget(dim(tr("icon_position_hint")))
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(16)
+        # Anordnung wie im Rahmen: oben links | oben rechts / unten links | unten rechts
+        cells = {"top_left": (0, 0), "top_right": (0, 1), "bottom_left": (1, 0), "bottom_right": (1, 1)}
+        self.icon_group = QButtonGroup(self)  # mit Parent, sonst räumt Python die Gruppe weg
+        current = self.layer.get("icon_position", layer_config.DEFAULTS["icon_position"])
+        for value in layer_config.ICON_POSITIONS:
+            radio = QRadioButton(tr(value))
+            radio.setChecked(value == current)
+            radio.toggled.connect(lambda on, v=value: on and self.icon_position_changed(v))
+            self.icon_group.addButton(radio)
+            grid.addWidget(radio, *cells[value])
+        box.addLayout(grid)
+        box.addWidget(button("↺  " + tr("reset"), self.icon_group.buttons()[
+            layer_config.ICON_POSITIONS.index(layer_config.DEFAULTS["icon_position"])].click),
+            alignment=Qt.AlignmentFlag.AlignLeft)
+        lay.addWidget(self.icon_position_card)
+        self.icon_position_card.setVisible(self.layer["detect_mode"] == "manual")
+
+    def icon_position_changed(self, position: str):
+        """Neue Ecke → layer.json (der Layer übernimmt sie sofort)."""
+        self.layer["icon_position"] = layer_config.update("icon_position", position)["icon_position"]
 
     def add_excluded(self):
         name = self.new_app.text().strip()
@@ -333,6 +412,69 @@ class OptionsPage(QWidget):
             check.toggled.connect(lambda on, k=key: self.save_cfg(k, on))
             box.addWidget(check)
         lay.addWidget(card)
+
+    def add_clipboard_card(self, lay: QVBoxLayout):
+        """Kopiertes zusätzlich per wl-copy an den Desktop (sonst bleibt es in WayVR)."""
+        card, box = make_card(tr("clip_title"))
+        box.addWidget(dim(tr("clip_hint")))
+        check = QCheckBox(tr("clip_mirror"))
+        check.setChecked(bool(self.cfg["clipboard_mirror"]))
+
+        def toggled(on: bool):
+            clipboard.enabled = on
+            self.save_cfg("clipboard_mirror", on)
+
+        check.toggled.connect(toggled)
+        box.addWidget(check)
+        row = QHBoxLayout()
+        self.clip_status = QLabel()
+        self.clip_status.setWordWrap(True)
+        self.clip_status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        row.addWidget(self.clip_status, 1)
+        # 📦 Knopf: wl-clipboard mit dem Paketmanager der Distro installieren
+        self.clip_btn = button("📦  " + tr("clip_install"), self.install_wl_clipboard, "sendbtn")
+        self.clip_btn.setMinimumHeight(40)
+        row.addWidget(self.clip_btn)
+        box.addLayout(row)
+        self.clip_process = None
+        self.update_clip_status()
+        lay.addWidget(card)
+
+    def update_clip_status(self, failed: bool = False):
+        from core import pkginstall
+        found = shutil.which("wl-copy") is not None
+        if found:
+            text = tr("clip_ok")
+        else:
+            text = tr("clip_missing", cmd=pkginstall.manual_command("wl-clipboard"))
+            if failed:
+                text = tr("clip_install_failed") + "\n" + text
+        self.clip_status.setText(text)
+        self.clip_status.setObjectName("ok" if found else "bad")
+        self.clip_status.style().polish(self.clip_status)
+        can = not found and pkginstall.install_command("wl-clipboard") is not None
+        self.clip_btn.setVisible(can)
+        self.clip_btn.setEnabled(True)
+        self.clip_btn.setText("📦  " + tr("clip_install"))
+
+    def install_wl_clipboard(self):
+        """pkexec fragt das Passwort in einem Fenster ab – kein Terminal nötig."""
+        from PyQt6.QtCore import QProcess
+        from core import pkginstall
+        cmd = pkginstall.install_command("wl-clipboard")
+        if cmd is None or self.clip_process is not None:
+            return
+        self.clip_btn.setEnabled(False)
+        self.clip_btn.setText("⏳  " + tr("clip_installing"))
+        self.clip_status.setText(tr("clip_password"))
+        self.clip_process = QProcess(self)
+
+        def finished(code, _status):
+            self.clip_process = None
+            self.update_clip_status(failed=code != 0)
+
+        self.clip_process.finished.connect(finished)
+        self.clip_process.start(cmd[0], cmd[1:])
 
     def add_wayvr_card(self, lay: QVBoxLayout):
         """WayVR-Design von Cubee + ViewShot-Knopf auf der Uhr."""
@@ -399,6 +541,7 @@ class OptionsPage(QWidget):
         rows = [
             (tr("photo_folder"), paths.photo_dir()),
             (tr("log_file"), paths.LOG_FILE),
+            (tr("ui_log"), paths.UI_LOG),
             (tr("settings_folder"), paths.CONFIG_DIR),
         ]
         for r, (name, path) in enumerate(rows):
@@ -435,9 +578,14 @@ class OptionsPage(QWidget):
     def build_translation(self) -> QWidget:
         w, lay = self.tab_widget()
 
+        # Reihenfolge: 1. ⭐ Favoriten  2. Dienst + Sprache  3. Einstellungen des Dienstes
+        # --- ⭐ Favoriten: nur diese stehen im Main-Dropdown -----------
+        self.add_favorites_card(lay)
+
         # --- Dienst + Zielsprache -------------------------------------
         card, box = make_card(tr("tr_service"))
         box.addWidget(dim(tr("tr_service_hint")))
+        box.addWidget(dim(tr("tr_only_configured")))
 
         grid = QGridLayout()
         grid.setHorizontalSpacing(12)
@@ -467,6 +615,11 @@ class OptionsPage(QWidget):
         auto.setChecked(bool(self.cfg["tr_auto"]))
         auto.toggled.connect(lambda on: self.set_cfg("tr_auto", on))
         box.addWidget(auto)
+        # 🕘 Verlauf auf der Main-Seite (Standard aus)
+        hist = QCheckBox(tr("history_option"))
+        hist.setChecked(bool(self.cfg.get("history")))
+        hist.toggled.connect(lambda on: self.set_cfg("history", on))
+        box.addWidget(hist)
 
         # Texterkennung vorhanden?
         if ocr.available():
@@ -570,6 +723,50 @@ class OptionsPage(QWidget):
         b.addWidget(button("↺  " + tr("tr_reset_example"), lambda: snippet.setPlainText(LIBRE_EXAMPLE)),
                     alignment=Qt.AlignmentFlag.AlignLeft)
 
+        # KI-Vorlagen: Programm installiert? (+ Knopf) · Anmelden · Modell
+        self.model_combos = {}
+        self.llm_status = {}      # method → (Status-Label, Installier-Knopf)
+        self.llm_process = None
+        self.llm_login_btns = {}
+        # nach 🔑: alle 2 s schauen, ob die Anmeldung da ist (max. 5 min)
+        from PyQt6.QtCore import QTimer
+        self.login_timer = QTimer(self)
+        self.login_timer.setInterval(2000)
+        self.login_timer.timeout.connect(self.poll_login)
+        self.login_polls = 0
+        for method in (L.METHOD_CLAUDE, L.METHOD_GEMINI, L.METHOD_CHATGPT):
+            b = block(method)
+            b.addWidget(dim(tr("tr_llm_info")))
+            row = QHBoxLayout()
+            status = QLabel()
+            status.setWordWrap(True)
+            status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            row.addWidget(status, 1)
+            # 📦 npm install -g --prefix ~/.local … (fehlt npm: erst npm per pkexec)
+            btn = button("📦  " + tr("tr_llm_install"), lambda _, m=method: self.install_llm(m), "sendbtn")
+            btn.setMinimumHeight(40)
+            row.addWidget(btn)
+            # 🔑 öffnet ein Terminal mit claude / gemini / codex login
+            login = button("🔑  " + tr("tr_llm_login_btn"), lambda _, m=method: self.login_llm(m), "sendbtn")
+            login.setMinimumHeight(40)
+            row.addWidget(login)
+            b.addLayout(row)
+            self.llm_status[method] = (status, btn)
+            self.llm_login_btns[method] = login
+            self.update_llm_status(method)
+            b.addWidget(QLabel(tr("tr_model")))
+            key = L.MODEL_KEYS[method]
+            combo = model_combo(method, self.cfg.get(key, ""),
+                                lambda value, k=key: value != self.cfg.get(k) and self.set_cfg(k, value))
+            self.model_combos[method] = combo
+            b.addWidget(combo)
+            b.addLayout(self.retry_row(method))
+
+        # KI: eigener Befehl
+        b = block(L.METHOD_LLM_CUSTOM)
+        b.addWidget(dim(tr("tr_llm_custom_info")))
+        b.addWidget(self.line_edit("tr_llm_custom_cmd", L.CUSTOM_EXAMPLE))
+
         # Test-Knopf für alle Dienste
         row = QHBoxLayout()
         self.test_btn = button("🧪  " + tr("tr_test"), self.run_test, "sendbtn")
@@ -592,6 +789,179 @@ class OptionsPage(QWidget):
         self.sync_translation()
         return w
 
+    def add_favorites_card(self, lay: QVBoxLayout):
+        """⭐ Häkchen pro Dienst. Nichts angehakt = alles wie bisher."""
+        card, box = make_card("⭐  " + tr("tr_favorites"))
+        box.addWidget(dim(tr("tr_favorites_hint")))
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(16)
+        favs = self.cfg.get("tr_favorites") or []
+        half = (len(translation.METHODS) + 1) // 2  # zwei Spalten
+        for i, m in enumerate(translation.METHODS):
+            check = QCheckBox(tr("tr_m_" + m))
+            check.setChecked(m in favs)
+            check.toggled.connect(lambda on, method=m: self.favorite_toggled(method, on))
+            grid.addWidget(check, i % half, i // half)
+        box.addLayout(grid)
+        lay.addWidget(card)
+
+    def favorite_toggled(self, method: str, on: bool):
+        old = self.cfg.get("tr_favorites") or []
+        # neue Liste (nicht die alte ändern) – Reihenfolge wie in METHODS
+        favs = [m for m in translation.METHODS if (m in old and m != method) or (m == method and on)]
+        usable = [m for m in favs if translation.is_configured(m, self.cfg)]
+        if usable and self.cfg["tr_method"] not in favs:
+            # gewählter Dienst ist kein Favorit mehr → ersten eingerichteten Favoriten nehmen
+            self.cfg["tr_method"] = usable[0]
+            self.sync_translation()
+        self.set_cfg("tr_favorites", favs)
+
+    def retry_row(self, method: str) -> QHBoxLayout:
+        """[✓] Neu senden, wenn länger als [60] s  – hängt die KI, wird neu gefragt."""
+        from PyQt6.QtWidgets import QSpinBox
+        on_key, secs_key = L.RETRY_KEYS[method]
+        on, secs = L.retry_settings(method, self.cfg)
+        row = QHBoxLayout()
+        check = QCheckBox(tr("tr_retry"))
+        check.setChecked(on)
+        spin = QSpinBox()
+        spin.setRange(5, 600)
+        spin.setSingleStep(5)
+        spin.setSuffix(" s")
+        spin.setValue(secs)
+        spin.setMinimumWidth(110)
+        spin.setEnabled(on)
+
+        def toggled(value: bool):
+            spin.setEnabled(value)
+            self.set_cfg(on_key, value)
+
+        check.toggled.connect(toggled)
+        spin.editingFinished.connect(lambda: self.set_cfg(secs_key, spin.value()))
+        row.addWidget(check)
+        row.addWidget(spin)
+        row.addStretch()
+        hint = dim(tr("tr_retry_hint", n=L.RETRIES, max=L.TIMEOUT))
+        wrap = QVBoxLayout()
+        wrap.setSpacing(2)
+        wrap.addLayout(row)
+        wrap.addWidget(hint)
+        return wrap
+
+    # --- KI-Programm installieren (Knopf statt Befehl abtippen) ----------
+    def update_llm_status(self, method: str, error: str = ""):
+        from core import pkginstall
+        status, btn = self.llm_status[method]
+        cmd = L.BINARIES[method]
+        found = L.installed(method)
+        broken = found and L.broken(method)
+        login = L.logged_in(method) if found and not broken else False
+        if broken:
+            # z. B. "claude native binary not installed" → neu installieren
+            text = tr("tr_llm_broken", cmd=cmd)
+        elif found:
+            text = tr("tr_llm_found", cmd=cmd) + "\n"
+            if login:
+                text += tr("tr_llm_logged_in")
+            elif login is None:
+                text += tr("tr_llm_login_unknown", cmd=L.LOGIN_COMMANDS[method])
+            else:
+                text += tr("tr_llm_not_logged_in")
+        else:
+            text = tr("tr_llm_missing", cmd=cmd, hint=L.manual_install_command(method))
+            if L.needs_npm(method) and not shutil.which("npm"):
+                text += "\n" + tr("tr_npm_missing", cmd=pkginstall.manual_command("npm"))
+        if error:
+            text = error + "\n" + text
+        status.setText(text)
+        status.setObjectName("ok" if found and not broken and login is not False else "bad")
+        status.style().polish(status)
+        login_btn = self.llm_login_btns.get(method)
+        if login_btn is not None:
+            login_btn.setVisible(found and not broken and not login)
+            login_btn.setObjectName("linkbtn" if login is None else "sendbtn")
+            login_btn.style().polish(login_btn)
+        can = (not L.needs_npm(method) or shutil.which("npm") is not None
+               or pkginstall.install_command("npm") is not None)
+        btn.setVisible((not found or broken) and can)
+        btn.setEnabled(self.llm_process is None)
+        btn.setText("📦  " + tr("tr_llm_reinstall" if broken else "tr_llm_install"))
+
+    def login_llm(self, method: str):
+        """Terminal mit claude / gemini / codex login öffnen – dort im Browser anmelden."""
+        from core import terminal
+        status, _btn = self.llm_status[method]
+        argv = L.login_argv(method)
+        if argv is None or not terminal.run(argv, tr("tr_press_enter")):
+            status.setText(tr("tr_no_terminal", cmd=L.LOGIN_COMMANDS[method]))
+            return
+        status.setText(tr("tr_llm_login_running"))
+        self.login_polls = 0
+        self.login_timer.start()
+
+    def poll_login(self):
+        self.login_polls += 1
+        done = all(L.logged_in(m) is not False for m in self.llm_status if L.installed(m))
+        if done or self.login_polls > 150:
+            self.login_timer.stop()
+            for m in self.llm_status:
+                self.update_llm_status(m)
+            self.translation_changed.emit()
+
+    def install_llm(self, method: str):
+        """Schritt 1 (nur wenn npm fehlt): npm per pkexec. Schritt 2: npm install … nach ~/.local."""
+        from PyQt6.QtCore import QProcess
+        from core import pkginstall
+        if self.llm_process is not None:
+            return
+        steps = []
+        if L.needs_npm(method) and not shutil.which("npm"):
+            steps.append(lambda: pkginstall.install_command("npm"))
+        steps += L.install_steps(method)
+        status, btn = self.llm_status[method]
+        for _s, b in self.llm_status.values():
+            b.setEnabled(False)
+        btn.setText("⏳  " + tr("clip_installing"))
+
+        def next_step():
+            if not steps:
+                self.llm_process = None
+                self.after_llm_install(method, "")
+                return
+            argv = steps.pop(0)()
+            if argv is None:
+                self.llm_process = None
+                self.after_llm_install(method, tr("tr_llm_install_failed"))
+                return
+            if argv[0] == "pkexec":
+                status.setText(tr("clip_password"))
+            else:
+                shown = argv[2] if argv[:2] == ["bash", "-c"] else " ".join(argv[1:])
+                status.setText(tr("tr_llm_installing", cmd=shown))
+            proc = QProcess(self)
+            self.llm_process = proc
+
+            def finished(code, _status):
+                if code != 0:
+                    out = bytes(proc.readAllStandardError()).decode(errors="replace").strip()
+                    last = out.splitlines()[-1] if out else ""
+                    self.llm_process = None
+                    self.after_llm_install(method, tr("tr_llm_install_failed")
+                                           + (f": {last}" if last else ""))
+                    return
+                next_step()
+
+            proc.finished.connect(finished)
+            proc.start(argv[0], argv[1:])
+
+        next_step()
+
+    def after_llm_install(self, method: str, error: str):
+        for m in self.llm_status:
+            self.update_llm_status(m, error if m == method else "")
+        # neu installiert → taucht auf der Main-Seite im Dropdown auf
+        self.translation_changed.emit()
+
     def show_method_block(self, method: str):
         for key, widget in self.method_blocks.items():
             widget.setVisible(key == method)
@@ -606,6 +976,8 @@ class OptionsPage(QWidget):
             combo.blockSignals(True)
             combo.setCurrentIndex(max(0, combo.findData(self.cfg[key])))
             combo.blockSignals(False)
+        for method, combo in self.model_combos.items():
+            fill_model_combo(combo, method, self.cfg.get(L.MODEL_KEYS[method], ""))
         self.show_method_block(self.cfg["tr_method"])
 
     # --- LibreTranslate: läuft ein Server? -------------------------------
@@ -620,6 +992,9 @@ class OptionsPage(QWidget):
 
     def on_libre_found(self, url: str):
         self.found_libre = url
+        if url and not self.cfg.get("tr_libre_seen"):
+            # merken → LibreTranslate taucht ab jetzt im Dropdown auf der Main-Seite auf
+            self.save_cfg("tr_libre_seen", True)
         configured = (self.cfg["tr_libre_url"] or T.DEFAULT_LIBRE_URL).rstrip("/")
         if not url:
             self.libre_status.setText(tr("libre_not_running"))
@@ -644,15 +1019,15 @@ class OptionsPage(QWidget):
         self.test_result.setObjectName("")
         self.test_result.setText(tr("tr_testing"))
         cfg = dict(self.cfg)
-        errors = []
 
         def work():  # Hintergrund – KEINE Widgets anfassen!
+            # NUR den gewählten Dienst testen – ohne Lingva/Google als Ersatz,
+            # sonst sieht ein kaputter Dienst beim Einrichten wie "geht" aus
             try:
-                out = translation.translate_text(tr("tr_test_text"), cfg, log=errors.append)
-                note = f"   ({errors[0]})" if errors else ""  # z. B. "DeepL failed – Lingva übernommen"
-                self._test_done.emit("✔ " + out + note)
+                out, error = translation.translate_only(cfg["tr_method"], tr("tr_test_text"), cfg)
             except Exception as e:  # noqa: BLE001
-                self._test_done.emit("✘ " + ("; ".join(errors) or str(e)))
+                out, error = None, str(e)
+            self._test_done.emit("✔ " + out if out else "✘ " + (error or tr("tr_no_answer")))
 
         threading.Thread(target=work, daemon=True).start()
 

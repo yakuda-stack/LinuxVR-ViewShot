@@ -21,9 +21,11 @@ DEFAULTS = {
     "detect_mode": "auto",        # "auto" = App erkennt Text/QR/Bild, "manual" = in VR wählen
     "shutter": "right",           # Auslöser: "left" / "right" / "both"
     "mode_button": "left",        # Typ wechseln (nur manual): "left" / "right" / "both"
+    "icon_position": "bottom_left",  # Ecke des Typ-Symbols (nur manual), siehe ICON_POSITIONS
 }
 
 COMBOS = ("left", "right", "both")
+ICON_POSITIONS = ("bottom_left", "bottom_right", "top_left", "top_right")
 
 
 def update(key: str, value) -> dict:

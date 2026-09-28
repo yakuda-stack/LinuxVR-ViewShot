@@ -17,6 +17,9 @@ DEFAULTS = {
     "thumb_size": 180,  # Kachelgröße in der Galerie (Pixel)
     "cleanup_qr": False,    # beim Beenden QR-Code-Fotos in den Papierkorb
     "cleanup_text": False,  # beim Beenden Text-Fotos in den Papierkorb
+    "clipboard_mirror": True,
+    "ocr_expanded": False,
+    "history": False,       # Main: Verlauf der Übersetzungen (Standard aus – spart Arbeit)  # Main: "Erkannter Text" aufgeklappt?  # Kopiertes per wl-copy auch an den Desktop (WayVR)
     **TRANSLATION_DEFAULTS,  # tr_… Einstellungen (Optionen → Übersetzung)
 }
 

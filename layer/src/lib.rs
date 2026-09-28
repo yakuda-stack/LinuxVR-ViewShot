@@ -1165,13 +1165,14 @@ unsafe fn build_frame_quads(nx: &Next, session: xr::Session, info: &xr::FrameEnd
         .map(|e| quad(e, sc, 4, if flash { 1 } else { 0 }))
         .collect();
 
-    // Manueller Modus: Typ-Symbol innen unten rechts im Rahmen
-    if config::get().buttons().mode.is_some() {
+    // Manueller Modus: Typ-Symbol innen in der gewählten Ecke (Optionen → Shot)
+    let cfg = config::get();
+    if cfg.buttons().mode.is_some() {
         if let Some(icon_sc) = ensure_icon_swapchain(nx, session, s) {
             // ~5° groß, aber höchstens ein Viertel des Rahmens
             let (w, h) = frame_size_m(&fov, img, rect, depth);
             let size = (depth * 0.09).min(w.min(h) * 0.25);
-            let e = frame::corner_quad(&eye, &fov, img, rect, depth, size, thickness * 1.5);
+            let e = frame::corner_quad(&eye, &fov, img, rect, depth, size, thickness * 1.5, cfg.icon_position);
             quads.push(quad(&e, icon_sc, icons::ICON_SIZE as i32, icons::current().index()));
         }
     }

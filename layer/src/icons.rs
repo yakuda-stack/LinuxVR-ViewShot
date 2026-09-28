@@ -1,7 +1,7 @@
 //! Foto-Typ im manuellen Modus (Bild / Text / QR) und die Symbole dafür.
 //!
 //! Im manuellen Modus (layer.json: "detect_mode": "manual") zeigt der
-//! Rahmen unten rechts ein Symbol. Mit der Typ-Taste schaltet man weiter:
+//! Rahmen ein Symbol (Ecke wählbar, Standard unten links). Mit der Typ-Taste schaltet man weiter:
 //! Bild → Text → QR → Bild … Das Foto bekommt den Typ als PNG-Text-Chunk
 //! "ViewShot-Type" mit – die UI liest ihn und taggt das Foto direkt.
 //!
