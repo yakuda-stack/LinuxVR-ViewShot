@@ -29,15 +29,19 @@ import threading
 import time
 from pathlib import Path
 
+from core import vision
+
 METHOD_CLAUDE = "llm_claude"
 METHOD_GEMINI = "llm_gemini"
 METHOD_CHATGPT = "llm_chatgpt"
 METHOD_LLM_CUSTOM = "llm_custom"
+METHOD_VISION = "llm_vision"   # 🖼 lokales Bild-LLM über Ollama (bekommt das Foto mit, core/vision.py)
 
-METHODS = [METHOD_CLAUDE, METHOD_GEMINI, METHOD_CHATGPT, METHOD_LLM_CUSTOM]
+METHODS = [METHOD_CLAUDE, METHOD_GEMINI, METHOD_CHATGPT, METHOD_LLM_CUSTOM, METHOD_VISION]
 
 # Programm, das installiert sein muss (None = eigener Befehl)
-BINARIES = {METHOD_CLAUDE: "claude", METHOD_GEMINI: "gemini", METHOD_CHATGPT: "codex"}
+BINARIES = {METHOD_CLAUDE: "claude", METHOD_GEMINI: "gemini", METHOD_CHATGPT: "codex",
+            METHOD_VISION: "ollama"}
 
 # npm-Pakete für den Installier-Knopf (npm install -g --prefix ~/.local …)
 NPM_PACKAGES = {METHOD_CLAUDE: "@anthropic-ai/claude-code",
@@ -57,11 +61,12 @@ MODELS = {
     METHOD_GEMINI: ["flash", "pro", "flash-lite", "gemini-2.5-flash", "gemini-3-flash-preview"],
     # luna = schnell (ideal für kurze Übersetzungen), terra = ausgewogen, sol = am stärksten
     METHOD_CHATGPT: ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.5"],
+    METHOD_VISION: vision.SUGGESTED,  # + installierte Bild-Modelle (models_for)
 }
 
 # Einstellung in ui.json, in der das Modell steht
 MODEL_KEYS = {METHOD_CLAUDE: "tr_llm_claude_model", METHOD_GEMINI: "tr_llm_gemini_model",
-              METHOD_CHATGPT: "tr_llm_chatgpt_model"}
+              METHOD_CHATGPT: "tr_llm_chatgpt_model", METHOD_VISION: "tr_llm_vision_model"}
 
 CUSTOM_EXAMPLE = "ollama run llama3.2 {prompt}"
 
@@ -70,6 +75,21 @@ DEFAULTS = {
     "tr_llm_gemini_model": "flash",
     "tr_llm_chatgpt_model": "gpt-5.6-luna",
     "tr_llm_custom_cmd": "",
+    "tr_llm_vision_model": vision.DEFAULT_MODEL,
+    "tr_vision_url": "",           # "" = http://127.0.0.1:11434
+    "tr_vision_keep_alive": "2m",  # Modell so lange im Grafikspeicher lassen (VR braucht ihn auch)
+    # 🧩 Dienst je Aufgabe: Übersetzen = tr_method (Haupt-Dienst), Kontext / Frage eigene
+    # (z. B. lokal übersetzen, Claude erklärt / löst Rätsel). "" = wie der Haupt-Dienst.
+    # Modell = das bei diesem Dienst eingestellte
+    "tr_explain_method": "",
+    "tr_answer_method": "",
+    # Modus: "auto" = Haupt-KI teilt jedes Foto zu (nur wenn der Haupt-Dienst eine KI ist),
+    # "manual" = Aufgabe (tr_llm_mode) selbst wählen, bleibt fest
+    "tr_route": "auto",
+    # 🤖 Auto, aber einmal von Hand umgestellt: gilt fürs aktuelle + nächste Foto, dann wieder Auto
+    "tr_auto_once": "",
+    "tr_auto_once_photo": "",   # Foto, bei dem umgestellt wurde
+    "tr_auto_once_next": "",    # das nächste Foto (danach wieder Auto)
     "tr_llm_mode": "translate",  # MODE_TRANSLATE (Aufgabe der KI, siehe MODES)
     # "Neu senden, wenn länger als … s" – Gemini hängt manchmal (Anfrage-Limit),
     # ein zweiter Versuch ist dann oft in Sekunden fertig. Standard überall: aus.
@@ -236,6 +256,31 @@ def manual_install_command(method: str) -> str:
     return f"npm install -g --prefix ~/.local {NPM_PACKAGES[method]}"
 
 
+def models_for(method: str) -> list[str]:
+    """Modelle fürs Dropdown (Bild-LLM: installierte zuerst)."""
+    if method == METHOD_VISION:
+        return vision.model_list()
+    return list(MODELS.get(method, []))
+
+
+TASK_KEYS = {"explain": "tr_explain_method", "answer": "tr_answer_method"}
+
+
+def task_method(cfg: dict, mode: str) -> str:
+    """Welcher Dienst macht diese Aufgabe? Kontext/Frage: eigener Dienst (falls eingestellt),
+    sonst der Haupt-Dienst. Kann der das nicht (z. B. LibreTranslate) → "" (= nur übersetzen)."""
+    main = cfg.get("tr_method", "")
+    if mode not in TASK_KEYS:
+        return main
+    method = cfg.get(TASK_KEYS[mode]) or main
+    return method if is_llm(method) else ""
+
+
+def has_tasks(cfg: dict) -> bool:
+    """Gibt es mehr als „Übersetzen“? (Aufgabe-Auswahl auf der Main-Seite / im VR-Panel zeigen)"""
+    return any(task_method(cfg, m) for m in TASK_KEYS)
+
+
 def model_of(method: str, cfg: dict) -> str:
     """Eingestelltes Modell; leer (alte Einstellung) → Standard-Modell der Vorlage."""
     key = MODEL_KEYS.get(method)
@@ -248,17 +293,33 @@ def model_of(method: str, cfg: dict) -> str:
 MODE_TRANSLATE = "translate"   # übersetzen (wie Lingva & Co.)
 MODE_EXPLAIN = "explain"       # Kontext: worum geht es, was bedeutet das?
 MODE_ANSWER = "answer"         # steht eine Frage/Aufgabe drin → beantworten
-MODES = [MODE_TRANSLATE, MODE_EXPLAIN, MODE_ANSWER]
+MODE_AUTO = "auto"             # 🤖 bei jedem Foto neu entscheiden (Haupt-KI teilt zu)
+MODES = [MODE_TRANSLATE, MODE_EXPLAIN, MODE_ANSWER]  # Aufgaben zum Auswählen
+MODE_CLASSIFY = "classify"     # intern (🤖 Auto): nur „QUIZ / EXPLAIN / TEXT“ fragen
 # Bei geändertem Prompt hochzählen → alte gespeicherte Antworten werden neu erfragt
-PROMPT_VERSION = {MODE_EXPLAIN: 3, MODE_ANSWER: 3}
+PROMPT_VERSION = {MODE_EXPLAIN: 3, MODE_ANSWER: 4}  # 4: nummerierte Zeilen
 # ChatGPT hat bei "Frage beantworten" einen Zusatz (siehe CHATGPT_ANSWER_EXTRA) → eigene Version
-PROMPT_VERSION_CHATGPT = {MODE_ANSWER: 4}
+PROMPT_VERSION_CHATGPT = {MODE_ANSWER: 5}
+
+
+# Bild-LLM hat eigene, kurze Prompts (core/vision.py) → eigene Version
+PROMPT_VERSION_VISION = {MODE_EXPLAIN: 2, MODE_ANSWER: 4}  # 3: erst Quiz? JA/NEIN, 4: erst nachdenken
+
+
+def numbered_lines(text: str) -> str:
+    """„1) …“ je Zeile (ab 2 Zeilen) – dieselben Nummern stehen im 🪟 VR-Panel am Foto."""
+    lines = [t for t in text.splitlines() if t.strip()]
+    if len(lines) < 2:
+        return text
+    return "\n".join(f"{i}) {t}" for i, t in enumerate(lines, 1))
 
 
 def prompt_version(method: str, mode: str):
-    """Prompt-Version für den Cache-Schlüssel (ChatGPT kann abweichen)."""
+    """Prompt-Version für den Cache-Schlüssel (ChatGPT / Bild-LLM können abweichen)."""
     if method == METHOD_CHATGPT and mode in PROMPT_VERSION_CHATGPT:
         return PROMPT_VERSION_CHATGPT[mode]
+    if method == METHOD_VISION and mode in PROMPT_VERSION_VISION:
+        return PROMPT_VERSION_VISION[mode]
     return PROMPT_VERSION.get(mode, "")
 
 _OCR_NOTE = "The text was read from a screenshot by OCR, so ignore obvious OCR mistakes. "
@@ -285,9 +346,11 @@ ANSWER_PROMPT = (
     "- Riddle, question, math, code: give the solution.\n"
     "- If there is no question or task at all: reply ONLY with the translation into "
     "{tgt} (no ➜, no comment).\n"
+    "If the lines are numbered (1), 2), …): the user sees the SAME numbers next to the text "
+    "in the photo – start your answer with the number of the correct option.\n"
     "Answer format (only when there is a question/task):\n"
-    "First line: '➜ ' followed ONLY by what to click / enter / the answer "
-    "(original script, then its meaning in {tgt} in brackets).\n"
+    "First line: '➜ ' followed ONLY by the option number (if numbered) and what to click / "
+    "enter / the answer, e.g. '➜ 4) … (…)' (original script, then its meaning in {tgt} in brackets).\n"
     "Then ONE short line in {tgt}: why (e.g. the full phrase and what it means). "
     "Nothing else – no introduction, no translation of the whole text. {plain}{fast}"
 )
@@ -305,6 +368,8 @@ def make_prompt(text: str, source: str, target: str, mode: str = MODE_TRANSLATE,
     tgt = _NAMES.get((target or "").lower(), target)
     src = _NAMES.get((source or "").lower(), source) if source else ""
     frm = f"from {src} " if src else ""
+    if mode == MODE_CLASSIFY:
+        return vision.task_prompt(text, False)
     if mode == MODE_EXPLAIN:
         return ("The following text was photographed in a VR game (e.g. VRChat). "
                 + _OCR_NOTE +
@@ -316,7 +381,7 @@ def make_prompt(text: str, source: str, target: str, mode: str = MODE_TRANSLATE,
         # Text klar abgrenzen – sonst hält die KI kurze Texte evtl. für Teil der Anweisung
         extra = CHATGPT_ANSWER_EXTRA if method == METHOD_CHATGPT else ""
         return (ANSWER_PROMPT.format(tgt=tgt, ocr=_OCR_NOTE, plain=_PLAIN, fast=_FAST) + extra
-                + f"\n\nText from the photo:\n<<<\n{text}\n>>>")
+                + f"\n\nText from the photo:\n<<<\n{numbered_lines(text)}\n>>>")
     return (f"Translate the following text {frm}into {tgt}. "
             "The text was read from a screenshot by OCR, so fix obvious OCR mistakes. "
             "Keep the line breaks. Reply with the translation ONLY – "
@@ -569,10 +634,13 @@ def retry_settings(method: str, cfg: dict) -> tuple[bool, int]:
 
 
 def translate(method: str, cfg: dict, text: str, source: str, target: str,
-              on_retry=lambda attempt: None, on_partial=None) -> str:
+              on_retry=lambda attempt: None, on_partial=None, image=None) -> str:
     """Übersetzt mit der KI. Wirft LLMError mit lesbarem Grund.
     on_retry(Versuch) wird vor jedem erneuten Senden aufgerufen (für die Statuszeile).
-    on_partial(bisheriger Text): Antwort schon beim Schreiben zeigen (None = am Stück wie früher)."""
+    on_partial(bisheriger Text): Antwort schon beim Schreiben zeigen (None = am Stück wie früher).
+    image: Foto – nur das 🖼 Bild-LLM schaut es sich an."""
+    if method == METHOD_VISION:
+        return vision.translate(cfg, text, source, target, image=image, on_partial=on_partial)
     prompt = make_prompt(text, source, target, cfg.get("tr_llm_mode") or MODE_TRANSLATE, method)
     streaming = on_partial is not None
     argv, stdin = build_command(method, cfg, prompt, text, source, target, stream=streaming)

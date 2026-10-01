@@ -55,7 +55,13 @@ pub fn output_dir() -> PathBuf {
 
 /// `photo_type` (manueller Modus): landet als Text-Chunk "ViewShot-Type"
 /// im PNG ("image" / "text" / "qr") – die UI taggt das Foto dann direkt.
-pub fn save_png_async(raw: Vec<u8>, format: i64, w: u32, h: u32, photo_type: Option<&'static str>) {
+/// Name fürs nächste Foto – vorher festgelegt, damit der Layer weiß, zu welchem
+/// Foto das 🥽 Overlay der UI gehört ("ViewShot-For").
+pub fn photo_name() -> String {
+    chrono::Local::now().format("ViewShot_%Y-%m-%d_%H-%M-%S%.3f.png").to_string()
+}
+
+pub fn save_png_async(name: String, raw: Vec<u8>, format: i64, w: u32, h: u32, photo_type: Option<&'static str>) {
     std::thread::spawn(move || {
         let rgb = to_rgb(&raw, format);
         let dir = output_dir();
@@ -63,7 +69,6 @@ pub fn save_png_async(raw: Vec<u8>, format: i64, w: u32, h: u32, photo_type: Opt
             crate::log!("Ordner {} kann nicht angelegt werden: {e}", dir.display());
             return;
         }
-        let name = chrono::Local::now().format("ViewShot_%Y-%m-%d_%H-%M-%S%.3f.png").to_string();
         let path = dir.join(name);
         let result = write_png(&path, &rgb, w, h, photo_type);
         match result {

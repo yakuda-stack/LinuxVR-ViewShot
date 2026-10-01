@@ -54,6 +54,8 @@ class MainPage(TranslationMixin, HistoryMixin, InstallMixin, LiveMixin, QWidget)
         self.cfg = cfg
         self.tagger = tagger  # Bild-Erkennung (für das Info-Fenster)
         self.last_photo = None       # Pfad des angezeigten Fotos
+        self.vr_chosen = False       # Foto kam aus der VR-Galerie → neues Foto zeigt wieder das neueste
+        self._newest_mtime = 0.0
         self.chosen = None           # per 📁/🖼 gewähltes Foto (None = immer das neueste)
         self._not_ready = 0          # wie oft ein neues Foto noch nicht fertig war
         self.translating = None      # Foto, das gerade übersetzt wird
@@ -216,10 +218,16 @@ class MainPage(TranslationMixin, HistoryMixin, InstallMixin, LiveMixin, QWidget)
         layout.addWidget(card)
 
         self.setup_live()  # 🔁 Live-Modus: schaut nach neuen Live-Bildern
+        from ui.vr_panel import VRPanel
+        self.vr_panel = VRPanel(self)  # 🪟 Übersetzungs-Panel für VR (unsichtbares Fenster → Bild)
         self.refresh()
         # AppImage aktualisiert? → den Layer in ~/.local gleich mitziehen
         if layer_install.needs_update():
             self.install_bundled(updated=True)
+        elif paths.layer_installed():
+            # ⚙ Hintergrund-Dienst aktuell halten (kopiert nur, was sich geändert hat)
+            from ui.pages.main_install import start_daemon_setup
+            start_daemon_setup()
 
     def refresh(self):
         """Alles neu einlesen – wird auch aufgerufen, wenn ein neues Foto kommt."""
@@ -260,6 +268,11 @@ class MainPage(TranslationMixin, HistoryMixin, InstallMixin, LiveMixin, QWidget)
             self.uninstall_btn.setVisible(installed)
         photos = paths.list_photos()
         self.count_label.setText(tr("photo_count", n=len(photos)))
+        # in VR ein Foto aus der Galerie gewählt, dann ein neues gemacht? → wieder das neueste
+        newest = photos[0].stat().st_mtime if photos else 0.0
+        if newest > self._newest_mtime and self.vr_chosen:
+            self.chosen, self.vr_chosen = None, False
+        self._newest_mtime = newest
 
         # gewähltes Foto inzwischen gelöscht? → wieder das neueste nehmen
         if self.chosen is not None and not self.chosen.is_file():
@@ -380,4 +393,5 @@ class MainPage(TranslationMixin, HistoryMixin, InstallMixin, LiveMixin, QWidget)
     def set_chosen(self, photo):
         """photo = Path → dieses Foto zeigen/übersetzen,  None → wieder das neueste."""
         self.chosen = photo
+        self.vr_chosen = False
         self.refresh()

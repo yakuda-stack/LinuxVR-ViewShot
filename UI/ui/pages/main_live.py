@@ -16,8 +16,10 @@ from datetime import datetime
 from pathlib import Path
 
 from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QImageReader
 
-from core import layer_config, ocr, paths, translation
+from core import layer_config, ocr, overlay, paths, translation
+from core import llm_translator as llm
 from core.i18n import tr
 
 LIVE_CHECK_MS = 1000  # so oft nach einem neuen Live-Bild schauen
@@ -38,6 +40,7 @@ class LiveMixin:
         self.live_busy = False       # liest/übersetzt gerade
         self.live_text = ""          # zuletzt erkannter Text …
         self.live_result = ("", "")  # … und seine Übersetzung (Text, Dienst)
+        self.live_lines = []         # Zeilen mit Position (für die Nummern im 🪟 VR-Panel)
         self._live_done.connect(self.on_live_done)
         self._live_progress.connect(self.on_live_progress)
         self.live_timer = QTimer(self)
@@ -70,20 +73,30 @@ class LiveMixin:
         self.live_busy = True
         self.photo_label.set_photo(path)
         self.photo_title.setText("🔁  " + tr("live_title"))
-        cfg = dict(self.cfg)
+        cfg = translation.task_cfg(self.cfg)  # 🤖 Auto / gewählte Aufgabe
         last_text, last_result = self.live_text, self.live_result
 
         def work():  # Hintergrund – KEINE Widgets anfassen!
             try:
-                text = ocr.read_text(path, priority=True)
-                if not text:
+                lines = ocr.read_lines(path, priority=True)
+                self.live_lines = lines
+                text = "\n".join(line["text"] for line in lines)
+                vision = cfg.get("tr_method") == llm.METHOD_VISION  # liest notfalls selbst
+                if not text and not vision:
                     self._live_done.emit("", "", "", "")
-                elif text == last_text and last_result[0]:
-                    self._live_done.emit(text, last_result[0], "", last_result[1])  # schon übersetzt
+                    return
+                if text and text == last_text and last_result[0]:
+                    translated, used = last_result  # schon übersetzt
                 else:
                     translated, used = translation.translate_text_used(
-                        text, cfg, progress=lambda step, arg="": self._live_progress.emit(step, arg))
-                    self._live_done.emit(text, translated, "", used)
+                        text, cfg, progress=lambda step, arg="": self._live_progress.emit(step, arg),
+                        image=path)
+                self._live_done.emit(text, translated, "", used)
+                # 🥽 in VR über den Text im blauen Rahmen legen (Positionen jedes Mal neu –
+                # der Rahmen hängt am Kopf, der Text wandert also im Bild)
+                if overlay.enabled():
+                    size = QImageReader(str(path)).size()
+                    overlay.write(overlay.LIVE, (size.width(), size.height()), lines, translated)
             except Exception as e:  # noqa: BLE001
                 self._live_done.emit("", "", str(e), "")
 
@@ -97,6 +110,8 @@ class LiveMixin:
         self.refresh()
 
     def on_live_progress(self, step: str, arg: str):
+        if step == "auto":
+            self.auto_task = arg  # 🤖 so hat Auto entschieden (für „Letzte KI“)
         if step == "partial" and self.live_busy:
             self.tr_text.setPlainText(arg)  # KI schreibt noch
 
@@ -108,9 +123,12 @@ class LiveMixin:
         if error:
             self.tr_status.setText(f"🔁  {tr('tr_failed')}: {error}")
             return
-        if not text:
+        if not text and not translated:
             self.tr_status.setText(f"🔁  {tr('live_status')} · {now} · {tr('no_text')}")
             return
+        if (text, translated) != (self.live_text, self.live_result[0]):  # neu gefragt
+            self.set_last_ai(used, self.last_task(used))
+        self.auto_task = ""
         self.live_text, self.live_result = text, (translated, used)
         self.history_entry = None
         self.show_translation(text, translated)

@@ -11,6 +11,8 @@ Neue Seite? 1) Datei in ui/pages/ anlegen  2) unten in PAGES eintragen
             3) Text für den Knopf in core/i18n.py eintragen.
 """
 
+import os
+
 from PyQt6.QtCore import QFileSystemWatcher, Qt, QTimer
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QMainWindow, QPushButton,
@@ -51,6 +53,9 @@ class MainWindow(QMainWindow):
 
         self.build_ui()
         self.tagger.scan(paths.list_photos())
+        # 👋 erster Start: kurz erklären, installieren lassen, zu den Übersetzern führen
+        from ui import welcome
+        welcome.maybe_start(self)
 
     # ------------------------------------------------------------------
     def build_ui(self, page_index: int = 0, options_tab: int = 0):
@@ -83,6 +88,8 @@ class MainWindow(QMainWindow):
         # ===== Seiten (rechts daneben) =====
         self.main_page = MainPage(self.cfg, self.tagger)
         self.gallery_page = GalleryPage(self.cfg, self.tagger)
+        self.gallery_page.folders_changed.connect(self.watch_gallery_folders)
+        self.watch_gallery_folders()
         self.options_page = OptionsPage(self.cfg, options_tab)
         self.options_page.language_changed.connect(self.on_language_changed)
         self.options_page.translation_changed.connect(self.main_page.on_options_changed)
@@ -140,6 +147,28 @@ class MainWindow(QMainWindow):
             btn.setChecked(i == index)
 
     # ------------------------------------------------------------------
+    def watch_gallery_folders(self):
+        """Weitere Galerie-Ordner (⚙ in der Galerie) auch beobachten – mit Unterordnern
+        alle Ordner darin (z. B. VRChat/2026-10), damit neue Bilder sofort erscheinen."""
+        keep = {str(paths.photo_dir())}
+        for folder, sub in paths.gallery_folders(self.cfg)[1:]:
+            if not folder.is_dir():
+                continue
+            keep.add(str(folder))
+            if sub:
+                for root, dirs, _files in os.walk(folder):
+                    dirs[:] = [d for d in dirs if not d.startswith(".")]
+                    if root.count(os.sep) - str(folder).count(os.sep) >= paths.MAX_DEPTH:
+                        dirs[:] = []
+                    keep.add(root)
+                    if len(keep) > 500:  # Grenze: Beobachten kostet je Ordner ein Handle
+                        break
+        old = set(self.watcher.directories())
+        if old - keep:
+            self.watcher.removePaths(list(old - keep))
+        if keep - old:
+            self.watcher.addPaths(sorted(keep - old))
+
     def on_photos_changed(self, _path=None):
         # Der Ordner meldet ein neues Foto schon beim Anlegen. Ist es noch nicht
         # fertig geschrieben (ältere Layer), kurz warten und nochmal – sonst

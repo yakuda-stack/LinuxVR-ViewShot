@@ -1,8 +1,9 @@
 """
-core/i18n.py – Übersetzungen EN/DE.
+core/i18n.py – Übersetzungen DE/EN/FR.
 
 Benutzung:   tr("nav_main")   → "Main"
-Neuer Text?  Unten in TEXTS eine Zeile mit "de" und "en" eintragen.
+Neuer Text?  Unten in TEXTS eine Zeile mit "de" und "en" eintragen,
+             Französisch in core/i18n_fr.py (fehlt es dort, kommt Englisch).
 """
 
 TEXTS = {
@@ -302,6 +303,9 @@ TEXTS = {
     "tr_m_llm_custom": {"de": "KI: eigener Befehl (z. B. Ollama)",
                         "en": "AI: custom command (e.g. Ollama)"},
     "tr_task":         {"de": "Aufgabe",         "en": "Task"},
+    "tr_last_ai":      {"de": "Letzte KI", "en": "Last AI"},
+    "tr_mode_auto":    {"de": "🤖 Auto (Main-KI entscheidet)", "en": "🤖 Auto (main AI decides)"},
+    "tr_step_classify": {"de": "{name} schaut, was es ist …", "en": "{name} checks what it is …"},
     "tr_mode_translate": {"de": "🌐 Übersetzen", "en": "🌐 Translate"},
     "tr_mode_explain": {"de": "💡 Kontext erklären", "en": "💡 Explain context"},
     "tr_mode_answer":  {"de": "❓ Frage beantworten (sonst übersetzen)",
@@ -378,8 +382,6 @@ TEXTS = {
     "tr_fallback_once": {"de": "⚠ {failed} ging nicht – diesmal mit {used} übersetzt. {error}",
                          "en": "⚠ {failed} failed – translated with {used} this time. {error}"},
     "tr_no_answer":    {"de": "keine Antwort", "en": "no answer"},
-    "tr_fallback_used": {"de": "⚠ {failed} ging nicht – übersetzt mit {used}. {error}",
-                         "en": "⚠ {failed} failed – translated with {used}. {error}"},
     "tr_llm_custom_info": {"de": "Beliebiges Programm. {prompt} = fertige Übersetzungs-Anweisung "
                                  "mit Text. Außerdem: {text} {source} {target}. Ohne {prompt}/{text} "
                                  "kommt der Prompt über stdin. Die Ausgabe ist die Übersetzung.",
@@ -414,7 +416,211 @@ TEXTS = {
                               "services = many requests."},
     "live_title":      {"de": "Lens",             "en": "Lens"},
     "live_status":     {"de": "Lens",             "en": "Lens"},
+    "tr_m_llm_vision": {"de": "🖼 Lokales Bild-LLM (Ollama)", "en": "🖼 Local image LLM (Ollama)"},
+    "tr_vision_info":  {"de": "Läuft auf deinem PC und bekommt das FOTO mit: liest schräge oder kleine "
+                              "Schrift, bessert Fehler der Texterkennung aus und findet Text, den sie "
+                              "übersehen hat. Braucht Ollama – NVIDIA: sudo pacman -S ollama-cuda · "
+                              "AMD: ollama-rocm · dann systemctl enable --now ollama. Tipp: das Modell "
+                              "teilt sich die Grafikkarte mit VR – kleine Modelle (3–7B) nehmen.",
+                        "en": "Runs on your PC and gets the PHOTO too: reads tilted or small text, fixes "
+                              "text recognition mistakes and finds text it missed. Needs Ollama – NVIDIA: "
+                              "sudo pacman -S ollama-cuda · AMD: ollama-rocm · then systemctl enable --now "
+                              "ollama. Tip: the model shares the graphics card with VR – use small models (3–7B)."},
+    "tr_vision_install": {"de": "Ollama installieren", "en": "Install Ollama"},
+    "tr_vision_installing": {"de": "⏳ Installation läuft im Terminal (Passwort dort eingeben) – danach 🔄 Prüfen",
+                             "en": "⏳ Installing in the terminal (enter your password there) – then 🔄 Check"},
+    "tr_vision_install_manual": {"de": "Kein Terminal gefunden – selbst ausführen: {cmd}",
+                                 "en": "No terminal found – run it yourself: {cmd}"},
+    "tr_vision_check": {"de": "Prüfen",           "en": "Check"},
+    "tr_vision_pull":  {"de": "Modell laden",     "en": "Download model"},
+    "tr_vision_ok":    {"de": "✔ Ollama läuft · {n} Bild-Modell(e): {models}",
+                        "en": "✔ Ollama is running · {n} image model(s): {models}"},
+    "tr_vision_no_model": {"de": "⚠ Ollama läuft, aber noch kein Bild-Modell – Modell wählen und "
+                                 "📥 Modell laden",
+                           "en": "⚠ Ollama is running but has no image model yet – pick one and "
+                                 "📥 Download model"},
+    "tr_vision_off":   {"de": "✘ Ollama nicht erreichbar ({url}) – installiert und gestartet? "
+                              "systemctl enable --now ollama",
+                        "en": "✘ Ollama not reachable ({url}) – installed and started? "
+                              "systemctl enable --now ollama"},
+    "tr_vision_pull_manual": {"de": "Kein Terminal/Ollama gefunden – selbst ausführen: ollama pull {model}",
+                              "en": "No terminal/Ollama found – run it yourself: ollama pull {model}"},
+    "tr_vision_keep":  {"de": "Im Grafikspeicher lassen", "en": "Keep in graphics memory"},
+    "tr_vision_keep_30s": {"de": "30 s (VR bekommt den Speicher schnell zurück)",
+                           "en": "30 s (VR gets the memory back quickly)"},
+    "tr_vision_keep_2m": {"de": "2 min", "en": "2 min"},
+    "tr_vision_keep_10m": {"de": "10 min", "en": "10 min"},
+    "tr_vision_keep_forever1": {"de": "Immer (schnellste Antwort)", "en": "Always (fastest answer)"},
+    "tr_vision_url":   {"de": "Adresse",          "en": "Address"},
+    "panel_card":      {"de": "Übersetzungs-Panel in VR", "en": "Translation panel in VR"},
+    "panel_hint":      {"de": "Ein Fenster in VR: oben das Foto mit Nummern ①②③ auf den Textzeilen, darunter "
+                              "die Übersetzungen 1, 2, 3 – dazu Dienst, Aufgabe und Sprachen per Laser. "
+                              "Zeig mit dem Controller drauf und drück den Trigger (einmal Layer neu bauen).",
+                        "en": "A window in VR: the photo with numbers ①②③ on the text lines on top, the "
+                              "translations 1, 2, 3 below – plus service, task and languages via laser. "
+                              "Point at it with the controller and press the trigger (rebuild the layer once)."},
+    "panel_on":        {"de": "🪟 Panel in VR anzeigen", "en": "🪟 Show panel in VR"},
+    "panel_anchor":    {"de": "Hängt an",         "en": "Attached to"},
+    "panel_anchor_left": {"de": "🤚 Linke Hand",   "en": "🤚 Left hand"},
+    "panel_anchor_right": {"de": "✋ Rechte Hand", "en": "✋ Right hand"},
+    "panel_anchor_head": {"de": "👤 Kopf (wandert mit)", "en": "👤 Head (follows you)"},
+    "panel_anchor_world": {"de": "🌍 Welt (bleibt im Raum)", "en": "🌍 World (stays in the room)"},
+    "panel_edit_mode": {"de": "✥ Bearbeiten (Position + Größe ändern)", "en": "✥ Edit (move + resize)"},
+    "panel_edit_hint": {"de": "Im Bearbeiten-Modus hat das Panel einen gelben Rand: Laser drauf + Grip halten = "
+                              "verschieben · Ecke unten rechts (leuchtet) + Trigger halten = Breite, Ecke oben links = Höhe. "
+                              "Geht auch im Panel selbst (✥). Grip/Trigger kommen trotzdem im Spiel an.",
+                        "en": "In edit mode the panel has a yellow border: laser on it + hold grip = move · laser "
+                              "on the bottom right corner (lights up) + hold trigger = width, top left corner = height. Also works "
+                              "inside the panel (✥). Grip/trigger still reach the game."},
+    "panel_opacity":   {"de": "Deckkraft",        "en": "Opacity"},
+    "panel_edit_help": {"de": "Panel und 🔘 Knopf je einzeln: Laser drauf + Grip = verschieben/drehen · "
+                              "Ecke unten rechts + Trigger = Größe · Panel: Ecke oben links + Trigger = Höhe · ⟲ = zurücksetzen",
+                        "en": "Panel and 🔘 button each on their own: laser on it + grip = move/rotate · "
+                              "bottom right corner + trigger = size · panel: top left corner + trigger = height · ⟲ = reset"},
+    "panel_settings":  {"de": "Einstellungen", "en": "Settings"},
+    "vr_delete_sure":  {"de": "Wirklich löschen?", "en": "Really delete?"},
+    "month_1": {"de": "Januar", "en": "January"},
+    "month_2": {"de": "Februar", "en": "February"},
+    "month_3": {"de": "März", "en": "March"},
+    "month_4": {"de": "April", "en": "April"},
+    "month_5": {"de": "Mai", "en": "May"},
+    "month_6": {"de": "Juni", "en": "June"},
+    "month_7": {"de": "Juli", "en": "July"},
+    "month_8": {"de": "August", "en": "August"},
+    "month_9": {"de": "September", "en": "September"},
+    "month_10": {"de": "Oktober", "en": "October"},
+    "month_11": {"de": "November", "en": "November"},
+    "month_12": {"de": "Dezember", "en": "December"},
+    "gallery_folders": {"de": "Galerie-Ordner", "en": "Gallery folders"},
+    "gallery_folders_hint": {"de": "Diese Ordner zeigt die Galerie (Desktop + VR). Übersetzt wird nur, was ViewShot fotografiert.",
+                             "en": "The gallery (desktop + VR) shows these folders. Only photos taken by ViewShot are translated."},
+    "gallery_subfolders": {"de": "Unterordner einbeziehen", "en": "Include subfolders"},
+    "gallery_add_folder": {"de": "Ordner hinzufügen …", "en": "Add folder …"},
+    "gallery_change_folder": {"de": "Ändern …", "en": "Change …"},
+    "gallery_remove_folder": {"de": "Entfernen", "en": "Remove"},
+    "gallery_main_folder": {"de": "Foto-Ordner (ViewShot)", "en": "Photo folder (ViewShot)"},
+    "gallery_settings": {"de": "Galerie-Ordner einstellen", "en": "Gallery folder settings"},
+    "upload_copy_link": {"de": "Hochladen + Link", "en": "Upload + link"},
+    "vr_copied_image": {"de": "✔ Bild kopiert", "en": "✔ Image copied"},
+    "vr_link_copied":  {"de": "✔ Link kopiert", "en": "✔ Link copied"},
+    "vr_uploading":    {"de": "⏳ Wird hochgeladen …", "en": "⏳ Uploading …"},
+    "vr_upload_failed": {"de": "✘ Hochladen fehlgeschlagen", "en": "✘ Upload failed"},
+    "vr_shared_paste": {"de": "✔ Bild kopiert – im Programm Strg+V drücken", "en": "✔ Image copied – press Ctrl+V in the app"},
+    "vr_shared":       {"de": "✔ Geöffnet", "en": "✔ Opened"},
+    "vr_share_none":   {"de": "Kein Programm zum Teilen gefunden", "en": "No app to share with found"},
+    "vr_info_folder":  {"de": "Ordner", "en": "Folder"},
+    "vr_info_date":    {"de": "Datum", "en": "Date"},
+    "vr_info_size":    {"de": "Größe", "en": "Size"},
+    "vr_info_type":    {"de": "Typ", "en": "Type"},
+    "vr_info_link":    {"de": "Link", "en": "Link"},
+    "vr_page_translate": {"de": "Übersetzung", "en": "Translation"},
+    "welcome_title":   {"de": "Willkommen bei LinuxVR-ViewShot", "en": "Welcome to LinuxVR-ViewShot"},
+    "welcome_1":       {"de": "Diese App ist nur zum Einstellen und Installieren.\n\nNach der Installation kannst du "
+                              "sie schließen und alles in VR machen – Fotos, Übersetzung, Galerie und Einstellungen "
+                              "gibt es dort im 🪟 Panel.",
+                        "en": "This app is only for setting things up and installing.\n\nAfter installing you can close "
+                              "it and do everything in VR – photos, translation, gallery and settings are all in the "
+                              "🪟 panel there."},
+    "welcome_2":       {"de": "Damit in VR alles funktioniert, musst du gleich installieren (OpenXR-Layer + "
+                              "Hintergrund-Dienst).",
+                        "en": "To make everything work in VR you need to install now (OpenXR layer + background "
+                              "service)."},
+    "welcome_3":       {"de": "Bitte richte jetzt deine Übersetzer ein (Dienst, Sprachen, KI).\n\nMit OK geht's direkt "
+                              "zu Optionen → Übersetzung.",
+                        "en": "Please set up your translators now (service, languages, AI).\n\nOK takes you straight "
+                              "to Options → Translation."},
+    "welcome_next":    {"de": "Weiter", "en": "Next"},
+    "welcome_install_now": {"de": "🔧  Jetzt installieren", "en": "🔧  Install now"},
+    "welcome_later":   {"de": "Später", "en": "Later"},
+    "ok":              {"de": "OK", "en": "OK"},
+    "panel_button":    {"de": "🔘 Knopf zum Auf-/Zuklappen", "en": "🔘 Button to open/close"},
+    "panel_button_short": {"de": "🔘 Knopf", "en": "🔘 Button"},
+    "panel_button_hint": {"de": "Wie bei WayVR: ein Knopf am selben Anker wie das Panel (Standard: oben auf der Hand) – "
+                                "Laser + Trigger klappt das Panel auf und zu. Im Bearbeiten-Modus Knopf und Panel einzeln "
+                                "verschieben, drehen und vergrößern (z. B. neben das WayVR-Handgelenk-Menü).",
+                          "en": "Like WayVR: a button on the same anchor as the panel (default: on top of the hand) – laser + "
+                                "trigger opens and closes the panel. In edit mode move, rotate and resize button and panel "
+                                "separately (e.g. next to the WayVR wrist menu)."},
+    "panel_open_on_shot": {"de": "Beim Übersetzen öffnen (zugeklapptes Panel geht nach einem Foto auf)",
+                           "en": "Open when translating (a closed panel opens after a photo)"},
+    "panel_open_on_shot_short": {"de": "Nach Foto öffnen", "en": "Open after photo"},
+    "panel_button_size": {"de": "Knopf-Größe", "en": "Button size"},
+    "panel_button_color": {"de": "Knopf-Farbe", "en": "Button colour"},
+    "panel_button_pick": {"de": "Farbe wählen …", "en": "Pick colour …"},
+    "panel_size":      {"de": "Größe", "en": "Size"},
+    "panel_size_later": {"de": "(erst möglich, wenn das Panel einmal in VR zu sehen war)",
+                         "en": "(possible once the panel has been shown in VR)"},
+    "panel_move":      {"de": "Verschieben (Grip)", "en": "Move (grip)"},
+    "panel_anchor_short_left": {"de": "🤚 Links", "en": "🤚 Left"},
+    "panel_anchor_short_right": {"de": "✋ Rechts", "en": "✋ Right"},
+    "panel_anchor_short_head": {"de": "👤 Kopf", "en": "👤 Head"},
+    "panel_anchor_short_world": {"de": "🌍 Welt", "en": "🌍 World"},
+    "detect_short_auto": {"de": "🤖 Automatisch", "en": "🤖 Automatic"},
+    "detect_short_manual": {"de": "✋ Manuell", "en": "✋ Manual"},
+    "combo_short_left": {"de": "Links", "en": "Left"},
+    "combo_short_right": {"de": "Rechts", "en": "Right"},
+    "combo_short_both": {"de": "Beide", "en": "Both"},
+    "panel_reset":     {"de": "Position zurücksetzen", "en": "Reset position"},
+    "panel_edit":      {"de": "Bearbeiten",       "en": "Edit"},
+    "panel_done":      {"de": "Fertig",           "en": "Done"},
+    "daemon_card":     {"de": "Ohne App (Hintergrund-Dienst)", "en": "Without the app (background service)"},
+    "daemon_hint":     {"de": "Übersetzen, 🪟 Panel und 🔁 Lens funktionieren auch, wenn diese App zu ist: ein "
+                              "kleiner Dienst startet mit dem VR-Spiel und beendet sich danach. Ist die App offen, "
+                              "macht sie alles selbst – Galerie und Verlauf zeigen, was der Dienst übersetzt hat.",
+                        "en": "Translating, the 🪟 panel and 🔁 Lens also work while this app is closed: a small "
+                              "service starts with the VR game and quits afterwards. While the app is open it does "
+                              "everything itself – gallery and history show what the service translated."},
+    "daemon_start":    {"de": "Starten", "en": "Start"},
+    "daemon_off":      {"de": "Aus (nur mit offener App)", "en": "Off (only with the app open)"},
+    "daemon_all":      {"de": "Bei jedem VR-Spiel", "en": "With every VR game"},
+    "daemon_selected": {"de": "Nur bei ausgewählten Spielen", "en": "Only with selected games"},
+    "daemon_games_hint": {"de": "Spiele, in denen der Layer zuletzt lief – oder Namen selbst eintragen "
+                                "(Teilwort reicht, z. B. „vrchat“).",
+                          "en": "Games the layer ran in recently – or type a name yourself "
+                                "(part of the name is enough, e.g. “vrchat”)."},
+    "daemon_game_placeholder": {"de": "Spielname, z. B. VRChat", "en": "Game name, e.g. VRChat"},
+    "daemon_not_installed": {"de": "Dienst noch nicht eingerichtet – auf der Main-Seite einmal 🔧 Neu bauen.",
+                             "en": "Service not set up yet – press 🔧 Rebuild on the main page once."},
+    "daemon_off_status": {"de": "Aus – ohne offene App wird nichts übersetzt.",
+                          "en": "Off – nothing is translated while the app is closed."},
+    "daemon_ready":    {"de": "Eingerichtet – startet von selbst mit dem VR-Spiel (Log: ~/.local/state/"
+                              "linuxvr-viewshot/daemon.log).",
+                        "en": "Set up – starts by itself with the VR game (log: ~/.local/state/"
+                              "linuxvr-viewshot/daemon.log)."},
+    "overlay_card":    {"de": "🔁 Lens: Übersetzung über dem Original", "en": "🔁 Lens: translation over the original"},
+    "overlay_hint":    {"de": "Nur bei 🔁 Lens: legt im blauen Rahmen über jede erkannte Zeile ein graues "
+                              "Kästchen mit der Übersetzung. Fotos stehen im 🪟 Panel.",
+                        "en": "🔁 Lens only: puts a grey box with the translation over every recognised line "
+                              "inside the blue frame. Photos are shown in the 🪟 panel."},
+    "overlay_on":      {"de": "🥽 Übersetzung über dem Text anzeigen", "en": "🥽 Show translation over the text"},
     "tr_favorites":    {"de": "Favoriten",        "en": "Favourites"},
+    "tr_route":       {"de": "Modus", "en": "Mode"},
+    "tr_route_auto":  {"de": "🤖 Automatisch", "en": "🤖 Automatic"},
+    "tr_route_manual": {"de": "✋ Manuell", "en": "✋ Manual"},
+    "tr_route_hint_auto": {"de": "Bei jedem Foto entscheidet die Main-KI: normalen Text übersetzt sie selbst, "
+                                 "Erklärungen und Quiz gehen an die KI darunter. Aufgabe auf der Main-Seite / "
+                                 "im VR-Panel umstellen gilt nur fürs aktuelle + nächste Foto.",
+                           "en": "For every photo the main AI decides: it translates normal text itself, "
+                                 "explanations and quizzes go to the AI below. Changing the task on the main "
+                                 "page / in the VR panel only counts for the current + next photo."},
+    "tr_route_hint_manual": {"de": "Du wählst die Aufgabe auf der Main-Seite / im VR-Panel – jede Aufgabe "
+                                   "nimmt fest ihre KI. Nichts stellt sich von selbst um.",
+                             "en": "You pick the task on the main page / in the VR panel – each task always "
+                                   "uses its AI. Nothing switches by itself."},
+    "tr_route_hint_noai": {"de": "✋ Manuell – ein Übersetzer wie LibreTranslate kann nicht entscheiden, was "
+                                 "im Foto ist. Für Automatisch eine KI als Main wählen.",
+                           "en": "✋ Manual – a translator like LibreTranslate can't decide what's in the "
+                                 "photo. Pick an AI as main for automatic."},
+    "tr_main":        {"de": "Main", "en": "Main"},
+    "tr_group_plain": {"de": "Übersetzung", "en": "Translation"},
+    "tr_group_ai":    {"de": "KI-Übersetzung", "en": "AI translation"},
+    "tr_settings_for": {"de": "Einstellungen für", "en": "Settings for"},
+    "main_page_card": {"de": "Main-Seite", "en": "Main page"},
+    "tr_tasks_same":  {"de": "Wie Main", "en": "Same as main"},
+    "tr_tasks_off":   {"de": "— aus (nur übersetzen)", "en": "— off (translate only)"},
+    "tr_answer_not_ready": {"de": "Dieser Dienst ist noch nicht eingerichtet – bis dahin wird der normale "
+                                  "Dienst genommen.",
+                            "en": "This service is not set up yet – the normal service is used until then."},
     "tr_favorites_hint": {"de": "Nur angehakte Dienste stehen auf der Main-Seite im Dropdown. "
                                 "Nichts angehakt = alle eingerichteten Dienste (wie bisher). "
                                 "Nicht eingerichtete Favoriten erscheinen erst, wenn sie eingerichtet sind.",
@@ -532,15 +738,29 @@ TEXTS = {
     "about":           {"de": "Über",            "en": "About"},
 }
 
+# Französisch steht in einer eigenen Datei (leichter zu prüfen) → hier einsortieren
+from core.i18n_fr import FR  # noqa: E402
+
+for _key, _text in FR.items():
+    if _key in TEXTS:
+        TEXTS[_key]["fr"] = _text
+
+LANGUAGES = ("de", "en", "fr")
 _lang = "de"
 
 
 def set_language(lang: str) -> None:
     global _lang
-    _lang = lang if lang in ("de", "en") else "de"
+    _lang = lang if lang in LANGUAGES else "de"
+
+
+def month_title(year: int, month: int) -> str:
+    """Monats-Trenner in der Galerie: „2026 Oktober“."""
+    return f"{year} {tr(f'month_{month}')}"
 
 
 def tr(key: str, **kwargs) -> str:
     """Text in der aktuellen Sprache. Fehlt ein Schlüssel, wird er selbst angezeigt."""
-    text = TEXTS.get(key, {}).get(_lang, key)
+    entry = TEXTS.get(key, {})
+    text = entry.get(_lang) or entry.get("en") or key  # fehlt Französisch → Englisch
     return text.format(**kwargs) if kwargs else text

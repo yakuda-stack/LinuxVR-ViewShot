@@ -59,6 +59,14 @@ ZIELE = [
          muster=r'^name = "linuxvr-viewshot-layer"\nversion = "([^"]+)"',
          alle=False, pflicht=True, pkg=False),
 
+    # ⚙ Hintergrund-Dienst (daemon/) – gleiche Version wie der Layer
+    dict(datei="daemon/Cargo.toml",
+         muster=r'^version\s*=\s*"([^"]+)"',
+         alle=False, pflicht=True, pkg=False),
+    dict(datei="Cargo.lock",
+         muster=r'^name = "linuxvr-viewshot-daemon"\nversion = "([^"]+)"',
+         alle=False, pflicht=True, pkg=False),
+
     # pkg=True: Unterstrich-Form (0.5.0_alpha), pkgver verbietet Bindestriche.
     # Der PKGBUILD macht daraus selbst wieder den Tag v0.5.0-alpha.
     dict(datei="packaging/aur/PKGBUILD",

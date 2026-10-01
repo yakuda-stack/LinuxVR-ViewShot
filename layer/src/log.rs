@@ -10,6 +10,11 @@ use std::sync::Mutex;
 /// Name der App in diesem Prozess (für das Log)
 static APP: Mutex<String> = Mutex::new(String::new());
 
+/// Name der App (aus xrCreateInstance)
+pub fn app() -> String {
+    APP.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
 pub fn set_app(name: &str) {
     // Test-Instanzen von wineopenxr/steam sollen den echten Namen nicht überschreiben
     let mut a = APP.lock().unwrap_or_else(|e| e.into_inner());

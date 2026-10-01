@@ -23,6 +23,8 @@ mod gesture;
 mod icons;
 #[macro_use]
 mod log;
+mod overlay;
+mod panel;
 mod save;
 
 use dispatch::Next;
@@ -31,7 +33,7 @@ use openxr_sys::{pfn, Handle};
 use std::collections::{HashMap, VecDeque};
 use std::ffi::{c_char, CStr};
 use std::sync::{LazyLock, Mutex, MutexGuard};
-use std::time::Instant;
+use std::time::{Duration, Instant, SystemTime};
 
 // ───────────────────────────── Zustand ─────────────────────────────
 
@@ -42,6 +44,8 @@ struct Actions {
     trigger: xr::Action,
     buttons: xr::Action,
     pose: xr::Action,
+    /// Zeige-Pose (Laser fürs 🪟 Panel)
+    aim: xr::Action,
     haptic: xr::Action,
     hands: [xr::Path; 2],
 }
@@ -53,6 +57,7 @@ impl Actions {
             bindings::Slot::Trigger => self.trigger,
             bindings::Slot::Buttons => self.buttons,
             bindings::Slot::Pose => self.pose,
+            bindings::Slot::Aim => self.aim,
             bindings::Slot::Haptic => self.haptic,
         }
     }
@@ -81,6 +86,8 @@ struct SessionData {
     /// Unsere Actions für diese Session (None = nicht angehängt)
     actions: Option<Actions>,
     spaces: [xr::Space; 2],
+    /// Zeige-Posen (Laser) – -Z = Richtung
+    aim_spaces: [xr::Space; 2],
     vk_binding: Option<VkBinding>,
     vk: Option<capture::VkCtx>,
     vk_failed: bool,
@@ -103,10 +110,27 @@ struct SessionData {
     /// Swapchain mit den Typ-Symbolen (Ebene = PhotoType::index), manueller Modus
     icon_sc: Option<xr::Swapchain>,
     icon_failed: bool,
+    /// runder Laser-Punkt (durchsichtiger Rand)
+    dot_sc: Option<xr::Swapchain>,
+    dot_failed: bool,
     /// Weißes Aufblitzen nach dem Foto bis zu diesem Zeitpunkt
     flash_until: Option<Instant>,
     /// Live-Modus läuft: derselbe Bildausschnitt wird immer wieder fotografiert
     live: Option<Live>,
+    /// Swapchain mit dem aktuellen Overlay-Bild (+ Änderungszeit der Datei)
+    overlay_sc: Option<(xr::Swapchain, SystemTime)>,
+    /// Alte Overlay-Swapchains – erst im nächsten Frame löschen (Compositor evtl. noch dran)
+    overlay_trash: Vec<xr::Swapchain>,
+    overlay_failed: bool,
+    /// 🪟 Swapchain mit dem Panel-Bild der UI (+ Änderungszeit)
+    panel_sc: Option<(xr::Swapchain, SystemTime)>,
+    /// Laser / Klicks / Greifen / Größe
+    panel_input: panel::Interaction,
+    /// 🔘 Knopf-Bild (Ebene 0 = zu, 1 = auf) + Farbe, mit der es gemalt wurde
+    button_sc: Option<(xr::Swapchain, [u8; 3])>,
+    button_failed: bool,
+    /// 🔘 Knopf: Klick / Greifen / Größe
+    button_input: panel::Interaction,
 }
 
 /// Live-Modus: Ausschnitt (am Kopf fest, wie ein Untertitel-Fenster) + nächstes Foto
@@ -117,6 +141,8 @@ struct Live {
     /// Entfernung, in der der blaue Rahmen gezeichnet wird (Meter)
     depth: f32,
     next: Instant,
+    /// Start – ältere Overlay-Bilder gehören zu einem früheren Lens
+    since: SystemTime,
 }
 
 /// Zustand pro OpenXR-Instanz. Ein Programm kann MEHRERE Instanzen
@@ -410,6 +436,7 @@ unsafe fn create_actions(next: &Next, instance: xr::Instance, hands: [xr::Path; 
         trigger: make("vs_trigger", "ViewShot Trigger", xr::ActionType::FLOAT_INPUT)?,
         buttons: make("vs_buttons", "ViewShot Buttons", xr::ActionType::BOOLEAN_INPUT)?,
         pose: make("vs_hand_pose", "ViewShot Hand", xr::ActionType::POSE_INPUT)?,
+        aim: make("vs_aim_pose", "ViewShot Pointer", xr::ActionType::POSE_INPUT)?,
         haptic: make("vs_haptic", "ViewShot Haptic", xr::ActionType::VIBRATION_OUTPUT)?,
         hands,
     })
@@ -554,6 +581,11 @@ unsafe extern "system" fn attach_action_sets(
             if !ok(r) {
                 log!("xrCreateActionSpace fehlgeschlagen: {r:?}");
             }
+            let aim = xr::ActionSpaceCreateInfo { action: actions.aim, ..ci };
+            let r = (nx.create_action_space)(session, &aim, &mut s.aim_spaces[i]);
+            if !ok(r) {
+                log!("xrCreateActionSpace (Zeiger) fehlgeschlagen: {r:?}");
+            }
         }
         s.actions = Some(actions);
         log!("Action-Set angehängt ({} Profil(e)) – Geste ist bereit", used.len());
@@ -603,6 +635,20 @@ unsafe fn locate(nx: &Next, space: xr::Space, base: xr::Space, time: xr::Time) -
     loc.location_flags
         .contains(xr::SpaceLocationFlags::POSITION_VALID)
         .then_some(loc.pose.position)
+}
+
+/// Ganze Pose (Position + Drehung) – None, wenn nicht getrackt.
+unsafe fn locate_pose(nx: &Next, space: xr::Space, base: xr::Space, time: xr::Time) -> Option<xr::Posef> {
+    if space == xr::Space::NULL || base == xr::Space::NULL || time.as_nanos() == 0 {
+        return None;
+    }
+    let mut loc: xr::SpaceLocation = std::mem::zeroed();
+    loc.ty = xr::SpaceLocation::TYPE;
+    if !ok((nx.locate_space)(space, base, time, &mut loc)) {
+        return None;
+    }
+    let need = xr::SpaceLocationFlags::POSITION_VALID | xr::SpaceLocationFlags::ORIENTATION_VALID;
+    loc.location_flags.contains(need).then_some(loc.pose)
 }
 
 unsafe fn vibrate(nx: &Next, session: xr::Session, a: &Actions, ms: i64, amplitude: f32) {
@@ -745,6 +791,12 @@ unsafe extern "system" fn create_session(
         l.sessions.insert((*session).into_raw(), SessionData {
             actions: None,
             spaces: [xr::Space::NULL; 2],
+            aim_spaces: [xr::Space::NULL; 2],
+            panel_sc: None,
+            panel_input: panel::Interaction::panel(),
+            button_sc: None,
+            button_failed: false,
+            button_input: panel::Interaction::button(),
             vk_binding,
             vk: None,
             vk_failed: false,
@@ -760,7 +812,12 @@ unsafe extern "system" fn create_session(
             frame_failed: false,
             icon_sc: None,
             icon_failed: false,
+            dot_sc: None,
+            dot_failed: false,
             live: None,
+            overlay_sc: None,
+            overlay_trash: Vec::new(),
+            overlay_failed: false,
             flash_until: None,
         });
     }
@@ -771,9 +828,19 @@ unsafe extern "system" fn create_session(
 unsafe extern "system" fn destroy_session(session: xr::Session) -> xr::Result {
     let Some(nx) = next() else { return xr::Result::ERROR_HANDLE_INVALID };
     log!("Session beendet: {}", session.into_raw());
+    daemon_hello(true);
     let own: Vec<xr::Swapchain> = state()
         .session_mut(session)
-        .map(|s| [s.frame_sc.take(), s.icon_sc.take()].into_iter().flatten().collect())
+        .map(|s| {
+            let overlay = s.overlay_sc.take().map(|(sc, _)| sc);
+            let panel = s.panel_sc.take().map(|(sc, _)| sc);
+            let button = s.button_sc.take().map(|(sc, _)| sc);
+            [s.frame_sc.take(), s.icon_sc.take(), s.dot_sc.take(), overlay, panel, button]
+                .into_iter()
+                .flatten()
+                .chain(s.overlay_trash.drain(..))
+                .collect()
+        })
         .unwrap_or_default();
     for sc in own {
         (nx.destroy_swapchain)(sc);
@@ -912,11 +979,16 @@ unsafe extern "system" fn end_frame(session: xr::Session, info: *const xr::Frame
     if info.is_null() {
         return (nx.end_frame)(session, info);
     }
+    // 0) Hintergrund-Dienst wachhalten (übersetzt + malt das Panel, wenn die App zu ist)
+    daemon_hello(false);
     // 1) Foto – nur aus den Ebenen des Spiels, der Rahmen ist also nie im Bild
     guard("capture", || try_capture(&nx, session, &*info));
 
-    // 2) Sichtbarer Rahmen als zusätzliche Ebenen oben drauf
-    let quads = guard("frame", || build_frame_quads(&nx, session, &*info)).unwrap_or_default();
+    // 2) 🥽 Übersetzung über dem Original, darüber der sichtbare Rahmen
+    let mut quads = guard("overlay", || build_overlay_quads(&nx, session, &*info)).unwrap_or_default();
+    quads.extend(guard("panel", || build_panel_quads(&nx, session, &*info)).unwrap_or_default());
+    let with_overlay = !quads.is_empty();
+    quads.extend(guard("frame", || build_frame_quads(&nx, session, &*info)).unwrap_or_default());
     if quads.is_empty() {
         return (nx.end_frame)(session, info);
     }
@@ -935,10 +1007,16 @@ unsafe extern "system" fn end_frame(session: xr::Session, info: *const xr::Frame
     if ok(r) {
         return r;
     }
-    // Runtime mag unsere Ebenen nicht → Rahmen abschalten, Frame normal beenden
-    log!("Rahmen-Ebenen abgelehnt ({r:?}) – Rahmen-Anzeige aus");
+    // Runtime mag unsere Ebenen nicht → abschalten, Frame normal beenden.
+    // War ein Overlay dabei, zuerst nur das Overlay abschalten (Rahmen bleibt).
     if let Some(s) = state().session_mut(session) {
-        s.frame_failed = true;
+        if with_overlay {
+            log!("Overlay-Ebene abgelehnt ({r:?}) – Overlay aus");
+            s.overlay_failed = true;
+        } else {
+            log!("Rahmen-Ebenen abgelehnt ({r:?}) – Rahmen-Anzeige aus");
+            s.frame_failed = true;
+        }
     }
     (nx.end_frame)(session, info)
 }
@@ -1082,7 +1160,7 @@ unsafe fn make_static_swapchain(
 }
 
 /// Legt die kleine Swapchain für den Rahmen an und färbt sie ein (einmalig).
-/// Ebene 0 = rot, 1 = weiß (Blitz), 2 = blau (🔁 Lens)
+/// Ebene 0 = rot, 1 = weiß (Blitz, Laser), 2 = blau (🔁 Lens, Laser-Punkt), 3 = gelb (🪟 Bearbeiten)
 unsafe fn ensure_frame_swapchain(nx: &Next, session: xr::Session, s: &mut SessionData) -> Option<xr::Swapchain> {
     if let Some(sc) = s.frame_sc {
         return Some(sc);
@@ -1094,7 +1172,10 @@ unsafe fn ensure_frame_swapchain(nx: &Next, session: xr::Session, s: &mut Sessio
     let red = [1.0, 0.05, 0.05, 1.0];
     let white = [1.0, 1.0, 1.0, 1.0];
     let blue = [0.2, 0.55, 1.0, 1.0];
-    match make_static_swapchain(nx, session, vk, (4, 4, 3), &|vk, image, _| vk.fill_layers(image, &[red, white, blue])) {
+    let yellow = [1.0, 0.8, 0.1, 1.0];
+    match make_static_swapchain(nx, session, vk, (4, 4, 4), &|vk, image, _| {
+        vk.fill_layers(image, &[red, white, blue, yellow])
+    }) {
         Ok(sc) => {
             log!("Rahmen-Anzeige bereit");
             s.frame_sc = Some(sc);
@@ -1103,6 +1184,86 @@ unsafe fn ensure_frame_swapchain(nx: &Next, session: xr::Session, s: &mut Sessio
         Err(e) => {
             log!("Rahmen-Anzeige nicht möglich: {e}");
             s.frame_failed = true;
+            None
+        }
+    }
+}
+
+const DOT_SIZE: u32 = 32;
+
+/// Runder Punkt (blau, weicher Rand, außen durchsichtig) für das Laser-Ende
+fn dot_pixels(bgr: bool) -> Vec<u8> {
+    let (r, g, b) = (51u8, 140u8, 255u8);
+    let (r, b) = if bgr { (b, r) } else { (r, b) };
+    let c = DOT_SIZE as f32 / 2.0;
+    let mut out = Vec::with_capacity((DOT_SIZE * DOT_SIZE * 4) as usize);
+    for y in 0..DOT_SIZE {
+        for x in 0..DOT_SIZE {
+            let d = ((x as f32 + 0.5 - c).powi(2) + (y as f32 + 0.5 - c).powi(2)).sqrt();
+            // innen voll, außen 1,5 px weich auslaufen; weißer Rand für Kontrast
+            let a = ((c - 0.5 - d) / 1.5).clamp(0.0, 1.0);
+            let ring = d > c - 5.0;
+            let (pr, pg, pb) = if ring { (255, 255, 255) } else { (r, g, b) };
+            out.extend_from_slice(&[pr, pg, pb, (a * 255.0) as u8]);
+        }
+    }
+    out
+}
+
+unsafe fn ensure_dot_swapchain(nx: &Next, session: xr::Session, s: &mut SessionData) -> Option<xr::Swapchain> {
+    if let Some(sc) = s.dot_sc {
+        return Some(sc);
+    }
+    if s.dot_failed || !ensure_vk(s) {
+        return None;
+    }
+    let vk = s.vk.as_ref()?;
+    let fill = |vk: &capture::VkCtx, image, format| {
+        let bgr = matches!(format, save::B8G8R8A8_SRGB | save::B8G8R8A8_UNORM);
+        vk.upload_layers(image, &[dot_pixels(bgr)], DOT_SIZE, DOT_SIZE)
+    };
+    match make_static_swapchain(nx, session, vk, (DOT_SIZE, DOT_SIZE, 1), &fill) {
+        Ok(sc) => {
+            s.dot_sc = Some(sc);
+            Some(sc)
+        }
+        Err(e) => {
+            log!("Laser-Punkt nicht möglich: {e}");
+            s.dot_failed = true;
+            None
+        }
+    }
+}
+
+/// 🔘 Knopf: Pixel-Größe des Bilds
+const BUTTON_PX: u32 = 128;
+
+/// 🔘 Swapchain mit dem Knopf (Ebene 0 = zu, 1 = auf) – neu, wenn sich die Farbe ändert.
+unsafe fn ensure_button_swapchain(nx: &Next, session: xr::Session, s: &mut SessionData, color: [u8; 3]) -> Option<xr::Swapchain> {
+    if let Some((sc, c)) = s.button_sc {
+        if c == color {
+            return Some(sc);
+        }
+    }
+    if s.button_failed || !ensure_vk(s) {
+        return None;
+    }
+    let vk = s.vk.as_ref()?;
+    let fill = |vk: &capture::VkCtx, image, format| {
+        let bgr = matches!(format, save::B8G8R8A8_SRGB | save::B8G8R8A8_UNORM);
+        let layers = [panel::button_pixels(BUTTON_PX, color, false, bgr), panel::button_pixels(BUTTON_PX, color, true, bgr)];
+        vk.upload_layers(image, &layers, BUTTON_PX, BUTTON_PX)
+    };
+    match make_static_swapchain(nx, session, vk, (BUTTON_PX, BUTTON_PX, 2), &fill) {
+        Ok(sc) => {
+            if let Some((old, _)) = s.button_sc.replace((sc, color)) {
+                s.overlay_trash.push(old); // Compositor evtl. noch dran → im nächsten Frame weg
+            }
+            Some(sc)
+        }
+        Err(e) => {
+            log!("Knopf-Anzeige nicht möglich: {e}");
+            s.button_failed = true;
             None
         }
     }
@@ -1200,6 +1361,347 @@ unsafe fn build_frame_quads(nx: &Next, session: xr::Session, info: &xr::FrameEnd
         }
     }
     quads
+}
+
+/// 🥽 Übersetzung über dem Original: bei 🔁 Lens im blauen Rahmen (am Kopf fest),
+/// sonst an der Stelle im Raum, wo das letzte Foto gemacht wurde.
+unsafe fn build_overlay_quads(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) -> Vec<xr::CompositionLayerQuad> {
+    let mut g = state();
+    let Some(s) = g.session_mut(session) else { return Vec::new() };
+    for sc in s.overlay_trash.drain(..) {
+        (nx.destroy_swapchain)(sc); // wurde im letzten Frame nicht mehr benutzt
+    }
+    let cfg = config::get();
+    if !cfg.overlay || s.overlay_failed || s.actions.is_none() {
+        return Vec::new();
+    }
+    let Some(img) = overlay::get() else { return Vec::new() };
+    let Some(proj) = find_projection(info) else { return Vec::new() };
+
+    // 🥽 Nur bei 🔁 Lens (Fotos stehen im 🪟 Panel): ein Overlay, das zu DIESEM Lens gehört
+    let Some(live) = s.live else { return Vec::new() };
+    if img.for_name != overlay::LIVE || img.modified < live.since {
+        return Vec::new();
+    }
+    let (view, eye) = choose_view(proj, cfg.eye_t());
+    if image_rect(view) != live.img {
+        return Vec::new();
+    }
+    let quad = frame::rect_quad(&eye, &view.fov, live.img, live.rect, live.depth);
+
+    let Some(sc) = ensure_overlay_swapchain(nx, session, s, &img) else { return Vec::new() };
+    vec![xr::CompositionLayerQuad {
+        ty: xr::CompositionLayerQuad::TYPE,
+        next: std::ptr::null(),
+        // durchsichtige Stellen durchsichtig lassen (PNG ist nicht vormultipliert)
+        layer_flags: xr::CompositionLayerFlags::BLEND_TEXTURE_SOURCE_ALPHA
+            | xr::CompositionLayerFlags::UNPREMULTIPLIED_ALPHA,
+        space: proj.space,
+        eye_visibility: xr::EyeVisibility::BOTH,
+        sub_image: xr::SwapchainSubImage {
+            swapchain: sc,
+            image_rect: xr::Rect2Di {
+                offset: xr::Offset2Di { x: 0, y: 0 },
+                extent: xr::Extent2Di { width: img.w as i32, height: img.h as i32 },
+            },
+            image_array_index: 0,
+        },
+        pose: quad.pose,
+        size: xr::Extent2Df { width: quad.width, height: quad.height },
+    }]
+}
+
+/// 🪟 Übersetzungs-Panel + 🔘 Knopf: hängen am selben Anker (Hand/Kopf/Welt), haben aber
+/// jeder ihre eigene Position/Drehung/Größe. Knopf = Panel auf/zu. Laser + Klicks, im
+/// Bearbeiten-Modus Grip = verschieben/drehen, Ecke + Trigger = Größe. Klicks gehen per UDP an die UI.
+unsafe fn build_panel_quads(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) -> Vec<xr::CompositionLayerQuad> {
+    let cfg = config::get();
+    if !cfg.panel {
+        return Vec::new();
+    }
+    let mut g = state();
+    let Some(s) = g.session_mut(session) else { return Vec::new() };
+    if s.overlay_failed || s.actions.is_none() {
+        return Vec::new();
+    }
+    let img = overlay::PANEL.get();
+    if img.is_none() && !cfg.panel_button {
+        return Vec::new();
+    }
+    let Some(proj) = find_projection(info) else { return Vec::new() };
+    let time = info.display_time;
+    // Kopf = Mitte zwischen den Augen
+    let left_eye = (*proj.views).pose;
+    let head = if proj.view_count > 1 {
+        frame::blend_eye(&left_eye, &(*proj.views.add(1)).pose, 0.5, left_eye.orientation)
+    } else {
+        left_eye
+    };
+    let anchor = match cfg.panel_anchor {
+        panel::Anchor::Left => locate_pose(nx, s.spaces[0], proj.space, time),
+        panel::Anchor::Right => locate_pose(nx, s.spaces[1], proj.space, time),
+        panel::Anchor::Head => Some(head),
+        panel::Anchor::World => Some(panel::IDENTITY),
+    };
+    let Some(anchor) = anchor else { return Vec::new() }; // Hand gerade nicht getrackt
+    let aspect = img.as_ref().map(|i| i.h as f32 / i.w.max(1) as f32).unwrap_or(1.0);
+
+    // 🔘 Knopf: gespeichert (passt der Anker?) oder Standard (Handgelenk innen)
+    let button = match panel::button_placement() {
+        Some(p) if p.anchor == cfg.panel_anchor => p,
+        _ => {
+            let off = panel::default_button(cfg.panel_anchor, &anchor, &head);
+            let p = panel::Placement::button(cfg.panel_anchor, &off, panel::BUTTON_DEFAULT);
+            panel::set_button_placement(p, true);
+            log!("Knopf: Standard-Position ({:?})", cfg.panel_anchor);
+            p
+        }
+    };
+    // 🪟 Panel: gespeichert oder neu – über dem Knopf (ohne Knopf: 55 cm vor dem Kopf)
+    let placement = match panel::placement() {
+        Some(p) if p.anchor == cfg.panel_anchor => p,
+        _ => {
+            let offset = if cfg.panel_button {
+                panel::default_above(&button, panel::DEFAULT_WIDTH * aspect)
+            } else {
+                panel::mul(&panel::inverse(&anchor), &panel::default_world(&head))
+            };
+            let p = panel::Placement::from_offset(cfg.panel_anchor, &offset, panel::DEFAULT_WIDTH, None);
+            panel::set_placement(p, true);
+            log!("Panel: neue Position {} ({:?})", if cfg.panel_button { "über dem Knopf" } else { "vor dem Kopf" }, cfg.panel_anchor);
+            p
+        }
+    };
+    let mut world = panel::mul(&anchor, &placement.offset());
+    let mut width = placement.width;
+    let mut fixed = placement.height; // Höhe von Hand gezogen (sonst passend zum Bild)
+    let mut bworld = panel::mul(&anchor, &button.offset());
+    let mut bsize = button.width;
+    let open = !cfg.panel_button || panel::is_open();
+    let shown = open && img.is_some();
+
+    // Bedienung: wer gerade verschoben/vergrößert wird oder getroffen ist, bekommt die Hände
+    let a = s.actions.as_ref().expect("oben geprüft");
+    let hands: [panel::HandInput; 2] = std::array::from_fn(|i| panel::HandInput {
+        aim: locate_pose(nx, s.aim_spaces[i], proj.space, time),
+        trigger: get_float(nx, session, a.trigger, a.hands[i]),
+        grip: get_float(nx, session, a.grip, a.hands[i]),
+    });
+    let blind = hands.map(|h| panel::HandInput { aim: None, ..h }); // Tasten zählen weiter, kein Treffer
+    let on_button = cfg.panel_button
+        && hands.iter().any(|h| h.aim.is_some_and(|aim| panel::hit(&bworld, bsize, bsize, &aim).is_some()));
+    let button_owns = cfg.panel_button && !s.panel_input.busy() && (s.button_input.busy() || on_button);
+    let bout = s.button_input.update(if button_owns { hands } else { blind }, &bworld, (bsize, bsize), None, cfg.panel_edit);
+    let height_now = fixed.unwrap_or(width * aspect);
+    let pout = s.panel_input.update(
+        if shown && !button_owns { hands } else { blind },
+        &world,
+        (width, height_now),
+        fixed,
+        cfg.panel_edit,
+    );
+    if !bout.clicks.is_empty() {
+        panel::set_open(!open);
+        log!("Panel: {}", if open { "zu" } else { "auf" });
+    }
+    for (u, v) in &pout.clicks {
+        send_panel_click(cfg.panel_port, *u, *v);
+    }
+    if let Some((new_world, new_width, new_height)) = pout.moved {
+        world = new_world;
+        width = new_width;
+        fixed = new_height;
+        let offset = panel::mul(&panel::inverse(&anchor), &world);
+        panel::set_placement(panel::Placement::from_offset(cfg.panel_anchor, &offset, width, fixed), false);
+    }
+    if pout.save {
+        if let Some(p) = panel::placement() {
+            panel::set_placement(p, true);
+            log!("Panel: Position gespeichert (Breite {:.2} m)", p.width);
+        }
+    }
+    if let Some((new_world, new_size, _)) = bout.moved {
+        bworld = new_world;
+        bsize = new_size;
+        let offset = panel::mul(&panel::inverse(&anchor), &bworld);
+        panel::set_button_placement(panel::Placement::button(cfg.panel_anchor, &offset, bsize), false);
+    }
+    if bout.save {
+        if let Some(p) = panel::button_placement() {
+            panel::set_button_placement(p, true);
+            log!("Knopf: Position gespeichert ({:.0} cm)", p.width * 100.0);
+        }
+    }
+
+    let layer = |pose: xr::Posef, w: f32, h: f32, swapchain: xr::Swapchain, px: (i32, i32), index: u32, blend: bool| {
+        xr::CompositionLayerQuad {
+            ty: xr::CompositionLayerQuad::TYPE,
+            next: std::ptr::null(),
+            layer_flags: if blend {
+                xr::CompositionLayerFlags::BLEND_TEXTURE_SOURCE_ALPHA | xr::CompositionLayerFlags::UNPREMULTIPLIED_ALPHA
+            } else {
+                xr::CompositionLayerFlags::EMPTY
+            },
+            space: proj.space,
+            eye_visibility: xr::EyeVisibility::BOTH,
+            sub_image: xr::SwapchainSubImage {
+                swapchain,
+                image_rect: xr::Rect2Di {
+                    offset: xr::Offset2Di { x: 0, y: 0 },
+                    extent: xr::Extent2Di { width: px.0, height: px.1 },
+                },
+                image_array_index: index,
+            },
+            pose,
+            size: xr::Extent2Df { width: w, height: h },
+        }
+    };
+    let mut quads = Vec::new();
+    let height = fixed.unwrap_or(width * aspect);
+    if shown {
+        if let Some(img) = img.as_ref() {
+            if let Some(sc) = ensure_image_swapchain(nx, session, s, img, true) {
+                quads.push(layer(world, width, height, sc, (img.w as i32, img.h as i32), 0, true));
+            }
+        }
+    }
+    if cfg.panel_button {
+        let color = panel::parse_color(&cfg.panel_button_color);
+        if let Some(sc) = ensure_button_swapchain(nx, session, s, color) {
+            quads.push(layer(bworld, bsize, bsize, sc, (BUTTON_PX as i32, BUTTON_PX as i32), u32::from(open), true));
+        }
+    }
+
+    // Farbige Striche/Punkte aus der Rahmen-Swapchain (4×4 Pixel je Farbe)
+    let Some(colors) = ensure_frame_swapchain(nx, session, s) else { return quads };
+    if cfg.panel_edit {
+        // gelber Rand = Bearbeiten-Modus an (Panel und Knopf einzeln)
+        let mut edges = |pose: &xr::Posef, w: f32, h: f32, corner: Option<panel::Corner>| {
+            let local = |x: f32, y: f32, z: f32| panel::mul(pose, &xr::Posef { position: panel::v(x, y, z), ..panel::IDENTITY });
+            let t = (w * 0.012).max(0.003);
+            let (w2, h2) = (w / 2.0, h / 2.0);
+            for (x, y, ew, eh) in [(0.0, h2, w, t), (0.0, -h2, w, t), (-w2, 0.0, t, h), (w2, 0.0, t, h)] {
+                quads.push(layer(local(x, y, 0.001), ew, eh, colors, (4, 4), 3, false));
+            }
+            if let Some(c) = corner {
+                // Ecke leuchtet: Trigger halten und ziehen (unten rechts = Breite, oben links = Höhe)
+                let size = (w.min(h) * 0.12).max(0.008);
+                let (x, y) = match c {
+                    panel::Corner::TopLeft => (-w2 + size / 2.0, h2 - size / 2.0),
+                    panel::Corner::BottomRight => (w2 - size / 2.0, -h2 + size / 2.0),
+                };
+                quads.push(layer(local(x, y, 0.002), size, size, colors, (4, 4), 3, false));
+            }
+        };
+        if shown {
+            edges(&world, width, height, pout.corner);
+        }
+        if cfg.panel_button {
+            edges(&bworld, bsize, bsize, bout.corner);
+        }
+    }
+    // Laser: Knopf oder Panel (wer die Hand gerade hat)
+    let laser = bout.laser.map(|l| (l, bworld)).or(pout.laser.map(|l| (l, world)));
+    if let Some(((_hand, from, to), target)) = laser {
+        let (pose, len) = panel::beam(from, to, head.position);
+        quads.push(layer(pose, len, 0.002, colors, (4, 4), 1, false));
+        // runder Punkt am Ende des Lasers (etwas vor der Fläche, damit er nicht flackert)
+        let dot = xr::Posef { position: to, orientation: target.orientation };
+        match ensure_dot_swapchain(nx, session, s) {
+            Some(sc) => quads.push(layer(dot, 0.014, 0.014, sc, (DOT_SIZE as i32, DOT_SIZE as i32), 0, true)),
+            None => quads.push(layer(dot, 0.012, 0.012, colors, (4, 4), 2, false)),
+        }
+    }
+    quads
+}
+
+/// Port des Hintergrund-Dienstes (systemd startet ihn beim ersten Paket, siehe daemon/)
+const DAEMON_PORT: u16 = 47932;
+
+/// Alle 5 s „hello“ + App + Foto-Ordner an den Dienst (startet ihn per systemd-Socket, hält ihn wach);
+/// `bye` = Spiel/Session zu Ende. Nur, wenn er für dieses Spiel an ist (Optionen → Shot).
+fn daemon_hello(bye: bool) {
+    use std::net::UdpSocket;
+    use std::sync::{Mutex, OnceLock};
+    static SOCKET: OnceLock<Option<UdpSocket>> = OnceLock::new();
+    static LAST: Mutex<Option<Instant>> = Mutex::new(None);
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    if !bye && last.is_some_and(|t| t.elapsed() < Duration::from_secs(5)) {
+        return;
+    }
+    *last = Some(Instant::now());
+    let app = log::app();
+    if !config::get().daemon_wanted(&[&app, &config::process_name()]) {
+        return;
+    }
+    let Some(sock) = SOCKET.get_or_init(|| UdpSocket::bind("127.0.0.1:0").ok()) else { return };
+    // Foto-Ordner mitschicken: der Dienst (unter systemd) kennt $VIEWSHOT_OUTPUT_DIR des Spiels nicht
+    let msg = if bye { "bye".to_string() } else { format!("hello\n{app}\n{}", save::output_dir().display()) };
+    let _ = sock.send_to(msg.as_bytes(), ("127.0.0.1", DAEMON_PORT));
+}
+
+/// Klick an die UI: "click <u> <v>" per UDP (127.0.0.1:<panel_port>)
+fn send_panel_click(port: u16, u: f32, v: f32) {
+    use std::net::UdpSocket;
+    use std::sync::OnceLock;
+    static SOCKET: OnceLock<Option<UdpSocket>> = OnceLock::new();
+    let Some(sock) = SOCKET.get_or_init(|| UdpSocket::bind("127.0.0.1:0").ok()) else { return };
+    let _ = sock.send_to(format!("click {u:.4} {v:.4}\n").as_bytes(), ("127.0.0.1", port));
+}
+
+/// Swapchain mit dem Overlay-Bild – neu anlegen, wenn sich die Datei geändert hat.
+unsafe fn ensure_overlay_swapchain(
+    nx: &Next,
+    session: xr::Session,
+    s: &mut SessionData,
+    img: &overlay::Image,
+) -> Option<xr::Swapchain> {
+    ensure_image_swapchain(nx, session, s, img, false)
+}
+
+/// Swapchain mit einem Bild der UI – neu anlegen, wenn sich die Datei geändert hat.
+/// `panel` = 🪟 Panel-Bild, sonst 🥽 Overlay.
+unsafe fn ensure_image_swapchain(
+    nx: &Next,
+    session: xr::Session,
+    s: &mut SessionData,
+    img: &overlay::Image,
+    panel: bool,
+) -> Option<xr::Swapchain> {
+    let current = if panel { s.panel_sc } else { s.overlay_sc };
+    if let Some((sc, modified)) = current {
+        if modified == img.modified {
+            return Some(sc);
+        }
+    }
+    if !ensure_vk(s) {
+        return None;
+    }
+    let vk = s.vk.as_ref()?;
+    let fill = |vk: &capture::VkCtx, image, format| {
+        let bgr = matches!(format, save::B8G8R8A8_SRGB | save::B8G8R8A8_UNORM);
+        let mut px = img.rgba.clone();
+        if bgr {
+            for p in px.as_chunks_mut::<4>().0 {
+                p.swap(0, 2);
+            }
+        }
+        vk.upload_layers(image, &[px], img.w, img.h)
+    };
+    match make_static_swapchain(nx, session, vk, (img.w, img.h, 1), &fill) {
+        Ok(sc) => {
+            let slot = if panel { &mut s.panel_sc } else { &mut s.overlay_sc };
+            if let Some((old, _)) = slot.replace((sc, img.modified)) {
+                s.overlay_trash.push(old);
+            }
+            Some(sc)
+        }
+        Err(e) => {
+            log!("{}-Anzeige nicht möglich: {e}", if panel { "Panel" } else { "Overlay" });
+            s.overlay_failed = true;
+            None
+        }
+    }
 }
 
 /// Dünner blauer Rahmen für den Live-Modus (am Kopf fest, keine Hände nötig).
@@ -1323,7 +1825,7 @@ unsafe fn try_capture(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) 
     let sub = view.sub_image;
     let img = image_rect(view);
     let now = Instant::now();
-    let rect = if let Some(live) = s.live.as_mut().filter(|_| live_due) {
+    let (rect, photo_name) = if let Some(live) = s.live.as_mut().filter(|_| live_due) {
         // Live: derselbe Ausschnitt wie beim Start (am Kopf fest)
         if live.img != img {
             s.live = None;
@@ -1332,7 +1834,7 @@ unsafe fn try_capture(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) 
             return;
         }
         live.next = now + cfg.live_interval();
-        live.rect
+        (live.rect, None)
     } else {
         s.capture_pending = false;
         log!("Projektions-Ebene gefunden nach {} Frame(s), {} Views", s.pending_frames, proj.view_count);
@@ -1348,6 +1850,11 @@ unsafe fn try_capture(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) 
             inset * 100.0,
             cfg.eye_mix
         );
+        // Entfernung der Hände = Entfernung, in der Rahmen/Overlay gezeichnet werden
+        let depth = match (h0, h1) {
+            (Some(a), Some(b)) => (a.depth + b.depth) * 0.5,
+            _ => 0.6,
+        };
         if cfg.buttons().mode.is_some() && icons::current(cfg.manual()) == icons::PhotoType::Lens {
             // 🔁 Lens: KEIN Foto für die Galerie – ab jetzt denselben Ausschnitt
             // immer wieder fotografieren (das erste Mal gleich im nächsten Frame)
@@ -1355,15 +1862,11 @@ unsafe fn try_capture(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) 
                 log!("Lens: Hände zu nah / außerhalb – nicht gestartet");
                 return;
             }
-            let depth = match (h0, h1) {
-                (Some(a), Some(b)) => (a.depth + b.depth) * 0.5,
-                _ => 0.6,
-            };
-            s.live = Some(Live { img, rect, depth, next: now });
+            s.live = Some(Live { img, rect, depth, next: now, since: SystemTime::now() });
             log!("Lens gestartet: alle {:?} dieser Ausschnitt", cfg.live_interval());
             return;
         }
-        rect
+        (rect, Some(save::photo_name()))
     };
 
     let Some(sc) = s.swapchains.get(&sub.swapchain.into_raw()) else {
@@ -1401,7 +1904,13 @@ unsafe fn try_capture(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) 
             log!("Bild kopiert in {:?} ({}x{})", started.elapsed(), rect.w, rect.h);
             // manueller Modus → gewählten Typ ins PNG schreiben
             let photo_type = cfg.manual().then(|| icons::current(true).tag()).flatten();
-            save::save_png_async(raw, format, rect.w as u32, rect.h as u32, photo_type);
+            let name = photo_name.unwrap_or_else(save::photo_name);
+            save::save_png_async(name, raw, format, rect.w as u32, rect.h as u32, photo_type);
+            // 🔘 zugeklapptes Panel geht auf – gleich steht die Übersetzung drin
+            if cfg.panel && cfg.panel_open_on_shot && !panel::is_open() {
+                panel::set_open(true);
+                log!("Panel: nach dem Foto aufgeklappt");
+            }
         }
         Err(e) => log!("Kopieren fehlgeschlagen: {e}"),
     }

@@ -6,6 +6,7 @@ Die Pfade müssen genau zu denen im Rust-Layer passen
 """
 
 import os
+import time
 from pathlib import Path
 
 from PyQt6.QtCore import QStandardPaths
@@ -70,6 +71,98 @@ def list_photos() -> list[Path]:
     photos = [p for p in folder.iterdir() if p.suffix.lower() == ".png"]
     photos.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return photos
+
+
+# ----------------------------------------------------------------------
+# 🖼 Galerie: Foto-Ordner + weitere Ordner (z. B. ~/Bilder/VRChat), je mit
+# oder ohne Unterordner. Gespeichert in ui.json:
+#   "gallery_main_subfolders": false
+#   "gallery_folders": [{"path": "/home/…/Bilder/VRChat", "subfolders": true}]
+# Der ⚙ Dienst (daemon/src/paths.rs) liest dieselben Einträge.
+# ----------------------------------------------------------------------
+IMAGE_EXTS = {".png", ".jpg", ".jpeg"}
+# Hilfsordner im Foto-Ordner – nie in der Galerie
+HELPER_DIRS = {"panel", "overlay", "live"}
+MAX_DEPTH = 4            # so tief in Unterordner (VRChat: VRChat/2026-10/…)
+SCAN_SECONDS = 2.0       # Liste so lange merken (das VR-Panel fragt oft)
+_scan_cache: dict = {}
+_mtimes: dict[str, float] = {}
+
+
+def gallery_folders(cfg: dict) -> list[tuple[Path, bool]]:
+    """[(Ordner, Unterordner?)] – der Foto-Ordner immer zuerst, doppelte fallen weg."""
+    found = [(photo_dir(), bool(cfg.get("gallery_main_subfolders")))]
+    for entry in cfg.get("gallery_folders") or []:
+        if isinstance(entry, dict) and entry.get("path"):
+            folder = Path(os.path.expanduser(str(entry["path"])))
+            if all(folder != f for f, _ in found):
+                found.append((folder, bool(entry.get("subfolders"))))
+    return found
+
+
+def scan_folder(folder: Path, subfolders: bool) -> list[tuple[float, Path]]:
+    """Bilder in einem Ordner (mit Unterordnern bis MAX_DEPTH) → [(Änderungszeit, Pfad)]."""
+    main = folder == photo_dir()
+    out = []
+    todo = [(folder, 0)]
+    while todo:
+        current, depth = todo.pop()
+        try:
+            entries = list(os.scandir(current))
+        except OSError:
+            continue
+        for e in entries:
+            if e.name.startswith("."):
+                continue
+            try:
+                if e.is_dir(follow_symlinks=False):
+                    if subfolders and depth < MAX_DEPTH and not (main and depth == 0 and e.name in HELPER_DIRS):
+                        todo.append((Path(e.path), depth + 1))
+                elif os.path.splitext(e.name)[1].lower() in IMAGE_EXTS:
+                    out.append((e.stat().st_mtime, Path(e.path)))
+            except OSError:
+                continue
+    return out
+
+
+def gallery_photos(cfg: dict, fresh: bool = False) -> list[Path]:
+    """Alle Galerie-Bilder aus allen Ordnern, neueste zuerst (kurz gemerkt)."""
+    folders = gallery_folders(cfg)
+    key = tuple((str(f), s) for f, s in folders)
+    hit = _scan_cache.get("list")
+    if not fresh and hit and hit[0] == key and time.monotonic() - hit[1] < SCAN_SECONDS:
+        return list(hit[2])
+    found = {}
+    for folder, sub in folders:
+        for mtime, path in scan_folder(folder, sub):
+            found[path] = mtime
+    photos = sorted(found, key=lambda p: found[p], reverse=True)
+    _mtimes.clear()
+    _mtimes.update({str(p): m for p, m in found.items()})
+    _scan_cache["list"] = (key, time.monotonic(), photos)
+    return list(photos)
+
+
+def forget_scan() -> None:
+    """Nach Löschen/Ordner-Änderung: beim nächsten Mal neu suchen."""
+    _scan_cache.clear()
+
+
+def photo_mtime(photo: Path) -> float:
+    """Änderungszeit (aus der letzten Suche, sonst von der Platte)."""
+    m = _mtimes.get(str(photo))
+    if m is None:
+        try:
+            m = photo.stat().st_mtime
+        except OSError:
+            m = 0.0
+    return m
+
+
+def month_key(photo: Path) -> tuple[int, int]:
+    """(Jahr, Monat) des Fotos – für die Monats-Trenner in der Galerie."""
+    t = time.localtime(photo_mtime(photo))
+    return t.tm_year, t.tm_mon
 
 
 # WICHTIG: Der Layer MUSS im Home-Ordner registriert sein (~/.local).

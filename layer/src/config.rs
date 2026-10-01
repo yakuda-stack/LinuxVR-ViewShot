@@ -13,7 +13,18 @@
 //!   "shutter": "right",           Auslöser: "left" / "right" / "both"
 //!   "mode_button": "left",        Typ wechseln (nur manual): "left" / "right" / "both"
 //!   "icon_position": "bottom_left" Symbol-Position (manual): "bottom_left" / "bottom_right" / "top_left" / "top_right"
-//!   "live_interval_s": 3          🔁 Lens: alle so viele Sekunden neu fotografieren (→ live/live.png)
+//!   "live_interval_s": 3,         🔁 Lens: alle so viele Sekunden neu fotografieren (→ live/live.png)
+//!   "overlay": false,             🥽 🔁 Lens: Übersetzung über dem Original (overlay/overlay.png, malt die UI)
+//!   "panel": true,                🪟 Übersetzungs-Panel (panel/panel.png, malt die UI)
+//!   "panel_anchor": "left",       hängt an: "left" / "right" (Hand), "head", "world"
+//!   "panel_edit": false,          Bearbeiten: Grip = verschieben, Ecke + Trigger = Größe
+//!   "panel_port": 47931,          Klicks gehen per UDP an 127.0.0.1:<Port> (die UI)
+//!   "panel_opacity": 100,         Deckkraft in % (malt die UI ins Panel-Bild)
+//!   "panel_button": true,         🔘 Knopf (Handgelenk) klappt das Panel auf/zu
+//!   "panel_button_color": "#5b8dc9"  Farbe des Knopfs (passend zum Hand-Overlay, z. B. WayVR)
+//!   "panel_open_on_shot": true,   zugeklapptes Panel geht nach einem Foto von selbst auf
+//!   "daemon": "all",              Dienst ohne App starten: "off" / "all" (jedes VR-Spiel) / "selected"
+//!   "daemon_apps": []             bei "selected": nur diese Spiele (Teilwort, ohne Groß/Klein)
 //! }
 
 use serde::Deserialize;
@@ -35,6 +46,15 @@ pub enum Combo {
 pub enum DetectMode {
     Auto,
     Manual,
+}
+
+/// Wann soll der Hintergrund-Dienst (viewshot-daemon) laufen?
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DaemonMode {
+    Off,
+    All,
+    Selected,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -66,6 +86,21 @@ pub struct LayerConfig {
     pub mode_button: Combo,
     pub icon_position: IconPosition,
     pub live_interval_s: f32,
+    pub overlay: bool,
+    pub panel: bool,
+    pub panel_anchor: crate::panel::Anchor,
+    pub panel_edit: bool,
+    pub panel_port: u16,
+    /// Deckkraft des Panels in % – die UI malt sie ins Bild, hier nur der Vollständigkeit halber
+    pub panel_opacity: f32,
+    /// 🔘 Knopf am Handgelenk: Panel auf-/zuklappen
+    pub panel_button: bool,
+    /// Farbe des Knopfs „#rrggbb“
+    pub panel_button_color: String,
+    /// Nach einem Foto geht das zugeklappte Panel von selbst auf
+    pub panel_open_on_shot: bool,
+    pub daemon: DaemonMode,
+    pub daemon_apps: Vec<String>,
 }
 
 impl Default for LayerConfig {
@@ -79,6 +114,17 @@ impl Default for LayerConfig {
             mode_button: Combo::Left,
             icon_position: IconPosition::BottomLeft,
             live_interval_s: 3.0,
+            overlay: false,
+            panel: true,
+            panel_anchor: crate::panel::Anchor::Left,
+            panel_edit: false,
+            panel_port: 47931,
+            panel_opacity: 100.0,
+            panel_button: true,
+            panel_button_color: "#5b8dc9".into(),
+            panel_open_on_shot: true,
+            daemon: DaemonMode::All,
+            daemon_apps: vec![],
         }
     }
 }
@@ -112,6 +158,18 @@ impl LayerConfig {
     /// 0.0 = linkes Auge, 1.0 = rechtes Auge
     pub fn eye_t(&self) -> f32 {
         (self.eye_mix / 100.0).clamp(0.0, 1.0)
+    }
+
+    /// Soll der Hintergrund-Dienst für dieses Spiel laufen? (Namen wie bei is_excluded)
+    pub fn daemon_wanted(&self, names: &[&str]) -> bool {
+        match self.daemon {
+            DaemonMode::Off => false,
+            DaemonMode::All => true,
+            DaemonMode::Selected => self.daemon_apps.iter().any(|a| {
+                let a = a.trim().to_lowercase();
+                !a.is_empty() && names.iter().any(|n| n.to_lowercase().contains(&a))
+            }),
+        }
     }
 
     /// Ist diese App ausgeschlossen? Vergleich ohne Groß/Klein, Teilwort reicht
@@ -179,6 +237,16 @@ pub fn process_name() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn daemon_for_selected_games_only() {
+        let c: LayerConfig = serde_json::from_str(r#"{"daemon": "selected", "daemon_apps": ["vrchat"]}"#).unwrap();
+        assert!(c.daemon_wanted(&["VRChat", "VRChat.exe"]));
+        assert!(!c.daemon_wanted(&["Beat Saber"]));
+        assert!(LayerConfig::default().daemon_wanted(&["x"]));
+        let off: LayerConfig = serde_json::from_str(r#"{"daemon": "off"}"#).unwrap();
+        assert!(!off.daemon_wanted(&["VRChat"]));
+    }
 
     #[test]
     fn exclusion_matches_case_insensitive_substring() {

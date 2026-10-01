@@ -20,6 +20,7 @@ from pathlib import Path
 from core import llm_translator as L
 from core import ocr
 from core import translators as T
+from core import vision
 from core.custom_translator import LIBRE_EXAMPLE
 from core.paths import CONFIG_DIR
 
@@ -84,6 +85,8 @@ def is_configured(method: str, cfg: dict) -> bool:
         return bool(snippet) and snippet != LIBRE_EXAMPLE.strip()
     if method == L.METHOD_LLM_CUSTOM:
         return bool((cfg.get("tr_llm_custom_cmd") or "").strip())
+    if method == L.METHOD_VISION:  # Ollama installiert oder eigene Adresse (z. B. Docker)
+        return L.installed(method) or bool((cfg.get("tr_vision_url") or "").strip())
     if L.is_llm(method):
         return L.installed(method)
     return False
@@ -92,7 +95,7 @@ def is_configured(method: str, cfg: dict) -> bool:
 def privacy(method: str) -> str:
     """Wohin geht der erkannte Text? (Hinweis in der UI) – verschickt wird nur Text, nie das Foto.
     "local" = bleibt auf dem PC · "cloud" = Internet-Dienst · "custom" = hängt von der Einrichtung ab"""
-    if method == T.METHOD_LIBRE:
+    if method in (T.METHOD_LIBRE, L.METHOD_VISION):
         return "local"
     if method in (T.METHOD_CUSTOM, L.METHOD_LLM_CUSTOM):
         return "custom"
@@ -102,6 +105,13 @@ def privacy(method: str) -> str:
 def privacy_text(method: str) -> str:
     from core.i18n import tr
     return tr("privacy_" + privacy(method), service=tr("tr_m_" + method))
+
+
+def method_groups(methods: list[str]) -> list[tuple[str, list[str]]]:
+    """Dienste für Menüs gliedern: [(Text-Key der Überschrift, Dienste)] –
+    erst normale Übersetzer, dann die KIs (Reihenfolge bleibt)."""
+    return [("tr_group_plain", [m for m in methods if not L.is_llm(m)]),
+            ("tr_group_ai", [m for m in methods if L.is_llm(m)])]
 
 
 def configured_methods(cfg: dict) -> list[str]:
@@ -129,7 +139,7 @@ def _chain(method: str) -> list[str]:
 
 
 def _try(method: str, text: str, cfg: dict,
-         progress=lambda step, arg="": None) -> tuple[str | None, str]:
+         progress=lambda step, arg="": None, image=None) -> tuple[str | None, str]:
     """Ein Dienst, ein Versuch. (Übersetzung oder None, Fehlertext)."""
     src, tgt = cfg.get("tr_source", ""), cfg["tr_target"]  # "" = automatisch erkennen
     if L.is_llm(method):
@@ -137,7 +147,7 @@ def _try(method: str, text: str, cfg: dict,
             return L.translate(method, cfg, text, src, tgt,
                                on_retry=lambda n: progress("retry", f"{method}:{n}"),
                                # Antwort schon beim Schreiben zeigen (Statuszeile/Feld)
-                               on_partial=lambda s: progress("partial", s)), ""
+                               on_partial=lambda s: progress("partial", s), image=image), ""
         except L.LLMError as e:
             return None, str(e)
     tr = T.get_translator(method, deepl_key=cfg["tr_deepl_key"], libre_url=cfg["tr_libre_url"],
@@ -156,19 +166,130 @@ def translate_only(method: str, text: str, cfg: dict) -> tuple[str | None, str]:
 
 
 def translate_text_used(text: str, cfg: dict, log=lambda s: None,
-                        progress=lambda step, arg="": None) -> tuple[str, str]:
+                        progress=lambda step, arg="": None, image=None,
+                        info: dict | None = None) -> tuple[str, str]:
     """Wie translate_text, gibt aber zusätzlich zurück, WELCHER Dienst es geschafft hat
     (z. B. "lingva", wenn Claude Code nicht ging). progress("service", Dienst) vor jedem Versuch."""
-    for method in _chain(cfg["tr_method"]):
+    main = cfg["tr_method"]
+    cfg = route(cfg, text, image, log, progress)  # 🤖 Auto / Dienst je Aufgabe
+    chain = _chain(cfg["tr_method"])
+    if main not in chain:  # Kontext-/Rätsel-Dienst geht nicht → Haupt-Dienst übersetzt
+        chain.insert(1, main)
+    for method in chain:
+        if method != cfg["tr_method"]:
+            cfg = dict(cfg, tr_llm_mode=L.MODE_TRANSLATE)  # Ersatz: einfach übersetzen
+        if not text.strip() and method != L.METHOD_VISION:
+            continue  # ohne erkannten Text kann nur das Bild-LLM selbst lesen
         progress("service", method)
         start = time.monotonic()
-        out, error = _try(method, text, cfg, progress)
-        logging.info("Übersetzen %s: %.1f s, %s", method, time.monotonic() - start,
+        out, error = _try(method, text, cfg, progress, image=image)
+        logging.info("%s %s: %.1f s, %s", cfg.get("tr_llm_mode") or "translate", method,
+                     time.monotonic() - start,
                      "ok" if out else f"Fehler: {error}")
         if out:
+            if info is not None:  # „Letzte KI“: wer + welche Aufgabe
+                info.update(method=method, task=cfg.get("tr_llm_mode") or L.MODE_TRANSLATE)
             return out, method
         log(error or f"{method}: keine Antwort")
     raise TranslationError("kein Dienst hat geantwortet")
+
+
+ROUTE_AUTO, ROUTE_MANUAL = "auto", "manual"
+
+
+def route_mode(cfg: dict) -> str:
+    """🤖 Auto geht nur mit einer KI als Haupt-Dienst (LibreTranslate & Co. können nicht entscheiden)."""
+    if cfg.get("tr_route", ROUTE_AUTO) == ROUTE_AUTO and L.is_llm(cfg.get("tr_method", "")):
+        return ROUTE_AUTO
+    return ROUTE_MANUAL
+
+
+def set_main(cfg: dict, method: str) -> None:
+    """Main-Dienst wechseln. Springt der Modus dadurch auf ✋ Manuell (z. B. LibreTranslate),
+    Aufgabe auf „Übersetzen“ – sonst hinge noch „Kontext“ o. Ä. von früher dran → Cloud-KI."""
+    was_auto = route_mode(cfg) == ROUTE_AUTO
+    cfg["tr_method"] = method
+    if was_auto and route_mode(cfg) == ROUTE_MANUAL:
+        cfg["tr_llm_mode"] = L.MODE_TRANSLATE
+
+
+def set_route(cfg: dict, route: str) -> None:
+    """Modus umstellen. → ✋ Manuell: mit „Übersetzen“ anfangen (nichts Altes erbt)."""
+    was_auto = route_mode(cfg) == ROUTE_AUTO
+    cfg["tr_route"] = route
+    if was_auto and route_mode(cfg) == ROUTE_MANUAL:
+        cfg["tr_llm_mode"] = L.MODE_TRANSLATE
+
+
+def task_cfg(cfg: dict) -> dict:
+    """cfg mit der Aufgabe, die JETZT gilt: Manuell = die gewählte; Auto = „auto“ (Haupt-KI
+    entscheidet) oder die einmal von Hand gewählte (tr_auto_once)."""
+    if route_mode(cfg) == ROUTE_MANUAL:
+        mode = cfg.get("tr_llm_mode")
+        return dict(cfg, tr_llm_mode=mode if mode in L.MODES else L.MODE_TRANSLATE)
+    once = cfg.get("tr_auto_once") or ""
+    return dict(cfg, tr_llm_mode=once if once in L.MODES else L.MODE_AUTO)
+
+
+def photo_task_cfg(cfg: dict, photo_name: str) -> tuple[dict, bool]:
+    """Wie task_cfg, aber für ein bestimmtes Foto: die Hand-Auswahl bei 🤖 Auto gilt fürs Foto,
+    bei dem sie gewählt wurde, und das NÄCHSTE – danach wieder Auto.
+    Ändert cfg (tr_auto_once…); (Aufgaben-cfg, ob cfg geändert wurde → speichern)."""
+    changed = False
+    if route_mode(cfg) == ROUTE_AUTO and cfg.get("tr_auto_once") and photo_name:
+        if photo_name not in (cfg.get("tr_auto_once_photo"), cfg.get("tr_auto_once_next")):
+            if not cfg.get("tr_auto_once_next"):
+                cfg["tr_auto_once_next"] = photo_name  # das nächste Foto – gilt noch
+            else:
+                cfg["tr_auto_once"] = ""  # übernächstes → wieder 🤖 Auto
+                cfg["tr_auto_once_photo"] = cfg["tr_auto_once_next"] = ""
+            changed = True
+    return task_cfg(cfg), changed
+
+
+def route(cfg: dict, text: str, image=None, log=lambda s: None,
+          progress=lambda step, arg="": None) -> dict:
+    """Welche Aufgabe, welcher Dienst? → cfg mit tr_method / tr_llm_mode dafür.
+    🤖 Auto: bei jedem Foto neu – die Haupt-KI teilt zu (Übersetzen macht sie selbst,
+    Kontext / Frage gehen an den dort eingestellten Dienst). Sonst: Aufgabe von Hand,
+    Dienst fest je Aufgabe. Der Haupt-Dienst wird dabei NIE umgestellt."""
+    mode = cfg.get("tr_llm_mode") or L.MODE_TRANSLATE
+    auto = mode == L.MODE_AUTO  # _routed: Bild-LLM muss „Quiz?“ nicht nochmal fragen
+    if auto:
+        mode = classify(cfg, text, image, log, progress) if L.has_tasks(cfg) else L.MODE_TRANSLATE
+        progress("auto", mode)
+    method = L.task_method(cfg, mode)
+    if mode != L.MODE_TRANSLATE and (not method or not is_configured(method, cfg)
+                                     or (not text.strip() and method != L.METHOD_VISION)):
+        method, mode = cfg["tr_method"], L.MODE_TRANSLATE  # kann der Dienst nicht → übersetzen
+    return dict(cfg, tr_method=method or cfg["tr_method"], tr_llm_mode=mode, _routed=auto)
+
+
+_QUIZ_MARKS = ("?", "？", "○", "〇", "＿", "___", "□")
+
+
+def looks_like_quiz(text: str) -> bool:
+    """Ohne KI zum Entscheiden: Fragezeichen/Lücke + mehrere Zeilen (Antworten) = Quiz."""
+    lines = [t for t in text.splitlines() if t.strip()]
+    return len(lines) >= 3 and any(m in text for m in _QUIZ_MARKS)
+
+
+def classify(cfg: dict, text: str, image=None, log=lambda s: None,
+             progress=lambda step, arg="": None) -> str:
+    """🤖 Auto: Aufgabe für dieses Foto. Die Haupt-KI entscheidet (kurze Ein-Wort-Frage);
+    ist der Haupt-Dienst keine KI (z. B. LibreTranslate) → einfache Regel (looks_like_quiz)."""
+    main = cfg["tr_method"]
+    if L.is_llm(main) and is_configured(main, cfg) and (text.strip() or main == L.METHOD_VISION):
+        progress("classify", main)
+        try:
+            if main == L.METHOD_VISION:
+                return vision.classify(cfg, text, image)
+            verdict = L.translate(main, dict(cfg, tr_llm_mode=L.MODE_CLASSIFY), text,
+                                  cfg.get("tr_source", ""), cfg["tr_target"])
+            return vision.parse_task(verdict)
+        except L.LLMError as e:
+            log(str(e))
+    return L.MODE_ANSWER if looks_like_quiz(text) else L.MODE_TRANSLATE
 
 
 def translate_text(text: str, cfg: dict, log=lambda s: None) -> str:
@@ -188,20 +309,32 @@ def _load_cache() -> dict:
 
 def _save_cache(cache: dict) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    CACHE_FILE.write_text(json.dumps(cache, indent=1, ensure_ascii=False), encoding="utf-8")
+    # erst Hilfsdatei, dann umbenennen → der ⚙ Dienst liest nie eine halbe Datei
+    tmp = CACHE_FILE.with_name(CACHE_FILE.name + ".tmp")
+    tmp.write_text(json.dumps(cache, indent=1, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(CACHE_FILE)
+
+
+def _svc(method: str, cfg: dict) -> str:
+    model = L.model_of(method, cfg)
+    # "@" (nicht mehr ":"): alte Einträge enthielten evtl. Lingva-Ergebnisse
+    # unter dem KI-Namen → werden so nicht mehr als "KI-Übersetzung" gezeigt
+    return method + ("@" + model if model else "")  # anderes KI-Modell = andere Übersetzung
 
 
 def _key(cfg: dict) -> str:
-    method = cfg["tr_method"]
-    model = L.model_of(method, cfg)
-    if model:  # anderes KI-Modell = andere Übersetzung
-        # "@" (nicht mehr ":"): alte Einträge enthielten evtl. Lingva-Ergebnisse
-        # unter dem KI-Namen → werden so nicht mehr als "KI-Übersetzung" gezeigt
-        method += "@" + model
-    if L.is_llm(cfg["tr_method"]):
-        mode = cfg.get("tr_llm_mode") or L.MODE_TRANSLATE
-        if mode != L.MODE_TRANSLATE:  # Kontext / Antwort ≠ Übersetzung
-            method += f"#{mode}{L.prompt_version(cfg['tr_method'], mode)}"
+    main = cfg["tr_method"]
+    method = _svc(main, cfg)
+    mode = cfg.get("tr_llm_mode") or L.MODE_TRANSLATE
+    if mode == L.MODE_AUTO and L.has_tasks(cfg):  # 🤖 alle beteiligten Dienste gehören dazu
+        method += "#auto" + "".join(f"|{m}={_svc(L.task_method(cfg, m), cfg)}"
+                                    f"{L.prompt_version(L.task_method(cfg, m), m)}"
+                                    for m in L.TASK_KEYS if L.task_method(cfg, m))
+    elif mode in L.TASK_KEYS and L.task_method(cfg, mode):  # Kontext / Antwort ≠ Übersetzung
+        svc = L.task_method(cfg, mode)
+        method += f"#{mode}{L.prompt_version(svc, mode)}"
+        if svc != main:
+            method += "=" + _svc(svc, cfg)
     return f"{method}|{cfg.get('tr_source', '') or 'auto'}|{cfg['tr_target']}"
 
 
@@ -244,12 +377,19 @@ def cached(photo: Path, cfg: dict) -> tuple[str, str] | None:
     return (entry["ocr"], translated) if translated is not None else None
 
 
+def last_ai(photo: Path, cfg: dict) -> tuple[str, str] | None:
+    """(Dienst, Aufgabe), die die gespeicherte Antwort geschrieben haben – für „Letzte KI“."""
+    with _cache_lock:
+        who = (_load_cache().get(photo.name) or {}).get("who", {}).get(_key(cfg))
+    return tuple(who) if who else None
+
+
 def set_ocr(photo: Path, text: str) -> None:
     """Von Hand korrigierter Text fürs Foto: ersetzt die Erkennung, alte
     Übersetzungen (vom falsch gelesenen Text) fliegen raus."""
     with _cache_lock:
         cache = _load_cache()
-        cache[photo.name] = {"ocr": text, "tr": {}}
+        cache[photo.name] = {"ocr": text, "tr": {}, "lines": []}  # Positionen passen nicht mehr
         _save_cache(cache)
 
 
@@ -259,16 +399,39 @@ def ocr_text(photo: Path, priority: bool = False) -> str:
         entry = _load_cache().get(photo.name)
     if entry and "ocr" in entry:
         return entry["ocr"]
-    text = ocr.read_text(photo, priority)  # langsam – ohne Lock, damit andere weiterkommen
+    return _run_ocr(photo, priority)["ocr"]
+
+
+def _run_ocr(photo: Path, priority: bool) -> dict:
+    """OCR ausführen, Text + Zeilen mit Position im Cache merken."""
+    lines = ocr.read_lines(photo, priority)  # langsam – ohne Lock, damit andere weiterkommen
+    text = "\n".join(line["text"] for line in lines)
     with _cache_lock:
         cache = _load_cache()
-        cache.setdefault(photo.name, {})["ocr"] = text
+        entry = cache.setdefault(photo.name, {})
+        entry["ocr"], entry["lines"] = text, lines
         _save_cache(cache)
-    return text
+    return entry
+
+
+def cached_lines(photo: Path) -> list[dict]:
+    """Zeilen mit Position aus dem Cache – blockiert NICHT (für das 🪟 VR-Panel)."""
+    with _cache_lock:
+        return list((_load_cache().get(photo.name) or {}).get("lines") or [])
+
+
+def ocr_lines(photo: Path, priority: bool = False) -> list[dict]:
+    """Zeilen mit Position [{"text", "box"}] – fürs VR-Overlay. BLOCKIERT → nur im Thread!
+    Hat man den Text von Hand korrigiert, passen die Positionen nicht mehr → []."""
+    with _cache_lock:
+        entry = _load_cache().get(photo.name) or {}
+    if "lines" in entry:
+        return entry["lines"]  # [] = Text von Hand geändert → kein Overlay
+    return _run_ocr(photo, priority)["lines"]  # neu oder alter Cache ohne Positionen
 
 
 def translate_photo(photo: Path, cfg: dict, log=lambda s: None,
-                    progress=lambda step, arg="": None) -> tuple[str, str, str]:
+                    progress=lambda step, arg="": None, force: bool = False) -> tuple[str, str, str]:
     """Liest den Text im Foto und übersetzt ihn. BLOCKIERT → nur im Thread!
     Gibt (erkannter Text, Übersetzung, benutzter Dienst) zurück;
     ("", "", Dienst) = kein Text im Bild. Der Dienst ist ein anderer als in cfg,
@@ -277,16 +440,28 @@ def translate_photo(photo: Path, cfg: dict, log=lambda s: None,
     # "ocr_wait" = die Bild-Erkennung liest gerade ein anderes Foto (max. 1 abwarten)
     progress("ocr_wait" if ocr.busy() else "ocr")
     text = ocr_text(photo, priority=True)  # Vorrang vor der Bild-Erkennung
-    if not text:
+    if not text and method != L.METHOD_VISION:  # das Bild-LLM liest notfalls selbst
         return "", "", method
     with _cache_lock:
-        translated = _load_cache().get(photo.name, {}).get("tr", {}).get(_key(cfg))
+        # force (↻ Nochmal senden): gespeicherte Antwort NICHT nehmen → neu fragen
+        translated = None if force else _load_cache().get(photo.name, {}).get("tr", {}).get(_key(cfg))
     if translated is None:
-        translated, method = translate_text_used(text, cfg, log, progress)
-        # unter dem Dienst merken, der es wirklich übersetzt hat
-        used = dict(cfg, tr_method=method)
+        try:
+            info = {}
+            translated, method = translate_text_used(text, cfg, log, progress, image=photo, info=info)
+        except TranslationError:
+            if text:
+                raise
+            return "", "", method  # auch das Bild-LLM hat keinen Text gefunden
+        # unter dem Dienst merken, der es wirklich übersetzt hat (Ersatz wie Lingva → eigener
+        # Eintrag; Kontext-/Rätsel-Dienst gehört zu den Einstellungen → normaler Schlüssel)
+        planned = {cfg["tr_method"]} | {L.task_method(cfg, m) for m in L.TASK_KEYS}
+        used = cfg if method in planned else dict(cfg, tr_method=method, tr_llm_mode=L.MODE_TRANSLATE)
         with _cache_lock:
             cache = _load_cache()
-            cache.setdefault(photo.name, {}).setdefault("tr", {})[_key(used)] = translated
+            entry = cache.setdefault(photo.name, {})
+            entry.setdefault("tr", {})[_key(used)] = translated
+            entry.setdefault("who", {})[_key(used)] = [info.get("method", method),
+                                                        info.get("task", L.MODE_TRANSLATE)]
             _save_cache(cache)
     return text, translated, method

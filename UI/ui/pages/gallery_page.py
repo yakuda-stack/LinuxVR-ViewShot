@@ -2,6 +2,9 @@
 ui/pages/gallery_page.py – Alle Fotos als gleich große Kacheln.
 
 Klick auf ein Foto → große Ansicht mit ‹ › zum Blättern.
+Über den Kacheln steht pro Monat ein Trenner („──── 2026 Oktober ────“).
+⚙ oben: welche Ordner die Galerie zeigt (Foto-Ordner + z. B. ~/Bilder/VRChat),
+je mit oder ohne Unterordner. Vorschaubilder laden im Hintergrund (viele Fotos!).
 Tastatur in der großen Ansicht:  ← →  blättern,  Esc  zurück.
 
 Die Seite hat zwei "Unterseiten" in einem QStackedWidget:
@@ -10,42 +13,205 @@ Die Seite hat zwei "Unterseiten" in einem QStackedWidget:
         Kopieren · Teilen · Hochladen & Link kopieren · Info
 """
 
+import queue
 import shutil
 import subprocess
 import threading
 from datetime import datetime
 from pathlib import Path
 
-from PyQt6.QtCore import QBuffer, QFile, QIODevice, QObject, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QBuffer, QEvent, QFile, QIODevice, QObject, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QImage, QImageReader, QKeySequence, QPainter, QPixmap, QShortcut
-from PyQt6.QtWidgets import (QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+from PyQt6.QtWidgets import (QCheckBox, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
                              QListWidget, QListWidgetItem, QMenu, QMessageBox, QPushButton,
                              QSizePolicy, QSlider, QStackedWidget, QVBoxLayout, QWidget)
 
 from core import clipboard, config, paths, share, tags, uploader
-from core.i18n import tr
+from core.i18n import month_title, tr
 from ui.widgets import open_path, page_title
 
 THUMB_MIN, THUMB_MAX = 120, 400  # Bereich des Größen-Sliders (Pixel)
 TILE_BG = "#14161c"  # Hintergrund der Kachel (gleiche Farbe wie #photo)
 
 
-def load_thumbnail(path, thumb: int) -> QPixmap:
-    """Lädt das Foto verkleinert und setzt es MITTIG in ein festes Quadrat
-    (thumb × thumb). So sind alle Kacheln gleich groß – egal ob hoch oder breit."""
+def thumbnail_image(path, thumb: int) -> QImage:
+    """Foto verkleinert, MITTIG in einem festen Quadrat (thumb × thumb) – alle Kacheln
+    gleich groß, egal ob hoch oder breit. Nur QImage → geht auch im Hintergrund-Thread."""
     reader = QImageReader(str(path))
     size = reader.size()
     if size.isValid():
         # gleich beim Laden verkleinern – viel schneller als erst groß laden
         reader.setScaledSize(size.scaled(thumb, thumb, Qt.AspectRatioMode.KeepAspectRatio))
     image = reader.read()
-
-    tile = QPixmap(thumb, thumb)
+    tile = QImage(thumb, thumb, QImage.Format.Format_ARGB32_Premultiplied)
     tile.fill(QColor(TILE_BG))
     painter = QPainter(tile)
     painter.drawImage((thumb - image.width()) // 2, (thumb - image.height()) // 2, image)
     painter.end()
     return tile
+
+
+def load_thumbnail(path, thumb: int) -> QPixmap:
+    return QPixmap.fromImage(thumbnail_image(path, thumb))
+
+
+class ThumbLoader(QObject):
+    """Lädt Vorschaubilder in einem Hintergrund-Thread (neueste zuerst) – die Galerie
+    friert auch mit tausenden VRChat-Screenshots nicht ein."""
+    loaded = pyqtSignal(object, object)  # (Schlüssel, QImage)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.jobs = queue.Queue()
+        self.generation = 0
+        threading.Thread(target=self._work, daemon=True).start()
+
+    def request(self, keys: list):
+        """Neue Liste → alte, noch nicht geladene Aufträge verfallen."""
+        self.generation += 1
+        for key in keys:
+            self.jobs.put((self.generation, key))
+
+    def _work(self):  # Hintergrund – KEINE Widgets anfassen!
+        while True:
+            gen, key = self.jobs.get()
+            if gen != self.generation:
+                continue
+            path, _mtime, thumb = key
+            try:
+                image = thumbnail_image(path, thumb)
+            except Exception:  # noqa: BLE001 – kaputtes Bild: Kachel bleibt leer
+                continue
+            self.loaded.emit(key, image)
+
+
+def month_header(text: str) -> QWidget:
+    """Trenner „──────── 2026 Oktober ────────“ über den Kacheln eines Monats."""
+    box = QWidget()
+    row = QHBoxLayout(box)
+    row.setContentsMargins(4, 10, 4, 2)
+    row.setSpacing(14)
+    def line() -> QFrame:
+        f = QFrame()
+        f.setFixedHeight(1)
+        f.setStyleSheet("background: #333947;")
+        return f
+
+    label = QLabel(text)
+    label.setObjectName("cardtitle")
+    row.addWidget(line(), 1)
+    row.addWidget(label)
+    row.addWidget(line(), 1)
+    return box
+
+
+class FoldersDialog(QDialog):
+    """⚙ Galerie-Ordner: Foto-Ordner (fest) + weitere Ordner, je „Unterordner einbeziehen“."""
+
+    def __init__(self, cfg: dict, parent=None):
+        super().__init__(parent)
+        self.cfg = cfg
+        self.setWindowTitle(tr("gallery_settings"))
+        self.setMinimumWidth(640)
+        self.folders = [dict(f) for f in (cfg.get("gallery_folders") or []) if isinstance(f, dict)]
+        self.main_sub = bool(cfg.get("gallery_main_subfolders"))
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(20, 18, 20, 18)
+        lay.setSpacing(12)
+        title = QLabel("⚙  " + tr("gallery_folders"))
+        title.setObjectName("cardtitle")
+        lay.addWidget(title)
+        hint = QLabel(tr("gallery_folders_hint"))
+        hint.setObjectName("dim")
+        hint.setWordWrap(True)
+        lay.addWidget(hint)
+        self.list_box = QVBoxLayout()
+        self.list_box.setSpacing(8)
+        lay.addLayout(self.list_box)
+        row = QHBoxLayout()
+        add = QPushButton("＋  " + tr("gallery_add_folder"))
+        add.setObjectName("linkbtn")
+        add.clicked.connect(self.add_folder)
+        row.addWidget(add)
+        row.addStretch()
+        close = QPushButton(tr("close"))
+        close.setObjectName("sendbtn")
+        close.clicked.connect(self.accept)
+        row.addWidget(close)
+        lay.addLayout(row)
+        self.rebuild()
+
+    def rebuild(self):
+        while self.list_box.count():
+            w = self.list_box.takeAt(0).widget()
+            if w is not None:
+                w.deleteLater()
+        rows = [(None, paths.photo_dir(), self.main_sub)] + \
+               [(i, Path(f["path"]), bool(f.get("subfolders"))) for i, f in enumerate(self.folders)]
+        for n, (index, folder, sub) in enumerate(rows):
+            card = QFrame()
+            card.setObjectName("card")
+            grid = QGridLayout(card)
+            grid.setContentsMargins(14, 10, 14, 10)
+            grid.setHorizontalSpacing(10)
+            name = QLabel(f"{n + 1}:  {folder}")
+            name.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            grid.addWidget(name, 0, 0, 1, 3)
+            if index is None:
+                note = QLabel(tr("gallery_main_folder"))
+                note.setObjectName("dim")
+                grid.addWidget(note, 1, 0)
+            check = QCheckBox(tr("gallery_subfolders"))
+            check.setChecked(sub)
+            check.toggled.connect(lambda on, i=index: self.set_sub(i, on))
+            grid.addWidget(check, 1, 1 if index is None else 0)
+            if index is not None:
+                change = QPushButton(tr("gallery_change_folder"))
+                change.setObjectName("linkbtn")
+                change.clicked.connect(lambda _=False, i=index: self.change_folder(i))
+                grid.addWidget(change, 1, 1)
+                remove = QPushButton("✕  " + tr("gallery_remove_folder"))
+                remove.setObjectName("dangerbtn")
+                remove.clicked.connect(lambda _=False, i=index: self.remove_folder(i))
+                grid.addWidget(remove, 1, 2)
+            grid.setColumnStretch(0, 1)
+            self.list_box.addWidget(card)
+
+    def save(self):
+        self.cfg["gallery_folders"] = self.folders
+        self.cfg["gallery_main_subfolders"] = self.main_sub
+        config.save(self.cfg)
+        paths.forget_scan()
+
+    def set_sub(self, index, on: bool):
+        if index is None:
+            self.main_sub = on
+        else:
+            self.folders[index]["subfolders"] = on
+        self.save()
+
+    def pick(self, start) -> str:
+        return QFileDialog.getExistingDirectory(self, tr("gallery_add_folder"), str(start))
+
+    def add_folder(self):
+        folder = self.pick(Path.home() / "Bilder" if (Path.home() / "Bilder").is_dir() else Path.home())
+        if folder and all(Path(f["path"]) != Path(folder) for f in self.folders) \
+                and Path(folder) != paths.photo_dir():
+            self.folders.append({"path": folder, "subfolders": True})
+            self.save()
+            self.rebuild()
+
+    def change_folder(self, index: int):
+        folder = self.pick(self.folders[index]["path"])
+        if folder:
+            self.folders[index]["path"] = folder
+            self.save()
+            self.rebuild()
+
+    def remove_folder(self, index: int):
+        del self.folders[index]
+        self.save()
+        self.rebuild()
 
 
 class PhotoView(QLabel):
@@ -209,6 +375,8 @@ class InfoDialog(QDialog):
 
 
 class GalleryPage(QWidget):
+    folders_changed = pyqtSignal()  # ⚙ Galerie-Ordner geändert → Hauptfenster beobachtet neue Ordner
+
     def __init__(self, cfg: dict, tagger=None):
         super().__init__()
         self.cfg = cfg
@@ -222,7 +390,11 @@ class GalleryPage(QWidget):
             tagger.tagged.connect(self.on_tagged)
         self.thumb = max(THUMB_MIN, min(THUMB_MAX, int(cfg.get("thumb_size", 180))))
         self.photos = []     # Liste der Pfade, neueste zuerst
+        self.items = {}      # Foto → Kachel im Raster (Trenner-Zeilen haben keine)
         self.current = 0     # welches Foto gerade groß angezeigt wird
+        self.loader = ThumbLoader(self)  # Vorschaubilder im Hintergrund
+        self.loader.loaded.connect(self.on_thumb_loaded)
+        self.placeholder = None
         self.uploading = set()  # Fotos, die gerade hochgeladen werden
 
         self.signals = UploadSignals()
@@ -281,6 +453,13 @@ class GalleryPage(QWidget):
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.clicked.connect(self.refresh)
         head.addWidget(btn)
+        # ⚙ Welche Ordner zeigt die Galerie? (+ Unterordner)
+        gear = QPushButton("⚙")
+        gear.setObjectName("linkbtn")
+        gear.setToolTip(tr("gallery_settings"))
+        gear.setCursor(Qt.CursorShape.PointingHandCursor)
+        gear.clicked.connect(self.edit_folders)
+        head.addWidget(gear)
         layout.addLayout(head)
 
         hint = QLabel(tr("gallery_hint"))
@@ -291,8 +470,12 @@ class GalleryPage(QWidget):
         self.grid = QListWidget()
         self.grid.setViewMode(QListWidget.ViewMode.IconMode)
         self.set_grid_sizes()
-        self.grid.setUniformItemSizes(True)
+        # kein festes Gitter: Monats-Trenner nehmen eine ganze Zeile ein
+        self.grid.setFlow(QListWidget.Flow.LeftToRight)
+        self.grid.setWrapping(True)
+        self.grid.setSpacing(6)
         self.grid.setResizeMode(QListWidget.ResizeMode.Adjust)
+        self.grid.viewport().installEventFilter(self)  # Breite ändert sich → Trenner anpassen
         self.grid.setMovement(QListWidget.Movement.Static)
         self.grid.setWordWrap(False)
         self.grid.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -368,14 +551,17 @@ class GalleryPage(QWidget):
         self.refresh()
 
     def on_tile_clicked(self, item: QListWidgetItem):
+        data = item.data(Qt.ItemDataRole.UserRole)
+        if not data:
+            return  # Monats-Trenner
+        photo = Path(data)
         if self.selecting:
             # Klick irgendwo auf die Kachel = Häkchen an/aus (leichter in VR)
-            photo = self.photos[self.grid.row(item)]
             self.checked ^= {photo}  # an ↔ aus
             item.setIcon(self.tile_icon(photo))
             self.update_select_bar()
-        else:
-            self.show_photo(self.grid.row(item))
+        elif photo in self.photos:
+            self.show_photo(self.photos.index(photo))
 
     def checked_photos(self) -> list[Path]:
         return [p for p in self.photos if p in self.checked]
@@ -386,15 +572,15 @@ class GalleryPage(QWidget):
             self.checked.clear()
         else:
             self.checked |= set(self.photos)
-        for i, photo in enumerate(self.photos):
-            self.grid.item(i).setIcon(self.tile_icon(photo))
+        for photo, item in self.items.items():
+            item.setIcon(self.tile_icon(photo))
         self.update_select_bar()
 
     def tile_icon(self, photo: Path, key=None) -> QIcon:
         """Vorschaubild – angehakt mit rotem Rahmen und ✓ (groß, gut in VR zu sehen)."""
         if key is None:
-            key = (str(photo), photo.stat().st_mtime, self.thumb)
-        icon = self.thumb_cache[key]
+            key = self.thumb_key(photo)
+        icon = self.thumb_cache.get(key) or self.placeholder_icon()
         if not (self.selecting and photo in self.checked):
             return icon
         pix = icon.pixmap(self.thumb, self.thumb).copy()
@@ -457,10 +643,8 @@ class GalleryPage(QWidget):
         self.checked.clear()
         # Liste ohne die gelöschten neu aufbauen (Dateien verschwinden im Hintergrund)
         self.refresh()
-        for i in reversed(range(len(self.photos))):
-            if self.photos[i] in photos:
-                del self.photos[i]
-                self.grid.takeItem(i)
+        self.photos = [p for p in self.photos if p not in photos]
+        self.rebuild_grid()
         self.notify(tr("deleted_many", n=len(photos)))
 
         def work():  # Hintergrund – KEINE Widgets anfassen!
@@ -573,9 +757,44 @@ class GalleryPage(QWidget):
         return self.link_panel
 
     def set_grid_sizes(self):
-        # feste Zellgröße → alle Kacheln sauber in Reihen
+        # jede Kachel gleich groß (sizeHint) → saubere Reihen; Trenner = ganze Breite
         self.grid.setIconSize(QSize(self.thumb, self.thumb))
-        self.grid.setGridSize(QSize(self.thumb + 20, self.thumb + 36))
+        self.placeholder = None
+
+    def placeholder_icon(self) -> QIcon:
+        """Leere Kachel, bis das Vorschaubild im Hintergrund fertig ist."""
+        if self.placeholder is None:
+            pix = QPixmap(self.thumb, self.thumb)
+            pix.fill(QColor(TILE_BG))
+            self.placeholder = QIcon(pix)
+        return self.placeholder
+
+    def thumb_key(self, photo: Path):
+        return (str(photo), paths.photo_mtime(photo), self.thumb)
+
+    def on_thumb_loaded(self, key, image: QImage):
+        self.thumb_cache[key] = QIcon(QPixmap.fromImage(image))
+        photo = Path(key[0])
+        item = self.items.get(photo)
+        if item is not None and key[2] == self.thumb:
+            item.setIcon(self.tile_icon(photo, key))
+
+    def header_width(self) -> int:
+        return max(200, self.grid.viewport().width() - 2 * self.grid.spacing() - 4)
+
+    def eventFilter(self, obj, event):  # noqa: N802 – Qt-Name
+        if obj is self.grid.viewport() and event.type() == QEvent.Type.Resize:
+            w = self.header_width()
+            for i in range(self.grid.count()):
+                item = self.grid.item(i)
+                if not item.data(Qt.ItemDataRole.UserRole):
+                    item.setSizeHint(QSize(w, 46))
+        return super().eventFilter(obj, event)
+
+    def edit_folders(self):
+        FoldersDialog(self.cfg, self).exec()
+        self.folders_changed.emit()
+        self.refresh()
 
     def apply_thumb_size(self):
         self.thumb = self.size_slider.value()
@@ -599,31 +818,47 @@ class GalleryPage(QWidget):
     def refresh(self):
         if not self.selecting:
             self.checked.clear()
-        self.photos = paths.list_photos()
+        self.photos = paths.gallery_photos(self.cfg, fresh=True)
         if self.tag_filter is not None:
             wanted = self.tag_filter
             self.photos = [p for p in self.photos
                            if wanted in (tags.get(p) or {}).get("tags", [])]
-        self.grid.clear()
-        for photo in self.photos:
-            name = self.tile_text(photo)
-            try:
-                key = (str(photo), photo.stat().st_mtime, self.thumb)
-            except OSError:
-                continue  # Datei ist gerade verschwunden
-            if key not in self.thumb_cache:
-                self.thumb_cache[key] = QIcon(load_thumbnail(photo, self.thumb))
-            item = QListWidgetItem(self.tile_icon(photo, key), name)
-            item.setToolTip(str(photo))
-            item.setSizeHint(QSize(self.thumb + 20, self.thumb + 36))
-            self.grid.addItem(item)
-        self.update_select_bar()
+        self.rebuild_grid()
         # große Ansicht offen, aber Foto weg (gelöscht)? → zurück zum Raster
         if self.stack.currentIndex() == 1:
             if not self.photos:
                 self.show_grid()
             else:
                 self.show_photo(min(self.current, len(self.photos) - 1))
+
+    def rebuild_grid(self):
+        """Kacheln aus self.photos – mit Monats-Trenner, Vorschaubilder im Hintergrund."""
+        scroll = self.grid.verticalScrollBar().value()
+        self.grid.clear()
+        self.items = {}
+        missing = []
+        month = None
+        for photo in self.photos:
+            ym = paths.month_key(photo)
+            if ym != month:  # neuer Monat → Trenner über die ganze Breite
+                month = ym
+                head = QListWidgetItem()
+                head.setFlags(Qt.ItemFlag.NoItemFlags)
+                head.setSizeHint(QSize(self.header_width(), 46))
+                self.grid.addItem(head)
+                self.grid.setItemWidget(head, month_header(month_title(*ym)))
+            key = self.thumb_key(photo)
+            if key not in self.thumb_cache:
+                missing.append(key)
+            item = QListWidgetItem(self.tile_icon(photo, key), self.tile_text(photo))
+            item.setData(Qt.ItemDataRole.UserRole, str(photo))
+            item.setToolTip(str(photo))
+            item.setSizeHint(QSize(self.thumb + 20, self.thumb + 36))
+            self.grid.addItem(item)
+            self.items[photo] = item
+        self.loader.request(missing)
+        self.grid.verticalScrollBar().setValue(scroll)
+        self.update_select_bar()
 
     def show_photo(self, index: int):
         if not self.photos:
@@ -632,7 +867,7 @@ class GalleryPage(QWidget):
         photo = self.photos[index]
         self.view.set_photo(photo)
         name = photo.stem.removeprefix("ViewShot_")
-        self.viewer_title.setText(f"{name}    {index + 1} / {len(self.photos)}")
+        self.viewer_title.setText(f"{name}    {index + 1} / {len(self.photos)}    ·  {month_title(*paths.month_key(photo))}")
         # am Anfang/Ende den jeweiligen Pfeil ausgrauen
         self.prev_btn.setEnabled(index > 0)
         self.next_btn.setEnabled(index < len(self.photos) - 1)
@@ -651,7 +886,9 @@ class GalleryPage(QWidget):
         self.stack.setCurrentIndex(0)
         # das zuletzt angesehene Foto im Raster markieren
         if self.photos:
-            self.grid.setCurrentRow(self.current)
+            item = self.items.get(self.photos[min(self.current, len(self.photos) - 1)])
+            if item is not None:
+                self.grid.setCurrentItem(item)
 
     # ------------------------------------------------------------------
     # Knopfleiste
@@ -777,10 +1014,9 @@ class GalleryPage(QWidget):
         return " ".join(tags.ICONS[t] for t in entry["tags"]) + "  " + name
 
     def update_tile(self, photo: Path):
-        if photo in self.photos:
-            item = self.grid.item(self.photos.index(photo))
-            if item is not None:
-                item.setText(self.tile_text(photo))
+        item = self.items.get(photo)
+        if item is not None:
+            item.setText(self.tile_text(photo))
 
     def on_tagged(self, photo: str):
         if self.tag_filter is not None and self.stack.currentIndex() == 0:
@@ -806,7 +1042,8 @@ class GalleryPage(QWidget):
         # das eigentliche Verschieben in den Papierkorb läuft im Hintergrund.
         index = self.current
         del self.photos[index]
-        self.grid.takeItem(index)
+        self.rebuild_grid()  # Trenner eines leer gewordenen Monats fällt mit weg
+        paths.forget_scan()
         if self.photos:
             self.show_photo(min(index, len(self.photos) - 1))
         else:

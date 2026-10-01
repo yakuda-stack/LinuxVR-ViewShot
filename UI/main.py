@@ -29,6 +29,9 @@ def setup_log():
 
 def run_app():
     setup_log()
+    # App offen → der Hintergrund-Dienst (viewshot-daemon) wartet, die App macht alles selbst
+    from core import daemon
+    daemon.hold_app_lock()
     app = QApplication(sys.argv)
     app.setApplicationName("LinuxVR-ViewShot")
     # Taskleiste: Wayland ordnet das Fenster über diese ID der .desktop-Datei zu

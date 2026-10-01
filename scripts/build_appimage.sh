@@ -127,6 +127,7 @@ mkdir -p "$BUILD_DIR/usr/bin" "$SHARE/UI" "$SHARE/lib" "$SHARE/manifest" \
 cp UI/main.py UI/starter.py UI/start.sh "$SHARE/UI/"
 cp -r UI/core UI/ui UI/assets "$SHARE/UI/"
 install -m 755 "$SO" "$SHARE/lib/liblinuxvr_viewshot_layer.so"   # → paths.APPIMAGE_LAYER
+install -m 755 target/release/viewshot-daemon "$SHARE/lib/viewshot-daemon"  # → daemon.APPIMAGE_BINARY
 cp manifest/linuxvr_viewshot.json.in "$SHARE/manifest/"          # → paths.MANIFEST_TEMPLATE
 cp CHANGELOG.md LICENSE README.md "$SHARE/" 2>/dev/null || true
 find "$SHARE" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true

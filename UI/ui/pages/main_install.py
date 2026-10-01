@@ -4,6 +4,7 @@ ui/pages/main_install.py – Main-Seite: Layer bauen/installieren/entfernen
 """
 
 import os
+import re
 
 from PyQt6.QtCore import QProcess, QProcessEnvironment, Qt
 from PyQt6.QtWidgets import QMessageBox, QPushButton
@@ -40,6 +41,8 @@ class InstallMixin:
         self.install_log.hide()
         try:
             paths.uninstall_user_layer()
+            from core import daemon
+            daemon.uninstall()  # ⚙ Hintergrund-Dienst gehört dazu
             ok = True
         except OSError:
             ok = False
@@ -66,6 +69,7 @@ class InstallMixin:
             ok = True
         except OSError:
             ok = False
+        start_daemon_setup()  # ⚙ Hintergrund-Dienst mit aktualisieren
         if not ok:
             text = tr("install_failed_copy")
         elif updated:
@@ -98,6 +102,10 @@ class InstallMixin:
         # rustup legt cargo nach ~/.cargo/bin – beim Start aus dem Menü fehlt das oft im PATH
         cargo_bin = os.path.expanduser("~/.cargo/bin")
         env.insert("PATH", cargo_bin + ":" + env.value("PATH", "/usr/bin:/bin"))
+        # Fortschrittsbalken von cargo auch ohne Terminal → daraus wird die %-Anzeige
+        env.insert("CARGO_TERM_PROGRESS_WHEN", "always")
+        env.insert("CARGO_TERM_PROGRESS_WIDTH", "100")
+        self.build_percent = -1
         self.process.setProcessEnvironment(env)
         self.process.setWorkingDirectory(str(paths.PROJECT_DIR))
         self.process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
@@ -107,11 +115,18 @@ class InstallMixin:
 
     def on_install_output(self):
         text = bytes(self.process.readAllStandardOutput()).decode(errors="replace")
-        self.install_log.insertPlainText(text)
-        self.install_log.ensureCursorVisible()  # immer ans Ende scrollen
+        percent, text = build_progress(text)
+        if percent is not None and percent != self.build_percent:
+            self.build_percent = percent
+            self.install_btn.setText(f"⏳  {tr('installing')}  {percent} %")
+        if text:
+            self.install_log.insertPlainText(text)
+            self.install_log.ensureCursorVisible()  # immer ans Ende scrollen
 
     def on_install_finished(self, exit_code: int, _status):
         ok = exit_code == 0
+        if ok:
+            start_daemon_setup()  # ⚙ Hintergrund-Dienst (install-layer.sh hat ihn mit gebaut)
         self.install_result.setText(tr("install_ok") if ok else tr("install_failed"))
         self.install_result.setObjectName("ok" if ok else "bad")
         self.install_result.style().polish(self.install_result)
@@ -119,3 +134,30 @@ class InstallMixin:
         self.install_panel.show()
         self.process = None
         self.refresh()
+
+
+def start_daemon_setup() -> None:
+    """⚙ Dienst + Texterkennung nach ~/.local kopieren, systemd-Socket an (im Hintergrund)."""
+    import threading
+
+    from core import daemon
+    threading.Thread(target=daemon.setup, daemon=True).start()
+
+
+_PROGRESS = re.compile(r"Building \[[^\]]*\]\s*(\d+)/(\d+)")
+
+
+def build_progress(text: str) -> tuple[int | None, str]:
+    """cargo-Fortschritt „Building [====>  ] 120/231: …“ → (Prozent, Text ohne diese Zeilen).
+    Die Balken-Zeilen überschreiben sich im Terminal (\\r) – im Log würden sie nur stören."""
+    percent = None
+    for done, total in _PROGRESS.findall(text):
+        if int(total):
+            percent = min(99, int(done) * 100 // int(total))  # 100 % erst, wenn alles fertig ist
+    keep = []
+    for part in re.split(r"(\r|\n)", text):
+        if "Building [" in part or part == "\r":
+            continue
+        keep.append(part)
+    cleaned = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", "".join(keep))
+    return percent, re.sub(r"\n{3,}", "\n\n", cleaned)

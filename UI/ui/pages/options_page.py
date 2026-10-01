@@ -2,7 +2,7 @@
 ui/pages/options_page.py – Optionen mit Tabs (wie bei OSC-DreamChatbox):
 
     ⚙ General      Community-Links (Discord, Ko-fi …), Sprache, Ordner, Über
-    📸 Shot        Rahmengröße, linkes/rechtes Auge, Symbol-Ecke, 🔁 Lens, Ausnahme-Programme
+    📸 Shot        Rahmengröße, linkes/rechtes Auge, Symbol-Ecke, 🔁 Lens, 🪟 Panel, 🥽 Overlay, Ausnahme-Programme
     🌐 Übersetzung Dienst (Lingva, Google, LibreTranslate, DeepL, eigene API,
                    KI: Claude Code / Gemini / ChatGPT / eigener Befehl), Zielsprache
 
@@ -21,13 +21,14 @@ from PyQt6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QGridLayout, QH
                              QLineEdit, QListWidget, QPlainTextEdit, QPushButton, QRadioButton, QSlider,
                              QVBoxLayout, QWidget)
 
-from core import clipboard, config, i18n, layer_config, ocr, paths, translation
+from core import clipboard, config, i18n, layer_config, ocr, overlay, paths, translation
 from core import llm_translator as L
+from core import vision
 from core import translators as T
 from core.custom_translator import LIBRE_EXAMPLE
 from core.i18n import tr
 from core.version import VERSION
-from ui.widgets import make_card, open_path, page_title
+from ui.widgets import fill_methods, make_card, open_path, page_title, select_data
 
 DISCORD_URL = "https://discord.gg/ShNKvvZu74"
 DONATE_URL = "https://ko-fi.com/yakuda_"
@@ -67,7 +68,7 @@ def fill_model_combo(combo: QComboBox, method: str, current: str):
     """Modelle der KI-Vorlage ins Dropdown. Leer = Standard-Modell der Vorlage.
     Ein selbst eingetipptes Modell steht zusätzlich mit in der Liste."""
     current = (current or L.DEFAULTS.get(L.MODEL_KEYS.get(method, ""), "")).strip()
-    models = list(L.MODELS.get(method, []))
+    models = L.models_for(method)  # Bild-LLM: installierte Ollama-Modelle zuerst
     if current and current not in models:
         models.append(current)
     combo.blockSignals(True)
@@ -193,6 +194,7 @@ class OptionsPage(QWidget):
         lay.addWidget(card)
 
         self.add_language_card(lay)
+        self.add_main_page_card(lay)
         self.add_folders_card(lay)
         self.add_cleanup_card(lay)
         self.add_wayvr_card(lay)
@@ -278,6 +280,15 @@ class OptionsPage(QWidget):
         # --- 🔁 Lens ---
         self.add_live_card(lay)
 
+        # --- 🪟 Übersetzungs-Panel in VR ---
+        self.add_panel_card(lay)
+
+        # --- 🥽 Übersetzung in VR über dem Original ---
+        self.add_overlay_card(lay)
+
+        # --- ⚙ Ohne App (Hintergrund-Dienst) ---
+        self.add_daemon_card(lay)
+
         # --- Ausnahmen ---
         card, box = make_card(tr("excluded"))
         box.addWidget(dim(tr("excluded_hint")))
@@ -336,6 +347,11 @@ class OptionsPage(QWidget):
     def sync_layer(self):
         """Dropdowns an layer.json anpassen (auch nach Änderung auf der Main-Seite)."""
         fresh = layer_config.load()
+        box = getattr(self, "panel_edit_box", None)
+        if box is not None:
+            box.blockSignals(True)
+            box.setChecked(bool(fresh.get("panel_edit")))
+            box.blockSignals(False)
         for key, combo in self.layer_combos.items():
             self.layer[key] = fresh[key]
             combo.blockSignals(True)
@@ -391,6 +407,222 @@ class OptionsPage(QWidget):
         slider.valueChanged.connect(interval_changed)
         lay.addWidget(card)
 
+    def add_panel_card(self, lay: QVBoxLayout):
+        """🪟 Panel mit Foto (①②③) + Übersetzung in VR: wo es hängt, Bearbeiten, Reset."""
+        from ui import vr_panel
+        card, box = make_card("🪟  " + tr("panel_card"))
+        box.addWidget(dim(tr("panel_hint")))
+        on = QCheckBox(tr("panel_on"))
+        on.setChecked(bool(self.layer.get("panel", True)))
+        box.addWidget(on)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.addWidget(QLabel(tr("panel_anchor")), 0, 0)
+        anchor = QComboBox()
+        for value in ("left", "right", "head", "world"):
+            anchor.addItem(tr("panel_anchor_" + value), value)
+        anchor.setCurrentIndex(max(0, anchor.findData(self.layer.get("panel_anchor", "left"))))
+        grid.addWidget(anchor, 0, 1)
+        grid.setColumnStretch(1, 1)
+        box.addLayout(grid)
+        orow = QHBoxLayout()
+        orow.addWidget(QLabel(tr("panel_opacity")))
+        opacity = QSlider(Qt.Orientation.Horizontal)
+        opacity.setRange(3, 10)  # × 10 %
+        opacity.setValue(round(float(self.layer.get("panel_opacity", 100)) / 10))
+        orow.addWidget(opacity, 1)
+        opacity_value = QLabel(f"{opacity.value() * 10} %")
+        opacity_value.setMinimumWidth(60)
+        orow.addWidget(opacity_value)
+        box.addLayout(orow)
+        # Größe in VR (Breite) – steht in panel_pose.json, die legt der Layer an
+        srow = QHBoxLayout()
+        srow.addWidget(QLabel(tr("panel_size")))
+        size = QSlider(Qt.Orientation.Horizontal)
+        size.setRange(*vr_panel.SIZE_CM)
+        size.setValue(vr_panel.width_cm() or 32)
+        srow.addWidget(size, 1)
+        size_value = QLabel(f"{size.value()} cm" if vr_panel.width_cm() else tr("panel_size_later"))
+        size_value.setMinimumWidth(60)
+        srow.addWidget(size_value)
+        box.addLayout(srow)
+
+        def size_changed(cm: int):
+            size_value.setText(f"{cm} cm" if vr_panel.set_width_cm(cm) else tr("panel_size_later"))
+
+        size.valueChanged.connect(size_changed)
+
+        def opacity_changed(step: int):
+            opacity_value.setText(f"{step * 10} %")
+            self.layer["panel_opacity"] = layer_config.update("panel_opacity", step * 10)["panel_opacity"]
+
+        opacity.valueChanged.connect(opacity_changed)
+        edit = QCheckBox(tr("panel_edit_mode"))
+        edit.setChecked(bool(self.layer.get("panel_edit")))
+        box.addWidget(edit)
+        box.addWidget(dim(tr("panel_edit_hint")))
+        reset = button("⟲  " + tr("panel_reset"), vr_panel.reset_position)
+        box.addWidget(reset, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # 🔘 Knopf (wie bei WayVR): auf/zu, nach Foto öffnen, Größe, Farbe
+        knob = QCheckBox(tr("panel_button"))
+        knob.setChecked(bool(self.layer.get("panel_button", True)))
+        knob.toggled.connect(lambda c: self.layer.__setitem__(
+            "panel_button", layer_config.update("panel_button", c)["panel_button"]))
+        box.addWidget(knob)
+        box.addWidget(dim(tr("panel_button_hint")))
+        auto_open = QCheckBox(tr("panel_open_on_shot"))
+        auto_open.setChecked(bool(self.layer.get("panel_open_on_shot", True)))
+        auto_open.toggled.connect(lambda c: self.layer.__setitem__(
+            "panel_open_on_shot", layer_config.update("panel_open_on_shot", c)["panel_open_on_shot"]))
+        box.addWidget(auto_open)
+        brow = QHBoxLayout()
+        brow.addWidget(QLabel(tr("panel_button_size")))
+        bsize = QSlider(Qt.Orientation.Horizontal)
+        bsize.setRange(*vr_panel.BUTTON_CM)
+        bsize.setValue(vr_panel.button_cm() or 3)
+        brow.addWidget(bsize, 1)
+        bsize_value = QLabel(f"{bsize.value()} cm" if vr_panel.button_cm() else tr("panel_size_later"))
+        bsize_value.setMinimumWidth(60)
+        brow.addWidget(bsize_value)
+        box.addLayout(brow)
+        bsize.valueChanged.connect(lambda cm: bsize_value.setText(
+            f"{cm} cm" if vr_panel.set_button_cm(cm) else tr("panel_size_later")))
+        crow = QHBoxLayout()
+        crow.addWidget(QLabel(tr("panel_button_color")))
+        swatch = QPushButton(tr("panel_button_pick"))
+        swatch.setObjectName("linkbtn")
+
+        def show_color():
+            c = str(self.layer.get("panel_button_color", vr_panel.BUTTON_COLORS[0]))
+            swatch.setStyleSheet(f"border-left: 28px solid {c};")
+
+        def pick_color():
+            from PyQt6.QtGui import QColor
+            from PyQt6.QtWidgets import QColorDialog
+            color = QColorDialog.getColor(QColor(str(self.layer.get("panel_button_color", "#5b8dc9"))), self,
+                                          tr("panel_button_color"))
+            if color.isValid():
+                self.layer["panel_button_color"] = layer_config.update("panel_button_color", color.name())[
+                    "panel_button_color"]
+                show_color()
+
+        swatch.clicked.connect(pick_color)
+        show_color()
+        crow.addWidget(swatch)
+        crow.addStretch()
+        box.addLayout(crow)
+
+        def toggled(checked: bool):
+            self.layer["panel"] = layer_config.update("panel", checked)["panel"]
+            for w in (anchor, edit, reset, opacity, size, knob, auto_open, bsize, swatch):
+                w.setEnabled(checked)
+
+        def anchor_changed(_):
+            # anderer Anker → Position passt nicht mehr: neu vor dem Kopf
+            self.layer["panel_anchor"] = layer_config.update("panel_anchor", anchor.currentData())["panel_anchor"]
+            vr_panel.reset_position()
+
+        on.toggled.connect(toggled)
+        anchor.currentIndexChanged.connect(anchor_changed)
+        edit.toggled.connect(lambda c: self.layer.__setitem__("panel_edit", layer_config.update("panel_edit", c)["panel_edit"]))
+        self.panel_edit_box = edit  # wird im Panel (VR) umgeschaltet → hier nachziehen
+        toggled(on.isChecked())
+        lay.addWidget(card)
+
+    def add_daemon_card(self, lay: QVBoxLayout):
+        """⚙ Übersetzen + Panel auch ohne offene App (Rust-Dienst, startet mit dem VR-Spiel)."""
+        from core import daemon
+        card, box = make_card("⚙  " + tr("daemon_card"))
+        box.addWidget(dim(tr("daemon_hint")))
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.addWidget(QLabel(tr("daemon_start")), 0, 0)
+        mode = QComboBox()
+        for value in layer_config.DAEMON_MODES:
+            mode.addItem(tr("daemon_" + value), value)
+        mode.setCurrentIndex(max(0, mode.findData(self.layer.get("daemon", "all"))))
+        grid.addWidget(mode, 0, 1)
+        grid.setColumnStretch(1, 1)
+        box.addLayout(grid)
+
+        # Spiele zum Anhaken: zuletzt gespielte (layer.log) + schon ausgewählte
+        games = QWidget()
+        gbox = QVBoxLayout(games)
+        gbox.setContentsMargins(0, 0, 0, 0)
+        gbox.addWidget(dim(tr("daemon_games_hint")))
+        checks = QVBoxLayout()
+        gbox.addLayout(checks)
+        row = QHBoxLayout()
+        new_game = QLineEdit()
+        new_game.setPlaceholderText(tr("daemon_game_placeholder"))
+        row.addWidget(new_game, 1)
+        box.addWidget(games)
+
+        def selected() -> list[str]:
+            return list(self.layer.get("daemon_apps") or [])
+
+        def save_games(names: list[str]):
+            self.layer["daemon_apps"] = layer_config.update("daemon_apps", names)["daemon_apps"]
+
+        def add_check(name: str):
+            check = QCheckBox(name)
+            check.setChecked(name in selected())
+            check.toggled.connect(lambda on, n=name: save_games(
+                [g for g in selected() if g != n] + ([n] if on else [])))
+            checks.addWidget(check)
+
+        known = selected() + [g for g in daemon.recent_apps() if g not in selected()]
+        for name in known:
+            add_check(name)
+
+        def add_game():
+            name = new_game.text().strip()
+            new_game.clear()
+            if not name or name in selected():
+                return
+            save_games(selected() + [name])
+            add_check(name)
+
+        new_game.returnPressed.connect(add_game)
+        row.addWidget(button("＋  " + tr("add"), add_game))
+        gbox.addLayout(row)
+
+        status = dim("")
+        box.addWidget(status)
+
+        def update():
+            games.setVisible(mode.currentData() == "selected")
+            if not daemon.installed():
+                status.setText("⚠  " + tr("daemon_not_installed"))
+            elif mode.currentData() == "off":
+                status.setText(tr("daemon_off_status"))
+            else:
+                status.setText("✔  " + tr("daemon_ready"))
+
+        def mode_changed(_):
+            self.layer["daemon"] = layer_config.update("daemon", mode.currentData())["daemon"]
+            update()
+
+        mode.currentIndexChanged.connect(mode_changed)
+        update()
+        lay.addWidget(card)
+
+    def add_overlay_card(self, lay: QVBoxLayout):
+        """🥽 Nur 🔁 Lens: Übersetzung als graue Kästchen in VR über den Originaltext (Fotos → 🪟 Panel)."""
+        card, box = make_card("🥽  " + tr("overlay_card"))
+        box.addWidget(dim(tr("overlay_hint")))
+        on = QCheckBox(tr("overlay_on"))
+        on.setChecked(bool(self.layer.get("overlay", True)))
+        box.addWidget(on)
+        def toggled(checked: bool):
+            self.layer["overlay"] = layer_config.update("overlay", checked)["overlay"]
+            if not checked:
+                overlay.clear()  # sofort weg aus VR
+
+        on.toggled.connect(toggled)
+        lay.addWidget(card)
+
     def icon_position_changed(self, position: str):
         """Neue Ecke → layer.json (der Layer übernimmt sie sofort)."""
         self.layer["icon_position"] = layer_config.update("icon_position", position)["icon_position"]
@@ -418,6 +650,7 @@ class OptionsPage(QWidget):
         self.lang = QComboBox()
         self.lang.addItem("Deutsch", "de")   # sichtbarer Text, gespeicherter Wert
         self.lang.addItem("English", "en")
+        self.lang.addItem("Français", "fr")
         self.lang.setCurrentIndex(max(0, self.lang.findData(self.cfg["language"])))
         self.lang.setFixedWidth(200)
         # erst NACH dem Setzen verbinden, sonst feuert es schon beim Start
@@ -557,6 +790,15 @@ class OptionsPage(QWidget):
         self.cfg[key] = value
         config.save(self.cfg)
 
+    def add_main_page_card(self, lay: QVBoxLayout):
+        """Was auf der Main-Seite zu sehen ist (🕘 Verlauf, Standard aus)."""
+        card, box = make_card(tr("main_page_card"))
+        hist = QCheckBox(tr("history_option"))
+        hist.setChecked(bool(self.cfg.get("history")))
+        hist.toggled.connect(lambda on: self.set_cfg("history", on))
+        box.addWidget(hist)
+        lay.addWidget(card)
+
     def add_folders_card(self, lay: QVBoxLayout):
         card, box = make_card(tr("folders"))
         grid = QGridLayout()
@@ -613,24 +855,35 @@ class OptionsPage(QWidget):
         grid = QGridLayout()
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(10)
+        # Modus: 🤖 Automatisch (Main-KI teilt zu) / ✋ Manuell (Aufgabe selbst wählen)
+        self.route_combo = QComboBox()
+        self.route_combo.addItem(tr("tr_route_auto"), translation.ROUTE_AUTO)
+        self.route_combo.addItem(tr("tr_route_manual"), translation.ROUTE_MANUAL)
+        self.route_combo.currentIndexChanged.connect(self.route_changed)
+        grid.addWidget(QLabel(tr("tr_route")), 0, 0)
+        grid.addWidget(self.route_combo, 0, 1, 1, 2)
+        self.route_hint = dim("")
+        grid.addWidget(self.route_hint, 1, 1, 1, 2)
+
         self.method = QComboBox()
-        for m in translation.METHODS:
-            self.method.addItem(tr("tr_m_" + m), m)
-        self.method.setCurrentIndex(max(0, self.method.findData(self.cfg["tr_method"])))
-        grid.addWidget(QLabel(tr("tr_service")), 0, 0)
-        grid.addWidget(self.method, 0, 1)
+        fill_methods(self.method, translation.METHODS)  # ── Übersetzung ── / ── KI-Übersetzung ──
+        select_data(self.method, self.cfg["tr_method"])
+        grid.addWidget(QLabel(tr("tr_main")), 2, 0)
+        grid.addWidget(self.method, 2, 1, 1, 2)
+        self.task_updates = []  # Kontext-/Frage-Zeilen auffrischen, wenn sich Main ändert
+        self.add_task_rows(grid, 3)  # Zeilen 3–6
 
         self.tr_source_combo = language_combo(with_auto=True)
         self.tr_source_combo.currentIndexChanged.connect(
             lambda _: self.set_cfg("tr_source", self.tr_source_combo.currentData()))
-        grid.addWidget(QLabel(tr("tr_source")), 1, 0)
-        grid.addWidget(self.tr_source_combo, 1, 1)
+        grid.addWidget(QLabel(tr("tr_source")), 7, 0)
+        grid.addWidget(self.tr_source_combo, 7, 1, 1, 2)
 
         self.tr_target_combo = language_combo(with_auto=False)
         self.tr_target_combo.currentIndexChanged.connect(
             lambda _: self.set_cfg("tr_target", self.tr_target_combo.currentData()))
-        grid.addWidget(QLabel(tr("tr_target")), 2, 0)
-        grid.addWidget(self.tr_target_combo, 2, 1)
+        grid.addWidget(QLabel(tr("tr_target")), 8, 0)
+        grid.addWidget(self.tr_target_combo, 8, 1, 1, 2)
         grid.setColumnStretch(1, 1)
         box.addLayout(grid)
         # ☁ / 🔒 Wohin geht der Text? (wechselt mit dem gewählten Dienst)
@@ -641,11 +894,6 @@ class OptionsPage(QWidget):
         auto.setChecked(bool(self.cfg["tr_auto"]))
         auto.toggled.connect(lambda on: self.set_cfg("tr_auto", on))
         box.addWidget(auto)
-        # 🕘 Verlauf auf der Main-Seite (Standard aus)
-        hist = QCheckBox(tr("history_option"))
-        hist.setChecked(bool(self.cfg.get("history")))
-        hist.toggled.connect(lambda on: self.set_cfg("history", on))
-        box.addWidget(hist)
 
         # Texterkennung vorhanden?
         if ocr.available():
@@ -662,6 +910,15 @@ class OptionsPage(QWidget):
         # Für jeden Dienst ein eigener Block; nur der gewählte ist sichtbar.
         card, box = make_card(tr("settings_folder"))
         self.method_blocks = {}
+        # welchen Dienst einrichten? – unabhängig von Main (Main muss man dafür nicht umstellen)
+        row = QHBoxLayout()
+        row.addWidget(QLabel(tr("tr_settings_for")))
+        self.settings_method = QComboBox()
+        fill_methods(self.settings_method, translation.METHODS)
+        select_data(self.settings_method, self.cfg["tr_method"])
+        self.settings_method.currentIndexChanged.connect(self.settings_method_changed)
+        row.addWidget(self.settings_method, 1)
+        box.addLayout(row)
 
         def block(method: str) -> QVBoxLayout:
             widget = QWidget()
@@ -788,6 +1045,43 @@ class OptionsPage(QWidget):
             b.addWidget(combo)
             b.addLayout(self.retry_row(method))
 
+        # 🖼 Lokales Bild-LLM (Ollama) – bekommt das Foto mit
+        b = block(L.METHOD_VISION)
+        b.addWidget(dim(tr("tr_vision_info")))
+        row = QHBoxLayout()
+        self.vision_status = QLabel()
+        self.vision_status.setWordWrap(True)
+        self.vision_status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        row.addWidget(self.vision_status, 1)
+        row.addWidget(button("🔄  " + tr("tr_vision_check"), self.update_vision_status))
+        # 📦 nur solange Ollama fehlt: pacman-Paket passend zur Grafikkarte / offizielles Skript
+        self.vision_install_btn = button("📦  " + tr("tr_vision_install"), self.install_ollama, "sendbtn")
+        self.vision_install_btn.setMinimumHeight(40)
+        row.addWidget(self.vision_install_btn)
+        pull = button("📥  " + tr("tr_vision_pull"), self.pull_vision_model, "sendbtn")
+        pull.setMinimumHeight(40)
+        row.addWidget(pull)
+        b.addLayout(row)
+        b.addWidget(QLabel(tr("tr_model")))
+        key = L.MODEL_KEYS[L.METHOD_VISION]
+        combo = model_combo(L.METHOD_VISION, self.cfg.get(key, ""),
+                            lambda value, k=key: value != self.cfg.get(k) and self.set_cfg(k, value))
+        self.model_combos[L.METHOD_VISION] = combo
+        b.addWidget(combo)
+        grid2 = QGridLayout()
+        grid2.setHorizontalSpacing(12)
+        grid2.addWidget(QLabel(tr("tr_vision_keep")), 0, 0)
+        keep = QComboBox()
+        for value in vision.KEEP_ALIVE:
+            keep.addItem(tr("tr_vision_keep_" + value.replace("-", "forever")), value)
+        keep.setCurrentIndex(max(0, keep.findData(self.cfg.get("tr_vision_keep_alive") or "2m")))
+        keep.currentIndexChanged.connect(lambda _: self.set_cfg("tr_vision_keep_alive", keep.currentData()))
+        grid2.addWidget(keep, 0, 1)
+        grid2.addWidget(QLabel(tr("tr_vision_url")), 1, 0)
+        grid2.addWidget(self.line_edit("tr_vision_url", vision.DEFAULT_URL), 1, 1)
+        grid2.setColumnStretch(1, 1)
+        b.addLayout(grid2)
+
         # KI: eigener Befehl
         b = block(L.METHOD_LLM_CUSTOM)
         b.addWidget(dim(tr("tr_llm_custom_info")))
@@ -806,14 +1100,82 @@ class OptionsPage(QWidget):
 
         def method_changed(_):
             m = self.method.currentData()
+            if m is None:
+                return  # Überschrift
             self.show_method_block(m)
             self.test_result.clear()
+            translation.set_main(self.cfg, m)  # evtl. Aufgabe → Übersetzen (Modus ✋ Manuell)
             self.set_cfg("tr_method", m)
+            self.update_route()
 
         self.method.currentIndexChanged.connect(method_changed)
         self.show_method_block(self.cfg["tr_method"])
         self.sync_translation()
         return w
+
+    def add_task_rows(self, grid: QGridLayout, row: int):
+        """Kontext erklären / Frage beantworten: [KI ▾] [Modell ▾] – je 2 Zeilen (+ Hinweis).
+        Das Modell gehört zur KI (dasselbe wie bei ihr eingestellt)."""
+        for i, mode in enumerate(L.TASK_KEYS):
+            key = L.TASK_KEYS[mode]
+            service = QComboBox()
+            service.addItem("", "")  # Text: update() („wie Main“ / „aus“)
+            for m in L.METHODS:
+                service.addItem(tr("tr_m_" + m), m)
+            service.setCurrentIndex(max(0, service.findData(self.cfg.get(key) or "")))
+            model = model_combo(service.currentData() or L.METHOD_CLAUDE, "", lambda _m: None)
+            status = dim("")
+            r = row + 2 * i
+            grid.addWidget(QLabel(tr("tr_mode_" + mode)), r, 0)
+            grid.addWidget(service, r, 1)
+            grid.addWidget(model, r, 2)
+            grid.addWidget(status, r + 1, 1, 1, 2)
+
+            def model_chosen(combo=model):
+                method = combo.property("llm_method")
+                self.set_cfg(L.MODEL_KEYS[method], combo.property("llm_model") or "")
+                self.sync_translation()  # gleiches Modell auch im Block der KI unten
+
+            model.activated.connect(lambda _i, c=model: model_chosen(c))
+
+            def update(combo=service, model=model, status=status):
+                main_ai = L.is_llm(self.cfg["tr_method"])
+                combo.setItemText(0, tr("tr_tasks_same") if main_ai else tr("tr_tasks_off"))
+                m = combo.currentData()
+                model.setVisible(bool(m))
+                if m:
+                    fill_model_combo(model, m, self.cfg.get(L.MODEL_KEYS[m], ""))
+                if m and not translation.is_configured(m, self.cfg):
+                    text = "⚠  " + tr("tr_answer_not_ready")
+                else:
+                    text = translation.privacy_text(m) if m else ""
+                status.setText(text)
+                status.setVisible(bool(text))
+
+            def changed(_i, key=key, combo=service, update=update):
+                self.set_cfg(key, combo.currentData())
+                update()
+
+            service.currentIndexChanged.connect(changed)
+            self.task_updates.append(update)
+            update()
+
+    def route_changed(self, _i=None):
+        translation.set_route(self.cfg, self.route_combo.currentData())
+        self.set_cfg("tr_route", self.cfg["tr_route"])
+        self.update_route()
+
+    def update_route(self):
+        """Modus-Dropdown: ohne KI als Main geht nur Manuell (LibreTranslate kann nicht entscheiden)."""
+        main_ai = L.is_llm(self.cfg["tr_method"])
+        mode = translation.route_mode(self.cfg)
+        self.route_combo.blockSignals(True)
+        self.route_combo.setCurrentIndex(max(0, self.route_combo.findData(mode)))
+        self.route_combo.blockSignals(False)
+        self.route_combo.setEnabled(main_ai)
+        self.route_hint.setText(tr("tr_route_hint_" + mode) if main_ai else tr("tr_route_hint_noai"))
+        for update in getattr(self, "task_updates", []):
+            update()
 
     def add_favorites_card(self, lay: QVBoxLayout):
         """⭐ Häkchen pro Dienst. Nichts angehakt = alles wie bisher."""
@@ -988,12 +1350,69 @@ class OptionsPage(QWidget):
         # neu installiert → taucht auf der Main-Seite im Dropdown auf
         self.translation_changed.emit()
 
-    def show_method_block(self, method: str):
+    def settings_method_changed(self, _i=None):
+        """„Einstellungen für“ umgestellt → nur den Block zeigen, Main bleibt wie es ist."""
+        m = self.settings_method.currentData()
+        if m is None:
+            return  # Überschrift
+        self.test_result.clear()
+        self.show_method_block(m, sync_picker=False)
+
+    def show_method_block(self, method: str, sync_picker: bool = True):
+        """Block eines Dienstes zeigen. sync_picker: „Einstellungen für“ mitziehen
+        (wenn Main sich ändert, zeigt die Karte den neuen Main-Dienst)."""
+        self.shown_method = method
+        picker = getattr(self, "settings_method", None)
+        if sync_picker and picker is not None:
+            picker.blockSignals(True)
+            select_data(picker, method)
+            picker.blockSignals(False)
         for key, widget in self.method_blocks.items():
             widget.setVisible(key == method)
-        self.privacy_note.setText(translation.privacy_text(method))
+        # ☁/🔒 steht in der Main-Karte → gilt für den Main-Dienst
+        self.privacy_note.setText(translation.privacy_text(self.cfg["tr_method"]))
         if method == T.METHOD_LIBRE:
             self.check_libre()
+        if method == L.METHOD_VISION:
+            self.update_vision_status()
+
+    # --- 🖼 Bild-LLM (Ollama): läuft es? Modelle da? ----------------------
+    def update_vision_status(self):
+        url = vision.url_of(self.cfg)
+        self.vision_install_btn.setVisible(not L.installed(L.METHOD_VISION))
+        if not vision.running(url):
+            text, ok = tr("tr_vision_off", url=url), False
+        else:
+            vision._models_cache.pop(url, None)  # frisch nachschauen
+            models = vision.vision_models(url)
+            text = tr("tr_vision_ok", n=len(models), models=", ".join(models[:4])) if models \
+                else tr("tr_vision_no_model")
+            ok = bool(models)
+            combo = self.model_combos.get(L.METHOD_VISION)
+            if combo is not None:
+                fill_model_combo(combo, L.METHOD_VISION, self.cfg.get(L.MODEL_KEYS[L.METHOD_VISION], ""))
+        self.vision_status.setObjectName("ok" if ok else "bad")
+        self.vision_status.style().polish(self.vision_status)
+        self.vision_status.setText(text)
+
+    def install_ollama(self):
+        """📦 Terminal: Ollama passend zu Distro + Grafikkarte installieren und starten."""
+        from core import terminal
+        script = vision.install_script()
+        ok = terminal.run(["bash", "-c", script])
+        self.vision_status.setObjectName("dim" if ok else "bad")
+        self.vision_status.style().polish(self.vision_status)
+        self.vision_status.setText(tr("tr_vision_installing") if ok else tr("tr_vision_install_manual", cmd=script))
+
+    def pull_vision_model(self):
+        """📥 Terminal mit „ollama pull <Modell>“ (zeigt den Download-Fortschritt)."""
+        from core import terminal
+        model = L.model_of(L.METHOD_VISION, self.cfg)
+        exe = L.find_binary("ollama")
+        if exe is None or not terminal.run([exe, "pull", model]):
+            self.vision_status.setObjectName("bad")
+            self.vision_status.style().polish(self.vision_status)
+            self.vision_status.setText(tr("tr_vision_pull_manual", model=model))
 
     def sync_translation(self):
         """Dropdowns an ui.json anpassen (z. B. nach Änderung auf der Main-Seite).
@@ -1001,11 +1420,19 @@ class OptionsPage(QWidget):
         for combo, key in ((self.method, "tr_method"), (self.tr_source_combo, "tr_source"),
                            (self.tr_target_combo, "tr_target")):
             combo.blockSignals(True)
-            combo.setCurrentIndex(max(0, combo.findData(self.cfg[key])))
+            select_data(combo, self.cfg[key])
             combo.blockSignals(False)
         for method, combo in self.model_combos.items():
             fill_model_combo(combo, method, self.cfg.get(L.MODEL_KEYS[method], ""))
-        self.show_method_block(self.cfg["tr_method"])
+        # Main hat sich geändert → Einstellungen des neuen Main zeigen;
+        # sonst bleibt der Dienst stehen, den man gerade unter „Einstellungen für“ einrichtet
+        if self.cfg["tr_method"] != getattr(self, "_last_main", None) or not getattr(self, "shown_method", None):
+            self.show_method_block(self.cfg["tr_method"])
+        else:
+            self.show_method_block(self.shown_method, sync_picker=False)
+        self._last_main = self.cfg["tr_method"]
+        if hasattr(self, "route_combo"):
+            self.update_route()
 
     # --- LibreTranslate: läuft ein Server? -------------------------------
     def check_libre(self):
@@ -1046,12 +1473,13 @@ class OptionsPage(QWidget):
         self.test_result.setObjectName("")
         self.test_result.setText(tr("tr_testing"))
         cfg = dict(self.cfg)
+        method = getattr(self, "shown_method", None) or cfg["tr_method"]
 
         def work():  # Hintergrund – KEINE Widgets anfassen!
             # NUR den gewählten Dienst testen – ohne Lingva/Google als Ersatz,
             # sonst sieht ein kaputter Dienst beim Einrichten wie "geht" aus
             try:
-                out, error = translation.translate_only(cfg["tr_method"], tr("tr_test_text"), cfg)
+                out, error = translation.translate_only(method, tr("tr_test_text"), cfg)
             except Exception as e:  # noqa: BLE001
                 out, error = None, str(e)
             self._test_done.emit("✔ " + out if out else "✘ " + (error or tr("tr_no_answer")))

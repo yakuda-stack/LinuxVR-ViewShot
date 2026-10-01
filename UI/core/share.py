@@ -5,6 +5,7 @@ Unter Linux gibt es kein gemeinsames "Teilen"-Menü wie am Handy.
 Deshalb pro Programm ein eigener Weg:
 
   Discord   → Bild in die Zwischenablage + Discord öffnen (dann Strg+V)
+              (auch Vesktop / WebCord – als Programm oder als Flatpak)
   Telegram  → telegram-desktop -sendpath <datei>  (öffnet "Senden an…")
   E-Mail    → xdg-email --attach <datei>
 
@@ -22,21 +23,25 @@ def _flatpak_installed(app_id: str) -> bool:
     return subprocess.run(["flatpak", "info", app_id], capture_output=True).returncode == 0
 
 
-def _find(commands: list[str], flatpak_id: str | None) -> list[str] | None:
-    """Erstes gefundene Programm als Befehlsliste, oder None."""
+def _find(commands: list[str], flatpak_ids: list[str]) -> list[str] | None:
+    """Erstes gefundene Programm als Befehlsliste, oder None.
+    Erst normale Befehle, dann Flatpaks (z. B. Vesktop: dev.vencord.Vesktop)."""
     for cmd in commands:
         if shutil.which(cmd):
             return [cmd]
-    if flatpak_id and _flatpak_installed(flatpak_id):
-        return ["flatpak", "run", flatpak_id]
+    for app_id in flatpak_ids:
+        if _flatpak_installed(app_id):
+            return ["flatpak", "run", app_id]
     return None
 
 
-# (Schlüssel, Name, mögliche Befehle, Flatpak-ID, Art)
+# (Schlüssel, Name, mögliche Befehle, Flatpak-IDs, Art)
+DISCORD_FLATPAKS = ["com.discordapp.Discord", "dev.vencord.Vesktop", "com.discordapp.DiscordCanary",
+                    "io.github.spacingbat3.webcord"]
 TARGETS = [
-    ("discord",  "Discord",  ["discord", "vesktop", "discord-canary", "webcord"], "com.discordapp.Discord", "paste"),
-    ("telegram", "Telegram", ["telegram-desktop", "Telegram"],                     "org.telegram.desktop",   "sendpath"),
-    ("email",    "E-Mail",   ["xdg-email"],                                        None,                     "email"),
+    ("discord",  "Discord",  ["discord", "vesktop", "discord-canary", "webcord"], DISCORD_FLATPAKS,          "paste"),
+    ("telegram", "Telegram", ["telegram-desktop", "Telegram"],                     ["org.telegram.desktop"],  "sendpath"),
+    ("email",    "E-Mail",   ["xdg-email"],                                        [],                        "email"),
 ]
 
 

@@ -15,6 +15,7 @@ from core import llm_translator as llm
 from core import clipboard, config, ocr, qr, translation
 from core.i18n import tr
 from ui.panel_window import PanelWindow
+from ui.widgets import fill_methods, select_data
 
 
 class TranslationMixin:
@@ -90,11 +91,14 @@ class TranslationMixin:
         # Aufgabe [Übersetzen ▾]  – nur bei KI: übersetzen / Kontext erklären / Frage beantworten
         self.mode_label = QLabel(tr("tr_task"))
         grid.addWidget(self.mode_label, 2, 0)
-        self.mode_combo = QComboBox()
-        for mode in llm.MODES:
-            self.mode_combo.addItem(tr("tr_mode_" + mode), mode)
+        self.mode_combo = QComboBox()  # Einträge: sync_model (🤖 Auto nur im Modus Automatisch)
         self.mode_combo.currentIndexChanged.connect(lambda _: self.mode_changed())
         grid.addWidget(self.mode_combo, 2, 1)
+        # Letzte KI: wer hat die angezeigte Antwort geschrieben (bleibt bis zur nächsten)
+        grid.addWidget(QLabel(tr("tr_last_ai")), 3, 0)
+        self.last_ai_label = QLabel("–")
+        self.last_ai_label.setObjectName("dim")
+        grid.addWidget(self.last_ai_label, 3, 1)
         grid.setColumnStretch(1, 1)
         col.addLayout(grid)
 
@@ -154,11 +158,9 @@ class TranslationMixin:
         """Nur eingerichtete Dienste (Key da / Programm installiert) anbieten."""
         self.method_combo.blockSignals(True)
         self.method_combo.clear()
-        for m in translation.menu_methods(self.cfg):
-            self.method_combo.addItem(tr("tr_m_" + m), m)
-            # Maus drüber: bleibt der Text auf dem PC oder geht er ins Internet?
-            self.method_combo.setItemData(self.method_combo.count() - 1, translation.privacy_text(m),
-                                          Qt.ItemDataRole.ToolTipRole)
+        # gegliedert: ── Übersetzung ── / ── KI-Übersetzung ──
+        # Maus drüber: bleibt der Text auf dem PC oder geht er ins Internet?
+        fill_methods(self.method_combo, translation.menu_methods(self.cfg), translation.privacy_text)
         self.method_combo.blockSignals(False)
 
     def sync_combos(self):
@@ -166,7 +168,7 @@ class TranslationMixin:
         for combo, key in ((self.src_combo, "tr_source"), (self.dst_combo, "tr_target"),
                            (self.method_combo, "tr_method")):
             combo.blockSignals(True)  # sonst meldet das Setzen selbst "geändert"
-            combo.setCurrentIndex(max(0, combo.findData(self.cfg[key])))
+            select_data(combo, self.cfg[key])
             combo.blockSignals(False)
         self.sync_model()
 
@@ -176,19 +178,66 @@ class TranslationMixin:
         method = self.cfg["tr_method"]
         key = llm.MODEL_KEYS.get(method)
         self.model_combo.setVisible(key is not None)
-        is_ai = llm.is_llm(method)
-        self.mode_label.setVisible(is_ai)
-        self.mode_combo.setVisible(is_ai)
+        tasks = llm.has_tasks(self.cfg)  # KI als Haupt-Dienst oder eigener Kontext-/Rätsel-Dienst
+        self.mode_label.setVisible(tasks)
+        self.mode_combo.setVisible(tasks)
         self.mode_combo.blockSignals(True)
-        self.mode_combo.setCurrentIndex(max(0, self.mode_combo.findData(
-            self.cfg.get("tr_llm_mode") or llm.MODE_TRANSLATE)))
+        self.mode_combo.clear()
+        if translation.route_mode(self.cfg) == translation.ROUTE_AUTO:
+            # 🤖 Auto – eine Aufgabe wählen gilt nur fürs aktuelle + nächste Foto (Haupt-KI irrt sich)
+            self.mode_combo.addItem(tr("tr_mode_auto"), "")
+            for mode in llm.MODES:
+                self.mode_combo.addItem(tr("tr_mode_" + mode) + "  · 1×", mode)
+            current = self.cfg.get("tr_auto_once") or ""
+        else:
+            for mode in llm.MODES:
+                self.mode_combo.addItem(tr("tr_mode_" + mode), mode)
+            current = self.cfg.get("tr_llm_mode") or llm.MODE_TRANSLATE
+        self.mode_combo.setCurrentIndex(max(0, self.mode_combo.findData(current)))
         self.mode_combo.blockSignals(False)
         if key is not None:
             fill_model_combo(self.model_combo, method, self.cfg.get(key, ""))
 
+    def set_last_ai(self, method: str, task: str = ""):
+        """„Letzte KI: Claude Code · ❓ Frage beantworten“ – bleibt stehen bis zur nächsten Antwort."""
+        if not method:
+            return
+        short = lambda t: t.split(" (")[0].removeprefix("KI: ").removeprefix("AI: ").removeprefix("IA : ")  # noqa: E731
+        text = short(tr("tr_m_" + method))
+        model = llm.model_of(method, self.cfg)
+        if model:
+            text += f" ({model})"
+        if task and task != llm.MODE_TRANSLATE:
+            text += "  ·  " + short(tr("tr_mode_" + task))
+        self.last_ai_label.setText(text)
+
+    def last_task(self, used: str) -> str:
+        """Aufgabe der eben fertigen Antwort (🤖 Auto: wie entschieden; Ersatz-Dienst: übersetzen)."""
+        planned = {self.cfg["tr_method"]} | {llm.task_method(self.cfg, m) for m in llm.TASK_KEYS}
+        if used not in planned:
+            return llm.MODE_TRANSLATE
+        task = getattr(self, "auto_task", "") or translation.task_cfg(self.cfg)["tr_llm_mode"]
+        return llm.MODE_TRANSLATE if task == llm.MODE_AUTO else task
+
+    def photo_cfg(self, photo) -> dict:
+        """Einstellungen mit der Aufgabe für DIESES Foto (🤖 Auto + einmal umgestellt → 1× zurück)."""
+        cfg, changed = translation.photo_task_cfg(self.cfg, Path(photo).name if photo else "")
+        if changed:
+            config.save(self.cfg)
+            self.sync_model()  # Aufgabe-Dropdown wieder auf 🤖 Auto
+            self.settings_changed.emit()
+        return cfg
+
     def mode_changed(self):
-        """Aufgabe der KI geändert (Übersetzen / Kontext / Antworten) → neu fragen."""
-        self.cfg["tr_llm_mode"] = self.mode_combo.currentData()
+        """Aufgabe der KI geändert (Übersetzen / Kontext / Antworten) → neu fragen.
+        Manuell: bleibt so. 🤖 Auto: gilt fürs aktuelle + nächste Foto, dann wieder Auto."""
+        mode = self.mode_combo.currentData()
+        if translation.route_mode(self.cfg) == translation.ROUTE_AUTO:
+            self.cfg["tr_auto_once"] = mode or ""
+            self.cfg["tr_auto_once_photo"] = self.last_photo.name if mode and self.last_photo else ""
+            self.cfg["tr_auto_once_next"] = ""
+        else:
+            self.cfg["tr_llm_mode"] = mode
         config.save(self.cfg)
         self.settings_changed.emit()
         self.clear_translation()
@@ -205,7 +254,12 @@ class TranslationMixin:
         self.start_translation()
 
     def combo_changed(self, key: str, combo: QComboBox):
-        self.cfg[key] = combo.currentData()
+        if combo.currentData() is None:
+            return  # Überschrift (── KI-Übersetzung ──) – nicht wählbar
+        if key == "tr_method":
+            translation.set_main(self.cfg, combo.currentData())  # evtl. Aufgabe → Übersetzen
+        else:
+            self.cfg[key] = combo.currentData()
         config.save(self.cfg)
         if key == "tr_method":
             self.sync_model()
@@ -237,7 +291,7 @@ class TranslationMixin:
         self.tr_result = translated
         self.render_translation()
         self.set_ocr_text(original)
-        has_text = bool(original)
+        has_text = bool(original or translated)  # Bild-LLM kann ohne OCR-Text übersetzen
         # Feld auch ohne erkannten Text zeigen – dann kann man den Text selbst eintippen
         self.has_ocr_text = True
         self.sync_ocr()
@@ -276,7 +330,7 @@ class TranslationMixin:
         self.translate_btn.setEnabled(False)
         self.refresh_btn.setEnabled(False)
         self.tr_status.setText("⏳  " + tr("translating"))
-        cfg = dict(self.cfg)
+        cfg = translation.task_cfg(self.cfg)
         errors = []
 
         def work():  # Hintergrund – KEINE Widgets anfassen!
@@ -298,6 +352,7 @@ class TranslationMixin:
         photo = self.history_entry.get("photo", "") if self.history_entry else ""
         entry = self.history_entry
         self.show_translation(text, translated)
+        self.set_last_ai(used, self.last_task(used))
         self.history_entry = entry  # bleibt im Verlauf-Modus
         self.add_history(photo, text, translated, used)
 
@@ -384,9 +439,10 @@ class TranslationMixin:
             self.tr_status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             self.translate_btn.setEnabled(False)
             return
-        hit = translation.cached(photo, self.cfg)
+        hit = translation.cached(photo, self.photo_cfg(photo))
         if hit is not None:
             self.show_translation(*hit)
+            self.set_last_ai(*(translation.last_ai(photo, self.photo_cfg(photo)) or ("", "")))
             # auch gespeicherte Ergebnisse in den Verlauf – sonst fehlen z. B. Fotos,
             # deren Text schon vorher gelesen/übersetzt wurde (doppelte fliegen raus)
             self.add_history(str(photo), hit[0], hit[1], self.cfg["tr_method"])
@@ -402,9 +458,10 @@ class TranslationMixin:
             # läuft schon – on_translated fängt neues Foto / neue Einstellung ab
             self.tr_status.setText("⏳  " + tr("translating"))
             return
-        hit = None if force else translation.cached(photo, self.cfg)
+        hit = None if force else translation.cached(photo, self.photo_cfg(photo))
         if hit is not None:
             self.show_translation(*hit)
+            self.set_last_ai(*(translation.last_ai(photo, self.photo_cfg(photo)) or ("", "")))
             # auch gespeicherte Ergebnisse in den Verlauf – sonst fehlen z. B. Fotos,
             # deren Text schon vorher gelesen/übersetzt wurde (doppelte fliegen raus)
             self.add_history(str(photo), hit[0], hit[1], self.cfg["tr_method"])
@@ -413,14 +470,14 @@ class TranslationMixin:
         self.translate_btn.setEnabled(False)
         self.refresh_btn.setEnabled(False)
         self.tr_status.setText("⏳  " + tr("translating"))
-        cfg = dict(self.cfg)
+        cfg = self.photo_cfg(photo)
         self.translating_key = translation._key(cfg)  # mit welchen Einstellungen?
         errors = []
 
         def work():  # Hintergrund – KEINE Widgets anfassen!
             try:
                 original, translated, used = translation.translate_photo(
-                    photo, cfg, log=errors.append,
+                    photo, cfg, log=errors.append, force=force,
                     progress=lambda step, arg="": self._progress.emit(str(photo), step, arg))
                 self._translated.emit(str(photo), original, translated, "; ".join(errors), used)
             except Exception as e:  # noqa: BLE001
@@ -440,6 +497,11 @@ class TranslationMixin:
             return
         if step == "service":
             text = tr("tr_step_service", name=tr("tr_m_" + arg))
+        elif step == "classify":
+            text = tr("tr_step_classify", name=tr("tr_m_" + arg))
+        elif step == "auto":
+            self.auto_task = arg  # 🤖 so hat Auto entschieden (Statuszeile danach)
+            text = "🤖 → " + tr("tr_mode_" + arg)
         elif step == "retry":
             method, _, attempt = arg.rpartition(":")
             text = tr("tr_step_retry", name=tr("tr_m_" + method), n=attempt)
@@ -455,7 +517,7 @@ class TranslationMixin:
         if Path(photo) != self.last_photo:
             self.update_translation()  # inzwischen kam ein neueres Foto
             return
-        if self.translating_key != translation._key(self.cfg):
+        if self.translating_key != translation._key(self.photo_cfg(Path(photo))):
             # während des Übersetzens wurde Von/Nach/Dienst geändert → nochmal
             self.start_translation()
             return
@@ -464,18 +526,20 @@ class TranslationMixin:
             return
         self.show_translation(original, translated)
         self.add_history(photo, original, translated, used)
-        failed = self.cfg["tr_method"]
-        if used != failed and not self.isVisible():
-            # Optionen sind offen (Dienst wird gerade eingerichtet) → NICHT umstellen,
-            # sonst springt der Dienst dort weg. Nur Bescheid sagen.
-            self.tr_status.setText(tr("tr_fallback_once", failed=tr("tr_m_" + failed),
+        if translated:
+            self.set_last_ai(used, self.last_task(used))
+        if (translation.route_mode(self.cfg) == translation.ROUTE_AUTO and getattr(self, "auto_task", "")
+                and translated):
+            self.tr_status.setText(f"🤖 → {tr('tr_mode_' + self.auto_task)} · {tr('tr_m_' + used)}")
+        elif translated and used != self.cfg["tr_method"]:
+            # z. B. Manuell + „Kontext“ → Claude: zeigen, WARUM nicht der Main-Dienst dran war
+            task = translation.task_cfg(self.cfg)["tr_llm_mode"]
+            self.tr_status.setText(f"{tr('tr_mode_' + task)} · {tr('tr_m_' + used)}")
+        self.auto_task = ""
+        # Ersatz-Dienst (z. B. Lingva) hat übernommen → nur Bescheid sagen. Der Dienst wird
+        # NIE automatisch umgestellt – was du eingestellt hast, bleibt fest.
+        planned = {self.cfg["tr_method"]} | {llm.task_method(self.cfg, m) for m in llm.TASK_KEYS}
+        if used not in planned:
+            self.tr_status.setText(tr("tr_fallback_once", failed=tr("tr_m_" + self.cfg["tr_method"]),
                                       used=tr("tr_m_" + used), error=error))
-        elif used != failed:
-            # gewählter Dienst ging nicht → auf den umstellen, der übersetzt hat
-            self.cfg["tr_method"] = used
-            config.save(self.cfg)
-            self.fill_method_combo()
-            self.sync_combos()
-            self.settings_changed.emit()
-            self.tr_status.setText(tr("tr_fallback_used", failed=tr("tr_m_" + failed),
-                                      used=tr("tr_m_" + used), error=error))
+

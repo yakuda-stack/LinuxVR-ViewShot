@@ -92,6 +92,30 @@ pub fn edge_quads(eye: &xr::Posef, fov: &xr::Fovf, img: Rect, rect: Rect, depth:
     ]
 }
 
+/// Der ganze Ausschnitt als EIN Quad (für das 🥽 Overlay): Mitte + Breite/Höhe
+/// in Tiefe `depth` vor dem Auge – genau dort, wo man den Ausschnitt sieht.
+pub fn rect_quad(eye: &xr::Posef, fov: &xr::Fovf, img: Rect, rect: Rect, depth: f32) -> EdgeQuad {
+    let (l, r) = (fov.angle_left.tan(), fov.angle_right.tan());
+    let (up, dn) = (fov.angle_up.tan(), fov.angle_down.tan());
+    let ex = |px: i32| (l + (px - img.x) as f32 / img.w as f32 * (r - l)) * depth;
+    let ey = |py: i32| (up - (py - img.y) as f32 / img.h as f32 * (up - dn)) * depth;
+    let (x0, x1) = (ex(rect.x), ex(rect.x + rect.w));
+    let (y0, y1) = (ey(rect.y), ey(rect.y + rect.h));
+    let off = rotate(eye.orientation, [(x0 + x1) * 0.5, (y0 + y1) * 0.5, -depth]);
+    EdgeQuad {
+        pose: xr::Posef {
+            orientation: eye.orientation,
+            position: xr::Vector3f {
+                x: eye.position.x + off[0],
+                y: eye.position.y + off[1],
+                z: eye.position.z + off[2],
+            },
+        },
+        width: x1 - x0,
+        height: y0 - y1,
+    }
+}
+
 /// Quadrat für das Typ-Symbol: INNEN in einer Ecke des Rahmens (`corner`).
 /// `size` = Kantenlänge in Metern (in Tiefe `depth`), `gap` = Abstand zu den Linien.
 #[allow(clippy::too_many_arguments)]
@@ -324,6 +348,18 @@ mod tests {
         assert!((q.pose.position.y + 0.43).abs() < 1e-5);
         assert!((q.pose.position.z + 1.0).abs() < 1e-5);
         assert_eq!((q.width, q.height), (0.1, 0.1));
+    }
+
+    #[test]
+    fn rect_quad_covers_the_crop() {
+        // Ausschnitt rechts oben: x 500..900, y 100..300 von 1000 → bei ±45° und 1 m Tiefe
+        let img = Rect { x: 0, y: 0, w: 1000, h: 1000 };
+        let rect = Rect { x: 500, y: 100, w: 400, h: 200 };
+        let q = rect_quad(&pose(0.0), &fov(), img, rect, 1.0);
+        assert!((q.pose.position.x - 0.4).abs() < 1e-5, "{:?}", q.pose.position);
+        assert!((q.pose.position.y - 0.6).abs() < 1e-5);
+        assert!((q.pose.position.z + 1.0).abs() < 1e-5);
+        assert!((q.width - 0.8).abs() < 1e-5 && (q.height - 0.4).abs() < 1e-5);
     }
 
     #[test]

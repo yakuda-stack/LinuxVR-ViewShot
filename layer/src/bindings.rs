@@ -11,6 +11,8 @@ pub enum Slot {
     Trigger,
     Buttons,
     Pose,
+    /// Zeige-Pose (-Z = Laser-Richtung) fürs 🪟 Panel
+    Aim,
     Haptic,
 }
 
@@ -24,6 +26,7 @@ const TOUCH_LEFT: HandPaths = &[
     (Slot::Buttons, "input/y/click"),
     (Slot::Buttons, "input/thumbstick/click"),
     (Slot::Pose, "input/grip/pose"),
+    (Slot::Aim, "input/aim/pose"),
     (Slot::Haptic, "output/haptic"),
 ];
 const TOUCH_RIGHT: HandPaths = &[
@@ -33,6 +36,7 @@ const TOUCH_RIGHT: HandPaths = &[
     (Slot::Buttons, "input/b/click"),
     (Slot::Buttons, "input/thumbstick/click"),
     (Slot::Pose, "input/grip/pose"),
+    (Slot::Aim, "input/aim/pose"),
     (Slot::Haptic, "output/haptic"),
 ];
 const INDEX_BOTH: HandPaths = &[
@@ -42,6 +46,7 @@ const INDEX_BOTH: HandPaths = &[
     (Slot::Buttons, "input/b/click"),
     (Slot::Buttons, "input/thumbstick/click"),
     (Slot::Pose, "input/grip/pose"),
+    (Slot::Aim, "input/aim/pose"),
     (Slot::Haptic, "output/haptic"),
 ];
 const VIVE_BOTH: HandPaths = &[
@@ -49,6 +54,7 @@ const VIVE_BOTH: HandPaths = &[
     (Slot::Trigger, "input/trigger/value"),
     (Slot::Buttons, "input/trackpad/click"),
     (Slot::Pose, "input/grip/pose"),
+    (Slot::Aim, "input/aim/pose"),
     (Slot::Haptic, "output/haptic"),
 ];
 const WMR_BOTH: HandPaths = &[
@@ -57,6 +63,7 @@ const WMR_BOTH: HandPaths = &[
     (Slot::Buttons, "input/thumbstick/click"),
     (Slot::Buttons, "input/trackpad/click"),
     (Slot::Pose, "input/grip/pose"),
+    (Slot::Aim, "input/aim/pose"),
     (Slot::Haptic, "output/haptic"),
 ];
 

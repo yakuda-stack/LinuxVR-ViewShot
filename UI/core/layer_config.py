@@ -23,7 +23,22 @@ DEFAULTS = {
     "mode_button": "left",        # Typ wechseln (auto: 🪄↔🔁, manual: 🖼📝🔳🔁): "left" / "right" / "both"
     "icon_position": "bottom_left",  # Ecke des Typ-Symbols, siehe ICON_POSITIONS
     "live_interval_s": 3,         # 🔁 Lens: alle so viele Sekunden neu fotografieren + übersetzen
+    "overlay": False,             # 🥽 Übersetzung in VR über dem Original (overlay/overlay.png)
+    "panel": True,                # 🪟 Übersetzungs-Panel in VR (panel/panel.png, ui/vr_panel.py)
+    "panel_anchor": "left",       # hängt an: "left" / "right" (Hand), "head", "world"
+    "panel_edit": False,          # Bearbeiten: Grip = verschieben, Ecke + Trigger = Größe
+    "panel_port": 47931,          # Klicks aus VR kommen per UDP an diesen Port
+    "panel_opacity": 100,         # Deckkraft des Panels in % (30–100, malt ui/vr_panel.py)
+    "panel_button": True,         # 🔘 Knopf (Handgelenk) klappt das Panel auf/zu – wie bei WayVR
+    "panel_button_color": "#5b8dc9",  # Farbe des Knopfs (passend zum Hand-Overlay)
+    "panel_open_on_shot": True,   # zugeklapptes Panel geht nach einem Foto von selbst auf
+    # ⚙ Hintergrund-Dienst (viewshot-daemon): übersetzt + malt das Panel, wenn die App zu ist.
+    # Der Layer weckt ihn: "off" / "all" (jedes VR-Spiel) / "selected" (nur daemon_apps)
+    "daemon": "all",
+    "daemon_apps": [],
 }
+
+DAEMON_MODES = ("off", "all", "selected")
 
 COMBOS = ("left", "right", "both")
 ICON_POSITIONS = ("bottom_left", "bottom_right", "top_left", "top_right")

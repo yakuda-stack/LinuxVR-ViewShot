@@ -65,6 +65,12 @@ def busy() -> bool:
 def read_text(path, priority: bool = False) -> str:
     """Erkannter Text, eine Zeile pro Textblock ("" = kein Text gefunden).
     priority=True: für die Übersetzung – kommt vor der Hintergrund-Erkennung dran."""
+    return "\n".join(line["text"] for line in read_lines(path, priority))
+
+
+def read_lines(path, priority: bool = False) -> list[dict]:
+    """Wie read_text, aber mit Position jeder Zeile im Bild (für das VR-Overlay):
+    [{"text": "…", "box": [x0, y0, x1, y1]}, …]  (Pixel, Rechteck um die Zeile)"""
     global _priority_waiting
     start = time.monotonic()
     with _turn:
@@ -74,10 +80,10 @@ def read_text(path, priority: bool = False) -> str:
             # Hintergrund: warten, bis keine Vorrang-Anfrage mehr ansteht
             _turn.wait_for(lambda: _priority_waiting == 0)
     try:
-        text = _read(path, start)
-        logging.info("OCR %s %s: %.1f s gesamt, %d Zeichen", "Main" if priority else "Hintergrund",
-                     Path(str(path)).name, time.monotonic() - start, len(text))
-        return text
+        lines = _read(path, start)
+        logging.info("OCR %s %s: %.1f s gesamt, %d Zeilen", "Main" if priority else "Hintergrund",
+                     Path(str(path)).name, time.monotonic() - start, len(lines))
+        return lines
     finally:
         if priority:
             with _turn:
@@ -85,7 +91,7 @@ def read_text(path, priority: bool = False) -> str:
                 _turn.notify_all()
 
 
-def _read(path, start: float) -> str:
+def _read(path, start: float) -> list[dict]:
     global _engine
     with _lock:
         waited = time.monotonic() - start
@@ -102,5 +108,22 @@ def _read(path, start: float) -> str:
             _engine = RapidOCR(params=_model_params())
             logging.info("OCR: Modell geladen in %.1f s", time.monotonic() - t)
         result = _engine(str(path))
-    lines = [t.strip() for t in (getattr(result, "txts", None) or ()) if t and t.strip()]
-    return "\n".join(lines)
+    return to_lines(getattr(result, "txts", None), getattr(result, "boxes", None))
+
+
+def to_lines(txts, boxes) -> list[dict]:
+    """RapidOCR-Ergebnis → [{"text", "box": [x0, y0, x1, y1]}]. Leere Zeilen fallen weg.
+    boxes = je Zeile 4 Eckpunkte [[x, y], …] (schräg möglich) → umschließendes Rechteck."""
+    txts = list(txts or ())
+    boxes = [] if boxes is None else [list(b) for b in boxes]
+    lines = []
+    for i, text in enumerate(txts):
+        if not text or not text.strip():
+            continue
+        box = None
+        if i < len(boxes) and len(boxes[i]) >= 4:
+            xs = [float(pt[0]) for pt in boxes[i]]
+            ys = [float(pt[1]) for pt in boxes[i]]
+            box = [round(min(xs)), round(min(ys)), round(max(xs)), round(max(ys))]
+        lines.append({"text": text.strip(), "box": box})
+    return lines

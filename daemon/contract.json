@@ -1,0 +1,1053 @@
+{
+ "_comment": "Erzeugt von scripts/make_daemon_contract.py – nicht von Hand ändern.",
+ "i18n": {
+  "back": {
+   "de": "Zurück",
+   "en": "Back",
+   "fr": "Retour"
+  },
+  "tr_service": {
+   "de": "Übersetzungsdienst",
+   "en": "Translation service",
+   "fr": "Service de traduction"
+  },
+  "tr_source": {
+   "de": "Übersetzen von",
+   "en": "Translate from",
+   "fr": "Traduire depuis"
+  },
+  "tr_target": {
+   "de": "Übersetzen nach",
+   "en": "Translate to",
+   "fr": "Traduire vers"
+  },
+  "tr_task": {
+   "de": "Aufgabe",
+   "en": "Task",
+   "fr": "Tâche"
+  },
+  "tr_last_ai": {
+   "de": "Letzte KI",
+   "en": "Last AI",
+   "fr": "Dernière IA"
+  },
+  "tr_mode_auto": {
+   "de": "🤖 Auto (Main-KI entscheidet)",
+   "en": "🤖 Auto (main AI decides)",
+   "fr": "🤖 Auto (l'IA principale décide)"
+  },
+  "tr_mode_translate": {
+   "de": "🌐 Übersetzen",
+   "en": "🌐 Translate",
+   "fr": "🌐 Traduire"
+  },
+  "tr_mode_explain": {
+   "de": "💡 Kontext erklären",
+   "en": "💡 Explain context",
+   "fr": "💡 Expliquer le contexte"
+  },
+  "tr_mode_answer": {
+   "de": "❓ Frage beantworten (sonst übersetzen)",
+   "en": "❓ Answer question (else translate)",
+   "fr": "❓ Répondre à la question (sinon traduire)"
+  },
+  "tr_step_ocr": {
+   "de": "Liest Text im Foto …",
+   "en": "Reading text in the photo …",
+   "fr": "Lecture du texte de la photo …"
+  },
+  "tr_step_service": {
+   "de": "Übersetzt mit {name} …",
+   "en": "Translating with {name} …",
+   "fr": "Traduction avec {name} …"
+  },
+  "tr_step_classify": {
+   "de": "{name} schaut, was es ist …",
+   "en": "{name} checks what it is …",
+   "fr": "{name} vérifie de quoi il s'agit …"
+  },
+  "tr_fallback_once": {
+   "de": "⚠ {failed} ging nicht – diesmal mit {used} übersetzt. {error}",
+   "en": "⚠ {failed} failed – translated with {used} this time. {error}",
+   "fr": "⚠ {failed} a échoué – traduit avec {used} cette fois. {error}"
+  },
+  "translating": {
+   "de": "Liest Text und übersetzt …",
+   "en": "Reading text and translating …",
+   "fr": "Lecture du texte et traduction …"
+  },
+  "no_text": {
+   "de": "Kein Text im Foto gefunden.",
+   "en": "No text found in the photo.",
+   "fr": "Aucun texte trouvé dans la photo."
+  },
+  "tr_failed": {
+   "de": "✘ Übersetzen fehlgeschlagen",
+   "en": "✘ Translation failed",
+   "fr": "✘ La traduction a échoué"
+  },
+  "live_title": {
+   "de": "Lens",
+   "en": "Lens",
+   "fr": "Lens"
+  },
+  "live_status": {
+   "de": "Lens",
+   "en": "Lens",
+   "fr": "Lens"
+  },
+  "panel_opacity": {
+   "de": "Deckkraft",
+   "en": "Opacity",
+   "fr": "Opacité"
+  },
+  "panel_edit_help": {
+   "de": "Panel und 🔘 Knopf je einzeln: Laser drauf + Grip = verschieben/drehen · Ecke unten rechts + Trigger = Größe · Panel: Ecke oben links + Trigger = Höhe · ⟲ = zurücksetzen",
+   "en": "Panel and 🔘 button each on their own: laser on it + grip = move/rotate · bottom right corner + trigger = size · panel: top left corner + trigger = height · ⟲ = reset",
+   "fr": "Panneau et 🔘 bouton chacun séparément : laser dessus + grip = déplacer/tourner · coin en bas à droite + gâchette = taille · panneau : coin en haut à gauche + gâchette = hauteur · ⟲ = réinitialiser"
+  },
+  "panel_settings": {
+   "de": "Einstellungen",
+   "en": "Settings",
+   "fr": "Réglages"
+  },
+  "panel_size": {
+   "de": "Größe",
+   "en": "Size",
+   "fr": "Taille"
+  },
+  "panel_size_later": {
+   "de": "(erst möglich, wenn das Panel einmal in VR zu sehen war)",
+   "en": "(possible once the panel has been shown in VR)",
+   "fr": "(possible une fois le panneau affiché en VR)"
+  },
+  "panel_move": {
+   "de": "Verschieben (Grip)",
+   "en": "Move (grip)",
+   "fr": "Déplacer (grip)"
+  },
+  "panel_reset": {
+   "de": "Position zurücksetzen",
+   "en": "Reset position",
+   "fr": "Réinitialiser la position"
+  },
+  "panel_anchor": {
+   "de": "Hängt an",
+   "en": "Attached to",
+   "fr": "Attaché à"
+  },
+  "panel_anchor_short_left": {
+   "de": "🤚 Links",
+   "en": "🤚 Left",
+   "fr": "🤚 Gauche"
+  },
+  "panel_anchor_short_right": {
+   "de": "✋ Rechts",
+   "en": "✋ Right",
+   "fr": "✋ Droite"
+  },
+  "panel_anchor_short_head": {
+   "de": "👤 Kopf",
+   "en": "👤 Head",
+   "fr": "👤 Tête"
+  },
+  "panel_anchor_short_world": {
+   "de": "🌍 Welt",
+   "en": "🌍 World",
+   "fr": "🌍 Monde"
+  },
+  "buttons_title": {
+   "de": "Erkennung & Tasten",
+   "en": "Detection & buttons",
+   "fr": "Détection et boutons"
+  },
+  "detect_short_auto": {
+   "de": "🤖 Automatisch",
+   "en": "🤖 Automatic",
+   "fr": "🤖 Automatique"
+  },
+  "detect_short_manual": {
+   "de": "✋ Manuell",
+   "en": "✋ Manual",
+   "fr": "✋ Manuel"
+  },
+  "shutter": {
+   "de": "Foto auslösen",
+   "en": "Take photo",
+   "fr": "Prendre la photo"
+  },
+  "mode_button": {
+   "de": "Typ wechseln",
+   "en": "Switch type",
+   "fr": "Changer de type"
+  },
+  "combo_short_left": {
+   "de": "Links",
+   "en": "Left",
+   "fr": "Gauche"
+  },
+  "combo_short_right": {
+   "de": "Rechts",
+   "en": "Right",
+   "fr": "Droite"
+  },
+  "combo_short_both": {
+   "de": "Beide",
+   "en": "Both",
+   "fr": "Les deux"
+  },
+  "tr_route_auto": {
+   "de": "🤖 Automatisch",
+   "en": "🤖 Automatic",
+   "fr": "🤖 Automatique"
+  },
+  "tr_route_manual": {
+   "de": "✋ Manuell",
+   "en": "✋ Manual",
+   "fr": "✋ Manuel"
+  },
+  "nav_gallery": {
+   "de": "Galerie",
+   "en": "Gallery",
+   "fr": "Galerie"
+  },
+  "no_photo": {
+   "de": "Noch kein Foto – mach eins in VR!",
+   "en": "No photo yet – take one in VR!",
+   "fr": "Pas encore de photo – prends-en une en VR !"
+  },
+  "delete": {
+   "de": "Löschen",
+   "en": "Delete",
+   "fr": "Supprimer"
+  },
+  "translate_btn": {
+   "de": "Übersetzen",
+   "en": "Translate",
+   "fr": "Traduire"
+  },
+  "vr_delete_sure": {
+   "de": "Wirklich löschen?",
+   "en": "Really delete?",
+   "fr": "Vraiment supprimer ?"
+  },
+  "tr_group_plain": {
+   "de": "Übersetzung",
+   "en": "Translation",
+   "fr": "Traduction"
+  },
+  "tr_group_ai": {
+   "de": "KI-Übersetzung",
+   "en": "AI translation",
+   "fr": "Traduction IA"
+  },
+  "vr_page_translate": {
+   "de": "Übersetzung",
+   "en": "Translation",
+   "fr": "Traduction"
+  },
+  "copy": {
+   "de": "Kopieren",
+   "en": "Copy",
+   "fr": "Copier"
+  },
+  "copy_link": {
+   "de": "Link kopieren",
+   "en": "Copy link",
+   "fr": "Copier le lien"
+  },
+  "uploading": {
+   "de": "Lädt hoch …",
+   "en": "Uploading …",
+   "fr": "Envoi …"
+  },
+  "upload_copy_link": {
+   "de": "Hochladen + Link",
+   "en": "Upload + link",
+   "fr": "Envoyer + lien"
+  },
+  "share": {
+   "de": "Teilen",
+   "en": "Share",
+   "fr": "Partager"
+  },
+  "info": {
+   "de": "Info",
+   "en": "Info",
+   "fr": "Infos"
+  },
+  "share_failed": {
+   "de": "✘ Teilen fehlgeschlagen",
+   "en": "✘ Sharing failed",
+   "fr": "✘ Le partage a échoué"
+  },
+  "delete_failed": {
+   "de": "✘ Löschen fehlgeschlagen",
+   "en": "✘ Delete failed",
+   "fr": "✘ La suppression a échoué"
+  },
+  "tag_text": {
+   "de": "Text",
+   "en": "Text",
+   "fr": "Texte"
+  },
+  "tag_qr": {
+   "de": "QR-Code",
+   "en": "QR code",
+   "fr": "Code QR"
+  },
+  "tag_image": {
+   "de": "Bild",
+   "en": "Image",
+   "fr": "Image"
+  },
+  "vr_copied_image": {
+   "de": "✔ Bild kopiert",
+   "en": "✔ Image copied",
+   "fr": "✔ Image copiée"
+  },
+  "vr_link_copied": {
+   "de": "✔ Link kopiert",
+   "en": "✔ Link copied",
+   "fr": "✔ Lien copié"
+  },
+  "vr_uploading": {
+   "de": "⏳ Wird hochgeladen …",
+   "en": "⏳ Uploading …",
+   "fr": "⏳ Envoi …"
+  },
+  "vr_upload_failed": {
+   "de": "✘ Hochladen fehlgeschlagen",
+   "en": "✘ Upload failed",
+   "fr": "✘ L'envoi a échoué"
+  },
+  "vr_shared_paste": {
+   "de": "✔ Bild kopiert – im Programm Strg+V drücken",
+   "en": "✔ Image copied – press Ctrl+V in the app",
+   "fr": "✔ Image copiée – appuie sur Ctrl+V dans l'appli"
+  },
+  "vr_shared": {
+   "de": "✔ Geöffnet",
+   "en": "✔ Opened",
+   "fr": "✔ Ouvert"
+  },
+  "panel_button": {
+   "de": "🔘 Knopf zum Auf-/Zuklappen",
+   "en": "🔘 Button to open/close",
+   "fr": "🔘 Bouton pour ouvrir/fermer"
+  },
+  "panel_button_short": {
+   "de": "🔘 Knopf",
+   "en": "🔘 Button",
+   "fr": "🔘 Bouton"
+  },
+  "panel_open_on_shot_short": {
+   "de": "Nach Foto öffnen",
+   "en": "Open after photo",
+   "fr": "Ouvrir après photo"
+  },
+  "panel_button_size": {
+   "de": "Knopf-Größe",
+   "en": "Button size",
+   "fr": "Taille du bouton"
+  },
+  "vr_share_none": {
+   "de": "Kein Programm zum Teilen gefunden",
+   "en": "No app to share with found",
+   "fr": "Aucune appli de partage trouvée"
+  },
+  "vr_info_folder": {
+   "de": "Ordner",
+   "en": "Folder",
+   "fr": "Dossier"
+  },
+  "vr_info_date": {
+   "de": "Datum",
+   "en": "Date",
+   "fr": "Date"
+  },
+  "vr_info_size": {
+   "de": "Größe",
+   "en": "Size",
+   "fr": "Taille"
+  },
+  "vr_info_type": {
+   "de": "Typ",
+   "en": "Type",
+   "fr": "Type"
+  },
+  "vr_info_link": {
+   "de": "Link",
+   "en": "Link",
+   "fr": "Lien"
+  },
+  "month_1": {
+   "de": "Januar",
+   "en": "January",
+   "fr": "janvier"
+  },
+  "month_2": {
+   "de": "Februar",
+   "en": "February",
+   "fr": "février"
+  },
+  "month_3": {
+   "de": "März",
+   "en": "March",
+   "fr": "mars"
+  },
+  "month_4": {
+   "de": "April",
+   "en": "April",
+   "fr": "avril"
+  },
+  "month_5": {
+   "de": "Mai",
+   "en": "May",
+   "fr": "mai"
+  },
+  "month_6": {
+   "de": "Juni",
+   "en": "June",
+   "fr": "juin"
+  },
+  "month_7": {
+   "de": "Juli",
+   "en": "July",
+   "fr": "juillet"
+  },
+  "month_8": {
+   "de": "August",
+   "en": "August",
+   "fr": "août"
+  },
+  "month_9": {
+   "de": "September",
+   "en": "September",
+   "fr": "septembre"
+  },
+  "month_10": {
+   "de": "Oktober",
+   "en": "October",
+   "fr": "octobre"
+  },
+  "month_11": {
+   "de": "November",
+   "en": "November",
+   "fr": "novembre"
+  },
+  "month_12": {
+   "de": "Dezember",
+   "en": "December",
+   "fr": "décembre"
+  },
+  "tr_m_lingva": {
+   "de": "Lingva (anonym, kein Key)",
+   "en": "Lingva (anonymous, no key)",
+   "fr": "Lingva (anonyme, sans clé)"
+  },
+  "tr_m_google": {
+   "de": "Google Translate (API-Key optional)",
+   "en": "Google Translate (API key optional)",
+   "fr": "Google Traduction (clé API facultative)"
+  },
+  "tr_m_libre": {
+   "de": "LibreTranslate lokal (selbst installieren)",
+   "en": "LibreTranslate local (install yourself)",
+   "fr": "LibreTranslate local (à installer toi-même)"
+  },
+  "tr_m_libre_online": {
+   "de": "LibreTranslate online (Key optional)",
+   "en": "LibreTranslate online (key optional)",
+   "fr": "LibreTranslate en ligne (clé facultative)"
+  },
+  "tr_m_deepl": {
+   "de": "DeepL (API-Key nötig)",
+   "en": "DeepL (API key required)",
+   "fr": "DeepL (clé API requise)"
+  },
+  "tr_m_custom": {
+   "de": "Eigene API (LibreTranslate als Vorlage)",
+   "en": "Custom API (LibreTranslate as template)",
+   "fr": "API perso (modèle LibreTranslate)"
+  },
+  "tr_m_llm_claude": {
+   "de": "KI: Claude Code (Opus / Sonnet / Haiku)",
+   "en": "AI: Claude Code (Opus / Sonnet / Haiku)",
+   "fr": "IA : Claude Code (Opus / Sonnet / Haiku)"
+  },
+  "tr_m_llm_gemini": {
+   "de": "KI: Gemini CLI",
+   "en": "AI: Gemini CLI",
+   "fr": "IA : Gemini CLI"
+  },
+  "tr_m_llm_chatgpt": {
+   "de": "KI: ChatGPT (Codex CLI)",
+   "en": "AI: ChatGPT (Codex CLI)",
+   "fr": "IA : ChatGPT (Codex CLI)"
+  },
+  "tr_m_llm_custom": {
+   "de": "KI: eigener Befehl (z. B. Ollama)",
+   "en": "AI: custom command (e.g. Ollama)",
+   "fr": "IA : commande perso (p. ex. Ollama)"
+  },
+  "tr_m_llm_vision": {
+   "de": "🖼 Lokales Bild-LLM (Ollama)",
+   "en": "🖼 Local image LLM (Ollama)",
+   "fr": "🖼 LLM d'image local (Ollama)"
+  }
+ },
+ "languages": [
+  [
+   "",
+   "Automatisch erkennen",
+   "Detect automatically"
+  ],
+  [
+   "de",
+   "Deutsch",
+   "German"
+  ],
+  [
+   "en",
+   "Englisch",
+   "English"
+  ],
+  [
+   "fr",
+   "Französisch",
+   "French"
+  ],
+  [
+   "es",
+   "Spanisch",
+   "Spanish"
+  ],
+  [
+   "it",
+   "Italienisch",
+   "Italian"
+  ],
+  [
+   "pt",
+   "Portugiesisch",
+   "Portuguese"
+  ],
+  [
+   "nl",
+   "Niederländisch",
+   "Dutch"
+  ],
+  [
+   "pl",
+   "Polnisch",
+   "Polish"
+  ],
+  [
+   "ru",
+   "Russisch",
+   "Russian"
+  ],
+  [
+   "uk",
+   "Ukrainisch",
+   "Ukrainian"
+  ],
+  [
+   "tr",
+   "Türkisch",
+   "Turkish"
+  ],
+  [
+   "ja",
+   "Japanisch",
+   "Japanese"
+  ],
+  [
+   "ko",
+   "Koreanisch",
+   "Korean"
+  ],
+  [
+   "zh-CN",
+   "Chinesisch",
+   "Chinese"
+  ]
+ ],
+ "defaults": {
+  "ui": {
+   "language": "de",
+   "gallery_main_subfolders": false,
+   "gallery_folders": [],
+   "history": false,
+   "tr_method": "lingva",
+   "tr_source": "",
+   "tr_target": "de",
+   "tr_auto": true,
+   "tr_google_key": "",
+   "tr_deepl_key": "",
+   "tr_libre_url": "http://127.0.0.1:5000",
+   "tr_libre_online_url": "",
+   "tr_libre_online_key": "",
+   "tr_libre_seen": false,
+   "tr_llm_claude_model": "sonnet",
+   "tr_llm_gemini_model": "flash",
+   "tr_llm_chatgpt_model": "gpt-5.6-luna",
+   "tr_llm_custom_cmd": "",
+   "tr_llm_vision_model": "qwen2.5vl:7b",
+   "tr_vision_url": "",
+   "tr_vision_keep_alive": "2m",
+   "tr_explain_method": "",
+   "tr_answer_method": "",
+   "tr_route": "auto",
+   "tr_auto_once": "",
+   "tr_auto_once_photo": "",
+   "tr_auto_once_next": "",
+   "tr_llm_mode": "translate",
+   "tr_llm_gemini_retry": false,
+   "tr_llm_gemini_retry_s": 60,
+   "tr_llm_claude_retry": false,
+   "tr_llm_claude_retry_s": 60,
+   "tr_llm_chatgpt_retry": false,
+   "tr_llm_chatgpt_retry_s": 60
+  },
+  "layer": {
+   "live_interval_s": 3,
+   "overlay": false,
+   "panel": true,
+   "panel_edit": false,
+   "panel_port": 47931,
+   "panel_opacity": 100,
+   "panel_anchor": "left",
+   "detect_mode": "auto",
+   "shutter": "right",
+   "mode_button": "left",
+   "panel_button": true,
+   "panel_button_color": "#5b8dc9",
+   "panel_open_on_shot": true
+  }
+ },
+ "keys": [
+  {
+   "cfg": {},
+   "key": "lingva|auto|de"
+  },
+  {
+   "cfg": {
+    "tr_method": "libre",
+    "tr_source": "ja",
+    "tr_target": "en"
+   },
+   "key": "libre|ja|en"
+  },
+  {
+   "cfg": {
+    "tr_method": "llm_claude",
+    "tr_llm_claude_model": "opus"
+   },
+   "key": "llm_claude@opus|auto|de"
+  },
+  {
+   "cfg": {
+    "tr_method": "llm_claude",
+    "tr_llm_mode": "explain"
+   },
+   "key": "llm_claude@sonnet#explain3|auto|de"
+  },
+  {
+   "cfg": {
+    "tr_method": "llm_chatgpt",
+    "tr_llm_mode": "answer"
+   },
+   "key": "llm_chatgpt@gpt-5.6-luna#answer5|auto|de"
+  },
+  {
+   "cfg": {
+    "tr_method": "llm_vision",
+    "tr_llm_mode": "answer"
+   },
+   "key": "llm_vision@qwen2.5vl:7b#answer4|auto|de"
+  },
+  {
+   "cfg": {
+    "tr_method": "llm_vision",
+    "tr_llm_mode": "auto",
+    "tr_answer_method": "llm_claude",
+    "tr_explain_method": "llm_gemini"
+   },
+   "key": "llm_vision@qwen2.5vl:7b#auto|explain=llm_gemini@flash3|answer=llm_claude@sonnet4|auto|de"
+  },
+  {
+   "cfg": {
+    "tr_method": "llm_vision",
+    "tr_llm_mode": "auto"
+   },
+   "key": "llm_vision@qwen2.5vl:7b#auto|explain=llm_vision@qwen2.5vl:7b2|answer=llm_vision@qwen2.5vl:7b4|auto|de"
+  },
+  {
+   "cfg": {
+    "tr_method": "libre",
+    "tr_llm_mode": "answer",
+    "tr_answer_method": "llm_claude"
+   },
+   "key": "libre#answer4=llm_claude@sonnet|auto|de"
+  },
+  {
+   "cfg": {
+    "tr_method": "libre",
+    "tr_llm_mode": "explain"
+   },
+   "key": "libre|auto|de"
+  },
+  {
+   "cfg": {
+    "tr_method": "lingva",
+    "tr_llm_mode": "auto"
+   },
+   "key": "lingva|auto|de"
+  }
+ ],
+ "prompts": [
+  {
+   "kind": "llm",
+   "method": "llm_claude",
+   "mode": "translate",
+   "source": "",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "Translate the following text into German. The text was read from a screenshot by OCR, so fix obvious OCR mistakes. Keep the line breaks. Reply with the translation ONLY – no explanations, no quotes, no notes. Answer immediately from your own knowledge: do NOT use any tools, do NOT search the web, do NOT read files, do not think for long. Keep it SHORT – no essay. \n\n鬼の居ぬ間の○○\nせんたく\nすいじ"
+  },
+  {
+   "kind": "llm",
+   "method": "llm_claude",
+   "mode": "translate",
+   "source": "ja",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "Translate the following text from Japanese into German. The text was read from a screenshot by OCR, so fix obvious OCR mistakes. Keep the line breaks. Reply with the translation ONLY – no explanations, no quotes, no notes. Answer immediately from your own knowledge: do NOT use any tools, do NOT search the web, do NOT read files, do not think for long. Keep it SHORT – no essay. \n\n鬼の居ぬ間の○○\nせんたく\nすいじ"
+  },
+  {
+   "kind": "llm",
+   "method": "llm_claude",
+   "mode": "explain",
+   "source": "",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "The following text was photographed in a VR game (e.g. VRChat). The text was read from a screenshot by OCR, so ignore obvious OCR mistakes. Explain in German in at most 4 short lines what it is about and what it means: context, important terms, what the user can do. No introduction. Plain text only, no Markdown (no ** or #); simple '- ' lists are fine. Answer immediately from your own knowledge: do NOT use any tools, do NOT search the web, do NOT read files, do not think for long. Keep it SHORT – no essay. \n\nText from the photo:\n<<<\n鬼の居ぬ間の○○\nせんたく\nすいじ\n>>>"
+  },
+  {
+   "kind": "llm",
+   "method": "llm_claude",
+   "mode": "explain",
+   "source": "ja",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "The following text was photographed in a VR game (e.g. VRChat). The text was read from a screenshot by OCR, so ignore obvious OCR mistakes. Explain in German in at most 4 short lines what it is about and what it means: context, important terms, what the user can do. No introduction. Plain text only, no Markdown (no ** or #); simple '- ' lists are fine. Answer immediately from your own knowledge: do NOT use any tools, do NOT search the web, do NOT read files, do not think for long. Keep it SHORT – no essay. \n\nText from the photo:\n<<<\n鬼の居ぬ間の○○\nせんたく\nすいじ\n>>>"
+  },
+  {
+   "kind": "llm",
+   "method": "llm_claude",
+   "mode": "answer",
+   "source": "",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "The following text was photographed in a VR game (e.g. VRChat) – often a quiz, puzzle, riddle or escape room. The text was read from a screenshot by OCR, so ignore obvious OCR mistakes. The lines are in reading order; answer choices / buttons usually come as separate short lines after the question.\nWhat to do:\n- Multiple choice (buttons, options): say which option is correct. Quote it EXACTLY as written in the photo (original language and script), so the user can find and click it.\n- Fill in the blank (○○, __, ??, □, …): say exactly what to enter, in the original script, and the complete word/phrase.\n- Riddle, question, math, code: give the solution.\n- If there is no question or task at all: reply ONLY with the translation into German (no ➜, no comment).\nIf the lines are numbered (1), 2), …): the user sees the SAME numbers next to the text in the photo – start your answer with the number of the correct option.\nAnswer format (only when there is a question/task):\nFirst line: '➜ ' followed ONLY by the option number (if numbered) and what to click / enter / the answer, e.g. '➜ 4) … (…)' (original script, then its meaning in German in brackets).\nThen ONE short line in German: why (e.g. the full phrase and what it means). Nothing else – no introduction, no translation of the whole text. Plain text only, no Markdown (no ** or #); simple '- ' lists are fine. Answer immediately from your own knowledge: do NOT use any tools, do NOT search the web, do NOT read files, do not think for long. Keep it SHORT – no essay. \n\nText from the photo:\n<<<\n1) 鬼の居ぬ間の○○\n2) せんたく\n3) すいじ\n>>>"
+  },
+  {
+   "kind": "llm",
+   "method": "llm_claude",
+   "mode": "answer",
+   "source": "ja",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "The following text was photographed in a VR game (e.g. VRChat) – often a quiz, puzzle, riddle or escape room. The text was read from a screenshot by OCR, so ignore obvious OCR mistakes. The lines are in reading order; answer choices / buttons usually come as separate short lines after the question.\nWhat to do:\n- Multiple choice (buttons, options): say which option is correct. Quote it EXACTLY as written in the photo (original language and script), so the user can find and click it.\n- Fill in the blank (○○, __, ??, □, …): say exactly what to enter, in the original script, and the complete word/phrase.\n- Riddle, question, math, code: give the solution.\n- If there is no question or task at all: reply ONLY with the translation into German (no ➜, no comment).\nIf the lines are numbered (1), 2), …): the user sees the SAME numbers next to the text in the photo – start your answer with the number of the correct option.\nAnswer format (only when there is a question/task):\nFirst line: '➜ ' followed ONLY by the option number (if numbered) and what to click / enter / the answer, e.g. '➜ 4) … (…)' (original script, then its meaning in German in brackets).\nThen ONE short line in German: why (e.g. the full phrase and what it means). Nothing else – no introduction, no translation of the whole text. Plain text only, no Markdown (no ** or #); simple '- ' lists are fine. Answer immediately from your own knowledge: do NOT use any tools, do NOT search the web, do NOT read files, do not think for long. Keep it SHORT – no essay. \n\nText from the photo:\n<<<\n1) 鬼の居ぬ間の○○\n2) せんたく\n3) すいじ\n>>>"
+  },
+  {
+   "kind": "llm",
+   "method": "llm_claude",
+   "mode": "classify",
+   "source": "",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "Look at the text from a VR game. What does the player need?\nQUIZ = there is a question, quiz, riddle, fill-in-the-blank or task to solve (for example with answer buttons).\nEXPLAIN = a joke, meme, pun, wordplay or cultural reference that a plain translation would not make understandable.\nTEXT = everything else (signs, menus, dialogue, stories, rules) – just translate.\n\nText:\n<<<\n鬼の居ぬ間の○○\nせんたく\nすいじ\n>>>\n\nReply with exactly one word: QUIZ, EXPLAIN or TEXT."
+  },
+  {
+   "kind": "llm",
+   "method": "llm_claude",
+   "mode": "classify",
+   "source": "ja",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "Look at the text from a VR game. What does the player need?\nQUIZ = there is a question, quiz, riddle, fill-in-the-blank or task to solve (for example with answer buttons).\nEXPLAIN = a joke, meme, pun, wordplay or cultural reference that a plain translation would not make understandable.\nTEXT = everything else (signs, menus, dialogue, stories, rules) – just translate.\n\nText:\n<<<\n鬼の居ぬ間の○○\nせんたく\nすいじ\n>>>\n\nReply with exactly one word: QUIZ, EXPLAIN or TEXT."
+  },
+  {
+   "kind": "llm",
+   "method": "llm_gemini",
+   "mode": "translate",
+   "source": "",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "Translate the following text into German. The text was read from a screenshot by OCR, so fix obvious OCR mistakes. Keep the line breaks. Reply with the translation ONLY – no explanations, no quotes, no notes. Answer immediately from your own knowledge: do NOT use any tools, do NOT search the web, do NOT read files, do not think for long. Keep it SHORT – no essay. \n\n鬼の居ぬ間の○○\nせんたく\nすいじ"
+  },
+  {
+   "kind": "llm",
+   "method": "llm_gemini",
+   "mode": "translate",
+   "source": "ja",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "Translate the following text from Japanese into German. The text was read from a screenshot by OCR, so fix obvious OCR mistakes. Keep the line breaks. Reply with the translation ONLY – no explanations, no quotes, no notes. Answer immediately from your own knowledge: do NOT use any tools, do NOT search the web, do NOT read files, do not think for long. Keep it SHORT – no essay. \n\n鬼の居ぬ間の○○\nせんたく\nすいじ"
+  },
+  {
+   "kind": "llm",
+   "method": "llm_gemini",
+   "mode": "explain",
+   "source": "",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "The following text was photographed in a VR game (e.g. VRChat). The text was read from a screenshot by OCR, so ignore obvious OCR mistakes. Explain in German in at most 4 short lines what it is about and what it means: context, important terms, what the user can do. No introduction. Plain text only, no Markdown (no ** or #); simple '- ' lists are fine. Answer immediately from your own knowledge: do NOT use any tools, do NOT search the web, do NOT read files, do not think for long. Keep it SHORT – no essay. \n\nText from the photo:\n<<<\n鬼の居ぬ間の○○\nせんたく\nすいじ\n>>>"
+  },
+  {
+   "kind": "llm",
+   "method": "llm_gemini",
+   "mode": "explain",
+   "source": "ja",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "The following text was photographed in a VR game (e.g. VRChat). The text was read from a screenshot by OCR, so ignore obvious OCR mistakes. Explain in German in at most 4 short lines what it is about and what it means: context, important terms, what the user can do. No introduction. Plain text only, no Markdown (no ** or #); simple '- ' lists are fine. Answer immediately from your own knowledge: do NOT use any tools, do NOT search the web, do NOT read files, do not think for long. Keep it SHORT – no essay. \n\nText from the photo:\n<<<\n鬼の居ぬ間の○○\nせんたく\nすいじ\n>>>"
+  },
+  {
+   "kind": "llm",
+   "method": "llm_gemini",
+   "mode": "answer",
+   "source": "",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "The following text was photographed in a VR game (e.g. VRChat) – often a quiz, puzzle, riddle or escape room. The text was read from a screenshot by OCR, so ignore obvious OCR mistakes. The lines are in reading order; answer choices / buttons usually come as separate short lines after the question.\nWhat to do:\n- Multiple choice (buttons, options): say which option is correct. Quote it EXACTLY as written in the photo (original language and script), so the user can find and click it.\n- Fill in the blank (○○, __, ??, □, …): say exactly what to enter, in the original script, and the complete word/phrase.\n- Riddle, question, math, code: give the solution.\n- If there is no question or task at all: reply ONLY with the translation into German (no ➜, no comment).\nIf the lines are numbered (1), 2), …): the user sees the SAME numbers next to the text in the photo – start your answer with the number of the correct option.\nAnswer format (only when there is a question/task):\nFirst line: '➜ ' followed ONLY by the option number (if numbered) and what to click / enter / the answer, e.g. '➜ 4) … (…)' (original script, then its meaning in German in brackets).\nThen ONE short line in German: why (e.g. the full phrase and what it means). Nothing else – no introduction, no translation of the whole text. Plain text only, no Markdown (no ** or #); simple '- ' lists are fine. Answer immediately from your own knowledge: do NOT use any tools, do NOT search the web, do NOT read files, do not think for long. Keep it SHORT – no essay. \n\nText from the photo:\n<<<\n1) 鬼の居ぬ間の○○\n2) せんたく\n3) すいじ\n>>>"
+  },
+  {
+   "kind": "llm",
+   "method": "llm_gemini",
+   "mode": "answer",
+   "source": "ja",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "The following text was photographed in a VR game (e.g. VRChat) – often a quiz, puzzle, riddle or escape room. The text was read from a screenshot by OCR, so ignore obvious OCR mistakes. The lines are in reading order; answer choices / buttons usually come as separate short lines after the question.\nWhat to do:\n- Multiple choice (buttons, options): say which option is correct. Quote it EXACTLY as written in the photo (original language and script), so the user can find and click it.\n- Fill in the blank (○○, __, ??, □, …): say exactly what to enter, in the original script, and the complete word/phrase.\n- Riddle, question, math, code: give the solution.\n- If there is no question or task at all: reply ONLY with the translation into German (no ➜, no comment).\nIf the lines are numbered (1), 2), …): the user sees the SAME numbers next to the text in the photo – start your answer with the number of the correct option.\nAnswer format (only when there is a question/task):\nFirst line: '➜ ' followed ONLY by the option number (if numbered) and what to click / enter / the answer, e.g. '➜ 4) … (…)' (original script, then its meaning in German in brackets).\nThen ONE short line in German: why (e.g. the full phrase and what it means). Nothing else – no introduction, no translation of the whole text. Plain text only, no Markdown (no ** or #); simple '- ' lists are fine. Answer immediately from your own knowledge: do NOT use any tools, do NOT search the web, do NOT read files, do not think for long. Keep it SHORT – no essay. \n\nText from the photo:\n<<<\n1) 鬼の居ぬ間の○○\n2) せんたく\n3) すいじ\n>>>"
+  },
+  {
+   "kind": "llm",
+   "method": "llm_gemini",
+   "mode": "classify",
+   "source": "",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "Look at the text from a VR game. What does the player need?\nQUIZ = there is a question, quiz, riddle, fill-in-the-blank or task to solve (for example with answer buttons).\nEXPLAIN = a joke, meme, pun, wordplay or cultural reference that a plain translation would not make understandable.\nTEXT = everything else (signs, menus, dialogue, stories, rules) – just translate.\n\nText:\n<<<\n鬼の居ぬ間の○○\nせんたく\nすいじ\n>>>\n\nReply with exactly one word: QUIZ, EXPLAIN or TEXT."
+  },
+  {
+   "kind": "llm",
+   "method": "llm_gemini",
+   "mode": "classify",
+   "source": "ja",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "Look at the text from a VR game. What does the player need?\nQUIZ = there is a question, quiz, riddle, fill-in-the-blank or task to solve (for example with answer buttons).\nEXPLAIN = a joke, meme, pun, wordplay or cultural reference that a plain translation would not make understandable.\nTEXT = everything else (signs, menus, dialogue, stories, rules) – just translate.\n\nText:\n<<<\n鬼の居ぬ間の○○\nせんたく\nすいじ\n>>>\n\nReply with exactly one word: QUIZ, EXPLAIN or TEXT."
+  },
+  {
+   "kind": "llm",
+   "method": "llm_chatgpt",
+   "mode": "translate",
+   "source": "",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "Translate the following text into German. The text was read from a screenshot by OCR, so fix obvious OCR mistakes. Keep the line breaks. Reply with the translation ONLY – no explanations, no quotes, no notes. Answer immediately from your own knowledge: do NOT use any tools, do NOT search the web, do NOT read files, do not think for long. Keep it SHORT – no essay. \n\n鬼の居ぬ間の○○\nせんたく\nすいじ"
+  },
+  {
+   "kind": "llm",
+   "method": "llm_chatgpt",
+   "mode": "translate",
+   "source": "ja",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "Translate the following text from Japanese into German. The text was read from a screenshot by OCR, so fix obvious OCR mistakes. Keep the line breaks. Reply with the translation ONLY – no explanations, no quotes, no notes. Answer immediately from your own knowledge: do NOT use any tools, do NOT search the web, do NOT read files, do not think for long. Keep it SHORT – no essay. \n\n鬼の居ぬ間の○○\nせんたく\nすいじ"
+  },
+  {
+   "kind": "llm",
+   "method": "llm_chatgpt",
+   "mode": "explain",
+   "source": "",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "The following text was photographed in a VR game (e.g. VRChat). The text was read from a screenshot by OCR, so ignore obvious OCR mistakes. Explain in German in at most 4 short lines what it is about and what it means: context, important terms, what the user can do. No introduction. Plain text only, no Markdown (no ** or #); simple '- ' lists are fine. Answer immediately from your own knowledge: do NOT use any tools, do NOT search the web, do NOT read files, do not think for long. Keep it SHORT – no essay. \n\nText from the photo:\n<<<\n鬼の居ぬ間の○○\nせんたく\nすいじ\n>>>"
+  },
+  {
+   "kind": "llm",
+   "method": "llm_chatgpt",
+   "mode": "explain",
+   "source": "ja",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "The following text was photographed in a VR game (e.g. VRChat). The text was read from a screenshot by OCR, so ignore obvious OCR mistakes. Explain in German in at most 4 short lines what it is about and what it means: context, important terms, what the user can do. No introduction. Plain text only, no Markdown (no ** or #); simple '- ' lists are fine. Answer immediately from your own knowledge: do NOT use any tools, do NOT search the web, do NOT read files, do not think for long. Keep it SHORT – no essay. \n\nText from the photo:\n<<<\n鬼の居ぬ間の○○\nせんたく\nすいじ\n>>>"
+  },
+  {
+   "kind": "llm",
+   "method": "llm_chatgpt",
+   "mode": "answer",
+   "source": "",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "The following text was photographed in a VR game (e.g. VRChat) – often a quiz, puzzle, riddle or escape room. The text was read from a screenshot by OCR, so ignore obvious OCR mistakes. The lines are in reading order; answer choices / buttons usually come as separate short lines after the question.\nWhat to do:\n- Multiple choice (buttons, options): say which option is correct. Quote it EXACTLY as written in the photo (original language and script), so the user can find and click it.\n- Fill in the blank (○○, __, ??, □, …): say exactly what to enter, in the original script, and the complete word/phrase.\n- Riddle, question, math, code: give the solution.\n- If there is no question or task at all: reply ONLY with the translation into German (no ➜, no comment).\nIf the lines are numbered (1), 2), …): the user sees the SAME numbers next to the text in the photo – start your answer with the number of the correct option.\nAnswer format (only when there is a question/task):\nFirst line: '➜ ' followed ONLY by the option number (if numbered) and what to click / enter / the answer, e.g. '➜ 4) … (…)' (original script, then its meaning in German in brackets).\nThen ONE short line in German: why (e.g. the full phrase and what it means). Nothing else – no introduction, no translation of the whole text. Plain text only, no Markdown (no ** or #); simple '- ' lists are fine. Answer immediately from your own knowledge: do NOT use any tools, do NOT search the web, do NOT read files, do not think for long. Keep it SHORT – no essay. \nImportant: if there is a blank AND answer buttons, the answer is the button to click – quote the WHOLE button text exactly, never only the missing characters or the first letters. Example: '灯台○○' with buttons '足元暗し', '下暗し' → '➜ 下暗し', not '➜ 下'.\n\nText from the photo:\n<<<\n1) 鬼の居ぬ間の○○\n2) せんたく\n3) すいじ\n>>>"
+  },
+  {
+   "kind": "llm",
+   "method": "llm_chatgpt",
+   "mode": "answer",
+   "source": "ja",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "The following text was photographed in a VR game (e.g. VRChat) – often a quiz, puzzle, riddle or escape room. The text was read from a screenshot by OCR, so ignore obvious OCR mistakes. The lines are in reading order; answer choices / buttons usually come as separate short lines after the question.\nWhat to do:\n- Multiple choice (buttons, options): say which option is correct. Quote it EXACTLY as written in the photo (original language and script), so the user can find and click it.\n- Fill in the blank (○○, __, ??, □, …): say exactly what to enter, in the original script, and the complete word/phrase.\n- Riddle, question, math, code: give the solution.\n- If there is no question or task at all: reply ONLY with the translation into German (no ➜, no comment).\nIf the lines are numbered (1), 2), …): the user sees the SAME numbers next to the text in the photo – start your answer with the number of the correct option.\nAnswer format (only when there is a question/task):\nFirst line: '➜ ' followed ONLY by the option number (if numbered) and what to click / enter / the answer, e.g. '➜ 4) … (…)' (original script, then its meaning in German in brackets).\nThen ONE short line in German: why (e.g. the full phrase and what it means). Nothing else – no introduction, no translation of the whole text. Plain text only, no Markdown (no ** or #); simple '- ' lists are fine. Answer immediately from your own knowledge: do NOT use any tools, do NOT search the web, do NOT read files, do not think for long. Keep it SHORT – no essay. \nImportant: if there is a blank AND answer buttons, the answer is the button to click – quote the WHOLE button text exactly, never only the missing characters or the first letters. Example: '灯台○○' with buttons '足元暗し', '下暗し' → '➜ 下暗し', not '➜ 下'.\n\nText from the photo:\n<<<\n1) 鬼の居ぬ間の○○\n2) せんたく\n3) すいじ\n>>>"
+  },
+  {
+   "kind": "llm",
+   "method": "llm_chatgpt",
+   "mode": "classify",
+   "source": "",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "Look at the text from a VR game. What does the player need?\nQUIZ = there is a question, quiz, riddle, fill-in-the-blank or task to solve (for example with answer buttons).\nEXPLAIN = a joke, meme, pun, wordplay or cultural reference that a plain translation would not make understandable.\nTEXT = everything else (signs, menus, dialogue, stories, rules) – just translate.\n\nText:\n<<<\n鬼の居ぬ間の○○\nせんたく\nすいじ\n>>>\n\nReply with exactly one word: QUIZ, EXPLAIN or TEXT."
+  },
+  {
+   "kind": "llm",
+   "method": "llm_chatgpt",
+   "mode": "classify",
+   "source": "ja",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "Look at the text from a VR game. What does the player need?\nQUIZ = there is a question, quiz, riddle, fill-in-the-blank or task to solve (for example with answer buttons).\nEXPLAIN = a joke, meme, pun, wordplay or cultural reference that a plain translation would not make understandable.\nTEXT = everything else (signs, menus, dialogue, stories, rules) – just translate.\n\nText:\n<<<\n鬼の居ぬ間の○○\nせんたく\nすいじ\n>>>\n\nReply with exactly one word: QUIZ, EXPLAIN or TEXT."
+  },
+  {
+   "kind": "vision",
+   "mode": "translate",
+   "image": true,
+   "target": "en",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "The attached image is a photo taken in a VR game (e.g. VRChat). OCR read these 3 lines from it (they may contain OCR mistakes – use the image to correct them):\n1) 鬼の居ぬ間の○○\n2) せんたく\n3) すいじ\n\nTranslate each line into English. Reply with EXACTLY 3 lines in the same order – only the translations, no numbers, no quotes, no explanations. If a line is already in English or is a name, repeat it unchanged."
+  },
+  {
+   "kind": "vision",
+   "mode": "translate",
+   "image": true,
+   "target": "en",
+   "text": "",
+   "prompt": "The attached image is a photo taken in a VR game (e.g. VRChat). Read ALL text in the image and translate it into English. One output line per text line, top to bottom. Reply with the translations only. If there is no text at all, reply exactly: NO_TEXT"
+  },
+  {
+   "kind": "vision",
+   "mode": "translate",
+   "image": false,
+   "target": "en",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "OCR read these 3 lines from it (they may contain OCR mistakes – fix obvious mistakes):\n1) 鬼の居ぬ間の○○\n2) せんたく\n3) すいじ\n\nTranslate each line into English. Reply with EXACTLY 3 lines in the same order – only the translations, no numbers, no quotes, no explanations. If a line is already in English or is a name, repeat it unchanged."
+  },
+  {
+   "kind": "vision",
+   "mode": "translate",
+   "image": false,
+   "target": "en",
+   "text": "",
+   "prompt": "Read ALL text in the image and translate it into English. One output line per text line, top to bottom. Reply with the translations only. If there is no text at all, reply exactly: NO_TEXT"
+  },
+  {
+   "kind": "vision",
+   "mode": "explain",
+   "image": true,
+   "target": "en",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "Look at the image and the OCR text. Explain in English, in at most 4 short lines, what it is about and what it means for the player. No introduction.\n\nOCR text:\n<<<\n鬼の居ぬ間の○○\nせんたく\nすいじ\n>>>\n\nReply in English."
+  },
+  {
+   "kind": "vision",
+   "mode": "explain",
+   "image": true,
+   "target": "en",
+   "text": "",
+   "prompt": "Look at the image and the OCR text. Explain in English, in at most 4 short lines, what it is about and what it means for the player. No introduction.\n\nOCR text:\n<<<\n(nothing found – read the text from the image yourself)\n>>>\n\nReply in English."
+  },
+  {
+   "kind": "vision",
+   "mode": "explain",
+   "image": false,
+   "target": "en",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "Look at the OCR text. Explain in English, in at most 4 short lines, what it is about and what it means for the player. No introduction.\n\nOCR text:\n<<<\n鬼の居ぬ間の○○\nせんたく\nすいじ\n>>>\n\nReply in English."
+  },
+  {
+   "kind": "vision",
+   "mode": "explain",
+   "image": false,
+   "target": "en",
+   "text": "",
+   "prompt": "Look at the OCR text. Explain in English, in at most 4 short lines, what it is about and what it means for the player. No introduction.\n\nOCR text:\n<<<\n(nothing found – read the text from the image yourself)\n>>>\n\nReply in English."
+  },
+  {
+   "kind": "vision",
+   "mode": "answer",
+   "image": true,
+   "target": "en",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "This is a quiz, riddle or task from a VR game. Look at the image and the OCR text. The numbered lines are the question and the answer options – the player sees the SAME numbers.\n<<<\n1) 鬼の居ぬ間の○○\n2) せんたく\n3) すいじ\n>>>\n\nThink first, then answer. Do NOT just pick the first option.\nLine 1: 💡 what is asked – e.g. write the complete proverb/idiom/fact it refers to and what it means, in English.\nLine 2: ➜ <number>) <the option that fits line 1, exactly as written> (<its meaning in English>)\nReply with exactly these two lines."
+  },
+  {
+   "kind": "vision",
+   "mode": "answer",
+   "image": true,
+   "target": "en",
+   "text": "",
+   "prompt": "This is a quiz, riddle or task from a VR game. Look at the image and the OCR text. The numbered lines are the question and the answer options – the player sees the SAME numbers.\n<<<\n(nothing found – read the text from the image yourself)\n>>>\n\nThink first, then answer. Do NOT just pick the first option.\nLine 1: 💡 what is asked – e.g. write the complete proverb/idiom/fact it refers to and what it means, in English.\nLine 2: ➜ <number>) <the option that fits line 1, exactly as written> (<its meaning in English>)\nReply with exactly these two lines."
+  },
+  {
+   "kind": "vision",
+   "mode": "answer",
+   "image": false,
+   "target": "en",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "This is a quiz, riddle or task from a VR game. Look at the OCR text. The numbered lines are the question and the answer options – the player sees the SAME numbers.\n<<<\n1) 鬼の居ぬ間の○○\n2) せんたく\n3) すいじ\n>>>\n\nThink first, then answer. Do NOT just pick the first option.\nLine 1: 💡 what is asked – e.g. write the complete proverb/idiom/fact it refers to and what it means, in English.\nLine 2: ➜ <number>) <the option that fits line 1, exactly as written> (<its meaning in English>)\nReply with exactly these two lines."
+  },
+  {
+   "kind": "vision",
+   "mode": "answer",
+   "image": false,
+   "target": "en",
+   "text": "",
+   "prompt": "This is a quiz, riddle or task from a VR game. Look at the OCR text. The numbered lines are the question and the answer options – the player sees the SAME numbers.\n<<<\n(nothing found – read the text from the image yourself)\n>>>\n\nThink first, then answer. Do NOT just pick the first option.\nLine 1: 💡 what is asked – e.g. write the complete proverb/idiom/fact it refers to and what it means, in English.\nLine 2: ➜ <number>) <the option that fits line 1, exactly as written> (<its meaning in English>)\nReply with exactly these two lines."
+  },
+  {
+   "kind": "classify",
+   "image": true,
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "Look at the image and the OCR text. Is there a question, quiz, riddle, fill-in-the-blank or task that the player has to solve (for example with answer buttons)? Normal text, signs, stories and dialogue are NO.\n\nOCR text:\n<<<\n鬼の居ぬ間の○○\nせんたく\nすいじ\n>>>\n\nReply with exactly one word: YES or NO."
+  },
+  {
+   "kind": "task",
+   "image": true,
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "Look at the image and the OCR text from a VR game. What does the player need?\nQUIZ = there is a question, quiz, riddle, fill-in-the-blank or task to solve (for example with answer buttons).\nEXPLAIN = a joke, meme, pun, wordplay or cultural reference that a plain translation would not make understandable.\nTEXT = everything else (signs, menus, dialogue, stories, rules) – just translate.\n\nText:\n<<<\n鬼の居ぬ間の○○\nせんたく\nすいじ\n>>>\n\nReply with exactly one word: QUIZ, EXPLAIN or TEXT."
+  },
+  {
+   "kind": "classify",
+   "image": false,
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "Look at the OCR text. Is there a question, quiz, riddle, fill-in-the-blank or task that the player has to solve (for example with answer buttons)? Normal text, signs, stories and dialogue are NO.\n\nOCR text:\n<<<\n鬼の居ぬ間の○○\nせんたく\nすいじ\n>>>\n\nReply with exactly one word: YES or NO."
+  },
+  {
+   "kind": "task",
+   "image": false,
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "Look at the text from a VR game. What does the player need?\nQUIZ = there is a question, quiz, riddle, fill-in-the-blank or task to solve (for example with answer buttons).\nEXPLAIN = a joke, meme, pun, wordplay or cultural reference that a plain translation would not make understandable.\nTEXT = everything else (signs, menus, dialogue, stories, rules) – just translate.\n\nText:\n<<<\n鬼の居ぬ間の○○\nせんたく\nすいじ\n>>>\n\nReply with exactly one word: QUIZ, EXPLAIN or TEXT."
+  },
+  {
+   "kind": "system",
+   "target": "ja",
+   "prompt": "You help a player inside a VR game (e.g. VRChat). ALWAYS write your reply in Japanese. Only quote text in its original language when it is a button or option the player has to click. Plain text, no Markdown, short."
+  }
+ ]
+}
