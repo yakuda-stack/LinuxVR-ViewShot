@@ -41,7 +41,12 @@ pub const UI_DEFAULTS: &str = r#"{
   "tr_llm_claude_retry": false,
   "tr_llm_claude_retry_s": 60,
   "tr_llm_chatgpt_retry": false,
-  "tr_llm_chatgpt_retry_s": 60
+  "tr_llm_chatgpt_retry_s": 60,
+  "out_osc": false,
+  "out_osc_host": "127.0.0.1",
+  "out_osc_port": 9025,
+  "out_file": false,
+  "out_file_path": ""
 }"#;
 
 /// layer.json – nur, was der Dienst braucht (Rest: layer/src/config.rs)

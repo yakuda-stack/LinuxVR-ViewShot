@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (QComboBox, QGridLayout, QHBoxLayout, QLabel,
                              QPlainTextEdit, QPushButton, QTextBrowser, QVBoxLayout)
 
 from core import llm_translator as llm
-from core import clipboard, config, ocr, qr, translation
+from core import clipboard, config, ocr, output, qr, translation
 from core.i18n import tr
 from ui.panel_window import PanelWindow
 from ui.widgets import fill_methods, select_data
@@ -528,6 +528,7 @@ class TranslationMixin:
         self.add_history(photo, original, translated, used)
         if translated:
             self.set_last_ai(used, self.last_task(used))
+            output.publish(self.cfg, translated, original, "photo")  # 📡 OSC / 📄 Textdatei
         if (translation.route_mode(self.cfg) == translation.ROUTE_AUTO and getattr(self, "auto_task", "")
                 and translated):
             self.tr_status.setText(f"🤖 → {tr('tr_mode_' + self.auto_task)} · {tr('tr_m_' + used)}")

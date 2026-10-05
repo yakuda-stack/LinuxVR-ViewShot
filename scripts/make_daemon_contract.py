@@ -50,6 +50,7 @@ UI_KEYS = [
     "tr_answer_method", "tr_route", "tr_auto_once", "tr_auto_once_photo", "tr_auto_once_next",
     "tr_llm_mode", "tr_llm_gemini_retry", "tr_llm_gemini_retry_s", "tr_llm_claude_retry",
     "tr_llm_claude_retry_s", "tr_llm_chatgpt_retry", "tr_llm_chatgpt_retry_s",
+    "out_osc", "out_osc_host", "out_osc_port", "out_file", "out_file_path",
 ]
 LAYER_KEYS = ["live_interval_s", "overlay", "panel", "panel_edit", "panel_port", "panel_opacity",
               "panel_anchor", "detect_mode", "shutter", "mode_button", "panel_button", "panel_button_color",

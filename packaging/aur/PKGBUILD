@@ -1,6 +1,6 @@
 # Maintainer: yakuda <yakuda@outlook.de>
 pkgname=linuxvr-viewshot
-pkgver=1.0.0
+pkgver=1.0.1
 pkgrel=1
 pkgdesc="Take photos in VR with a hand-frame gesture on Linux (WiVRn / Monado) - OpenXR API layer + desktop app"
 # Der OpenXR-Layer ist eine native .so (Rust) -> nicht 'any'
@@ -15,11 +15,14 @@ depends=('glibc' 'gcc-libs' 'vulkan-icd-loader'
          'xcb-util-cursor' 'xcb-util-wm' 'xcb-util-image' 'xcb-util-keysyms'
          'xcb-util-renderutil' 'libxkbcommon-x11')
 makedepends=('cargo')
+# Kein LTO von makepkg: sonst baut gcc die C-Teile von „ring“ (TLS für ureq) als
+# GCC-LTO-Code, und Rusts Linker (rust-lld, Standard seit Rust 1.90) kann den nicht
+# lesen → „undefined symbol: ring_core_…“. Rust macht sein eigenes LTO (Cargo.toml).
+options=('!lto')
 optdepends=('python-opencv: QR code detection in photos'
             'python-onnxruntime-cpu: text recognition for the translation (plus "pip install --user rapidocr")'
-            'wayvr: open the app from the WayVR watch (Options -> General)'
             'glib2: move deleted photos to the trash via gio (fallback)'
-            'wl-clipboard: copy from inside WayVR to the desktop clipboard')
+            'wl-clipboard: copy from the VR panel when only the background service runs')
 # Git-Tag darf einen Bindestrich haben (v0.5.0-alpha), pkgver nicht
 _tag="v${pkgver/_/-}"
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/${_tag}.tar.gz")

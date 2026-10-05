@@ -471,6 +471,7 @@ impl State {
                             self.set_last_ai(&r.method, &r.task);
                             let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
                             trn::add_history(&self.cfg, &name, &r.ocr, &r.translated, &r.method);
+                            crate::output::publish(&self.cfg, &r.translated, &r.ocr, "photo"); // 📡 OSC / 📄 Datei
                             let main = self.cfg.s("tr_method");
                             if trn::route_mode(&self.cfg) == trn::ROUTE_AUTO && !self.auto_task.is_empty() {
                                 self.status = format!(
@@ -522,6 +523,7 @@ impl State {
                     Ok(Some((translated, method, task))) => {
                         if Some((translated.clone(), method.clone(), task.clone())) != self.live_result || text != self.live_text {
                             self.set_last_ai(&method, &task);
+                            crate::output::publish(&self.cfg, &translated, &text, "lens"); // 📡 OSC / 📄 Datei
                         }
                         self.live_text = text;
                         self.live_result = Some((translated.clone(), method, task));

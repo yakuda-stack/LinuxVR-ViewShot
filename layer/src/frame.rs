@@ -192,10 +192,30 @@ pub fn project(eye: &xr::Posef, fov: &xr::Fovf, p: xr::Vector3f) -> Option<Proje
     Some(Projected { u: (tx - l) / (r - l), v: (u - ty) / (u - dn), depth })
 }
 
+/// 📐 Rechteck auf ein Seitenverhältnis (Breite/Höhe) bringen: so groß wie möglich
+/// INNERHALB von x0..x1 / y0..y1, mittig – wie der Sucher einer Kamera.
+fn fit_aspect((x0, y0, x1, y1): (f32, f32, f32, f32), ratio: f32) -> (f32, f32, f32, f32) {
+    let (w, h) = (x1 - x0, y1 - y0);
+    if w <= 0.0 || h <= 0.0 || ratio <= 0.0 {
+        return (x0, y0, x1, y1);
+    }
+    let (cx, cy) = ((x0 + x1) * 0.5, (y0 + y1) * 0.5);
+    let (w, h) = if w / h > ratio { (h * ratio, h) } else { (w, w / ratio) };
+    (cx - w * 0.5, cy - h * 0.5, cx + w * 0.5, cy + h * 0.5)
+}
+
 /// Rechteck aus zwei Handpunkten, begrenzt auf das Bild `img`.
 /// `inset_m`: so viele Meter rücken die Ecken nach innen.
+/// `aspect`: festes Seitenverhältnis (Breite/Höhe), None = frei.
 /// Zu klein oder ungültig → ganzes Bild.
-pub fn crop_rect(img: Rect, fov: &xr::Fovf, a: Option<Projected>, b: Option<Projected>, inset_m: f32) -> Rect {
+pub fn crop_rect(
+    img: Rect,
+    fov: &xr::Fovf,
+    a: Option<Projected>,
+    b: Option<Projected>,
+    inset_m: f32,
+    aspect: Option<f32>,
+) -> Rect {
     let (Some(a), Some(b)) = (a, b) else { return img };
 
     // Pixel pro Meter in Handentfernung (Brennweite / Tiefe)
@@ -223,6 +243,9 @@ pub fn crop_rect(img: Rect, fov: &xr::Fovf, a: Option<Projected>, b: Option<Proj
     x1 = x1.clamp(ix0, ix1);
     y0 = y0.clamp(iy0, iy1);
     y1 = y1.clamp(iy0, iy1);
+    if let Some(ratio) = aspect {
+        (x0, y0, x1, y1) = fit_aspect((x0, y0, x1, y1), ratio);
+    }
 
     let r = Rect {
         x: x0.floor() as i32,
@@ -298,16 +321,16 @@ mod tests {
     #[test]
     fn rect_without_inset() {
         let img = Rect { x: 0, y: 0, w: 1000, h: 1000 };
-        let r = crop_rect(img, &fov(), p(0.75, 0.25, 0.5), p(0.25, 0.75, 0.5), 0.0);
+        let r = crop_rect(img, &fov(), p(0.75, 0.25, 0.5), p(0.25, 0.75, 0.5), 0.0, None);
         assert_eq!(r, Rect { x: 250, y: 250, w: 500, h: 500 });
-        assert_eq!(crop_rect(img, &fov(), None, p(0.1, 0.1, 0.5), 0.0), img);
+        assert_eq!(crop_rect(img, &fov(), None, p(0.1, 0.1, 0.5), 0.0, None), img);
     }
 
     #[test]
     fn inset_shrinks_rect() {
         // FOV 90° → Brennweite 500 px; 5 cm bei 0,5 m Tiefe = 50 px pro Seite
         let img = Rect { x: 0, y: 0, w: 1000, h: 1000 };
-        let r = crop_rect(img, &fov(), p(0.75, 0.25, 0.5), p(0.25, 0.75, 0.5), 0.05);
+        let r = crop_rect(img, &fov(), p(0.75, 0.25, 0.5), p(0.25, 0.75, 0.5), 0.05, None);
         assert_eq!(r, Rect { x: 300, y: 300, w: 400, h: 400 });
     }
 
@@ -377,9 +400,27 @@ mod tests {
     }
 
     #[test]
+    fn aspect_fits_inside_and_stays_centered() {
+        let img = Rect { x: 0, y: 0, w: 1000, h: 1000 };
+        // Hände spannen 600 × 400 px auf (Mitte 500/500)
+        let (a, b) = (p(0.2, 0.3, 0.5), p(0.8, 0.7, 0.5));
+        // 1:1 → 400 × 400, mittig
+        assert_eq!(crop_rect(img, &fov(), a, b, 0.0, Some(1.0)), Rect { x: 300, y: 300, w: 400, h: 400 });
+        // 16:9 → volle Breite 600, Höhe 337,5
+        let r = crop_rect(img, &fov(), a, b, 0.0, Some(16.0 / 9.0));
+        assert_eq!((r.w, r.x), (600, 200));
+        assert!((r.h - 338).abs() <= 1, "{r:?}");
+        assert!(((r.y + r.h / 2) - 500).abs() <= 1);
+        // hochkant aufgespannt → 16:9 nimmt die Breite, Höhe schrumpft
+        let r = crop_rect(img, &fov(), p(0.4, 0.2, 0.5), p(0.6, 0.8, 0.5), 0.0, Some(16.0 / 9.0));
+        assert_eq!(r.w, 200);
+        assert!((r.h - 113).abs() <= 1, "{r:?}");
+    }
+
+    #[test]
     fn inset_too_big_gives_full_image() {
         let img = Rect { x: 0, y: 0, w: 1000, h: 1000 };
-        let r = crop_rect(img, &fov(), p(0.52, 0.48, 0.5), p(0.48, 0.52, 0.5), 0.07);
+        let r = crop_rect(img, &fov(), p(0.52, 0.48, 0.5), p(0.48, 0.52, 0.5), 0.07, None);
         assert_eq!(r, img);
     }
 }

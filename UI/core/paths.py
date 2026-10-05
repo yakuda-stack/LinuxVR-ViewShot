@@ -80,7 +80,7 @@ def list_photos() -> list[Path]:
 #   "gallery_folders": [{"path": "/home/…/Bilder/VRChat", "subfolders": true}]
 # Der ⚙ Dienst (daemon/src/paths.rs) liest dieselben Einträge.
 # ----------------------------------------------------------------------
-IMAGE_EXTS = {".png", ".jpg", ".jpeg"}
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif"}  # .gif = 🎞 GIF-Aufnahmen
 # Hilfsordner im Foto-Ordner – nie in der Galerie
 HELPER_DIRS = {"panel", "overlay", "live"}
 MAX_DEPTH = 4            # so tief in Unterordner (VRChat: VRChat/2026-10/…)

@@ -22,6 +22,10 @@ DEFAULTS = {
     "shutter": "right",           # Auslöser: "left" / "right" / "both"
     "mode_button": "left",        # Typ wechseln (auto: 🪄↔🔁, manual: 🖼📝🔳🔁): "left" / "right" / "both"
     "icon_position": "bottom_left",  # Ecke des Typ-Symbols, siehe ICON_POSITIONS
+    "aspect": "free",             # 📐 Seitenverhältnis des Fotos, siehe ASPECTS
+    "gif_hold": True,             # 🎞 Auslöser gedrückt halten = GIF aufnehmen (Foto dann beim Loslassen)
+    "gif_max_s": 15,              # 🎞 längste GIF-Aufnahme in Sekunden (1–15)
+    "gif_fps": 10,                # 🎞 Bilder pro Sekunde im GIF (5–15)
     "live_interval_s": 3,         # 🔁 Lens: alle so viele Sekunden neu fotografieren + übersetzen
     "overlay": False,             # 🥽 Übersetzung in VR über dem Original (overlay/overlay.png)
     "panel": True,                # 🪟 Übersetzungs-Panel in VR (panel/panel.png, ui/vr_panel.py)
@@ -42,6 +46,7 @@ DAEMON_MODES = ("off", "all", "selected")
 
 COMBOS = ("left", "right", "both")
 ICON_POSITIONS = ("bottom_left", "bottom_right", "top_left", "top_right")
+ASPECTS = ("free", "1:1", "16:9")
 
 
 def update(key: str, value) -> dict:

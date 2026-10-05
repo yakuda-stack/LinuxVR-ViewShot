@@ -8,6 +8,7 @@ Neue Einstellung? Einfach unten in DEFAULTS eintragen.
 import json
 
 from core.paths import CONFIG_DIR
+from core.output import DEFAULTS as OUTPUT_DEFAULTS
 from core.translation import DEFAULTS as TRANSLATION_DEFAULTS
 
 CONFIG_FILE = CONFIG_DIR / "ui.json"
@@ -18,12 +19,12 @@ DEFAULTS = {
     "thumb_size": 180,  # Kachelgröße in der Galerie (Pixel)
     "cleanup_qr": False,    # beim Beenden QR-Code-Fotos in den Papierkorb
     "cleanup_text": False,  # beim Beenden Text-Fotos in den Papierkorb
-    "clipboard_mirror": True,
     "ocr_expanded": False,
     "gallery_main_subfolders": False,  # 🖼 Galerie: Unterordner des Foto-Ordners mit anzeigen
     "gallery_folders": [],  # 🖼 Galerie: weitere Ordner [{"path": …, "subfolders": bool}]
-    "history": False,       # Main: Verlauf der Übersetzungen (Standard aus – spart Arbeit)  # Main: "Erkannter Text" aufgeklappt?  # Kopiertes per wl-copy auch an den Desktop (WayVR)
+    "history": False,       # Main: Verlauf der Übersetzungen (Standard aus – spart Arbeit)
     **TRANSLATION_DEFAULTS,  # tr_… Einstellungen (Optionen → Übersetzung)
+    **OUTPUT_DEFAULTS,       # out_… 📡 OSC / 📄 Textdatei (Optionen → Übersetzung → Ausgabe)
 }
 
 

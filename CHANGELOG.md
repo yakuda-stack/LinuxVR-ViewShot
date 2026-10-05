@@ -1,5 +1,23 @@
 # Changelog
 
+## [v1.0.1] – 2026-10-05
+Update: **AUR** `yay -Syu linuxvr-viewshot` or the **AppImage** – open the app once (or press ⬆ *Update layer*). From a clone: 🔧 *Rebuild & install*. Then restart the VR game. **Needs a layer + service rebuild.**
+
+- **📐 Fixed aspect ratio** (Options → Shot): free / 1:1 / 16:9 – like a real camera, the frame always keeps the format so shared photos look cleaner. It uses as much of the space between your hands as it can and stays centred. Works for photos, 🔁 Lens and GIFs, changes live in VR (`aspect` in layer.json)
+- **🎞 GIF recording:** hold the shutter in the frame (~0.45 s) → GIF. The frame blinks red/white while recording; let go, release the grips or reach the limit to stop. Max. length 1–15 s (Options → Shot, default 15 s), 10 frames/s, longest side 512 px. A short press is still a normal photo – **with GIF on, the photo is taken when you let go** (turn *Hold shutter = record GIF* off for the old instant shutter). With 🔁 Lens selected, holding starts Lens as before. GIFs go to the gallery (animated in the desktop viewer, first frame in the VR gallery) but aren't translated. Encoding runs in its own thread; the file appears only when it's finished (`gif_hold`, `gif_max_s`, `gif_fps` in layer.json)
+- **📤 Output: OSC / file** (Options → General, each on/off): every new translation is passed on – also by the background service when the app is closed
+  - 📡 **OSC** to `127.0.0.1:9025` (host + port adjustable): message `/viewshot/translation` with 3 strings – translation, original text, source (`photo` / `lens`). Meant for an OSC-DreamChatbox plugin that puts the translation into the chatbox. Don't use port 9000 (VRChat)
+  - 📄 **File** `translation.json` with the same info as OSC, latest translation only: `{"id", "time", "translation", "original", "source"}` – `id` (ms since 1970) changes with every new translation, even with the same text, so a plugin only has to watch the id. Replaced in one step (never half written). Default `~/.local/state/linuxvr-viewshot/translation.json`, path adjustable, 📂 opens the folder
+  - 🧪 *Send test* button; 🔁 Lens only sends when the text changed
+- **Options sorted into 4 tabs:**
+  - ⚙ **General:** community, language, main page, folders, clean up, 📤 output (OSC / file), ⚙ without the app (background service), about
+  - 📸 **Shot:** frame size, eye, 📐 aspect ratio, 🎞 GIF, detection & buttons, icon corner, exceptions
+  - 🥽 **VR (new):** 🪟 panel + 🔘 button, 🔁 Lens, 🥽 overlay – moved out of Shot
+  - 🌐 **Translation:** unchanged
+- **Removed: WayVR theme** – the *Install Cubee's WayVR theme + ViewShot watch button* card (Options → General) is gone. An already installed theme in `~/.config/wayvr` stays untouched
+- **Removed: clipboard mirror** – the *Clipboard* card (copy to the desktop via `wl-copy` when the app runs inside WayVR, incl. the wl-clipboard install button). Copying in the app now only uses the normal Qt clipboard; the background service still uses `wl-copy` / `xclip` for the VR panel (`wl-clipboard` stays an optional dependency for that)
+- Texts for all new options in DE / EN / FR
+
 ## [v1.0.0] – 2026-10-02
 **First stable release.** Update: **AUR** `yay -Syu linuxvr-viewshot` or the new **AppImage** – open the app once, it copies the new layer + background service to `~/.local` by itself (or press ⬆ *Update layer*). From a clone: 🔧 *Rebuild & install*. Then restart the VR game.
 

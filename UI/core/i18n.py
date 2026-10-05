@@ -178,34 +178,6 @@ TEXTS = {
                         "en": "Move {n} photos to the trash?"},
     "deleted_many":    {"de": "✔ {n} Fotos wurden gelöscht (Papierkorb)",
                         "en": "✔ {n} photos were deleted (trash)"},
-    "wayvr_title":     {"de": "WayVR: Design von Cubee + ViewShot-Knopf", "en": "WayVR: Cubee's theme + ViewShot button"},
-    "wayvr_hint":      {"de": "Installiert Cubees Design für WayVR (Uhr, Farben, Sounds) nach ~/.config/wayvr. "
-                              "Der Knopf „Chatbox öffnen“ auf der Uhr wird zu „LinuxVR-ViewShot“ und öffnet "
-                              "diese App als Fenster in VR. Deine eigenen WayVR-Einstellungen und die "
-                              "Controller-Belegung bleiben; überschriebene Dateien kommen vorher in ein Backup.",
-                        "en": "Installs Cubee's WayVR theme (watch, colours, sounds) to ~/.config/wayvr. "
-                              "The watch's “Open Chatbox” button becomes “LinuxVR-ViewShot” and opens this "
-                              "app as a window in VR. Your own WayVR settings and controller bindings stay; "
-                              "overwritten files are backed up first."},
-    "wayvr_install":   {"de": "WayVR-Design + App-Knopf auf der Uhr installieren",
-                        "en": "Install WayVR theme + app button on the watch"},
-    "wayvr_reinstall": {"de": "WayVR-Design + App-Knopf neu installieren",
-                        "en": "Reinstall WayVR theme + app button"},
-    "wayvr_installing": {"de": "Lädt von GitHub …", "en": "Downloading from GitHub …"},
-    "wayvr_source":    {"de": "Quelle",          "en": "Source"},
-    "wayvr_ok":        {"de": "✔ {n} Dateien installiert nach {path}", "en": "✔ {n} files installed to {path}"},
-    "wayvr_backup":    {"de": "Backup der alten Dateien: {path}", "en": "Backup of the old files: {path}"},
-    "wayvr_no_button": {"de": "⚠ Chatbox-Knopf nicht gefunden – Cubees Uhr hat sich geändert, "
-                              "ViewShot-Knopf fehlt.",
-                        "en": "⚠ Chatbox button not found – Cubee's watch has changed, "
-                              "ViewShot button missing."},
-    "wayvr_no_ctl":    {"de": "⚠ wayvrctl nicht gefunden – der Knopf öffnet die App dann auf dem Desktop "
-                              "statt in WayVR.",
-                        "en": "⚠ wayvrctl not found – the button will open the app on the desktop "
-                              "instead of inside WayVR."},
-    "wayvr_restart":   {"de": "WayVR neu starten, damit das Design geladen wird.",
-                        "en": "Restart WayVR to load the theme."},
-    "wayvr_failed":    {"de": "✘ Installation fehlgeschlagen", "en": "✘ Installation failed"},
     "cleanup_title":   {"de": "Beim Beenden aufräumen", "en": "Clean up on exit"},
     "cleanup_hint":    {"de": "Wenn du die App schließt, kommen diese Fotos in den Papierkorb. "
                               "Fotos, die zusätzlich 🖼 Bild getaggt sind, bleiben.",
@@ -236,6 +208,7 @@ TEXTS = {
     # Optionen – Tabs
     "tab_general":     {"de": "General",         "en": "General"},
     "tab_shot":        {"de": "Shot",            "en": "Shot"},
+    "tab_vr":          {"de": "VR",              "en": "VR"},
     "community":       {"de": "Community",       "en": "Community"},
     "community_hint":  {"de": "Fragen, Ideen und Fehlermeldungen gerne auf Discord.",
                         "en": "Questions, ideas and bug reports are welcome on Discord."},
@@ -398,6 +371,52 @@ TEXTS = {
                               "oder im Internet. Verschickt wird nur der erkannte Text, nie das Foto.",
                         "en": "ℹ Depends on your setup: local (e.g. Ollama, your own server) or on the "
                               "internet. Only the recognised text is sent, never the photo."},
+    "aspect_card":     {"de": "Seitenverhältnis", "en": "Aspect ratio"},
+    "aspect_hint":     {"de": "Wie bei einer echten Kamera: Der Rahmen hält immer dieses Format – so "
+                              "sehen geteilte Fotos sauberer aus. Er nutzt den Platz zwischen deinen Händen "
+                              "so gut es geht und bleibt mittig.",
+                        "en": "Like a real camera: the frame always keeps this format – shared photos look "
+                              "cleaner. It uses as much of the space between your hands as it can and stays "
+                              "centred."},
+    "aspect_free":     {"de": "Frei",             "en": "Free"},
+    "gif_card":        {"de": "GIF-Aufnahme",     "en": "GIF recording"},
+    "gif_hint":        {"de": "Auslöser im Rahmen gedrückt halten → GIF. Der Rahmen blinkt rot/weiß, "
+                              "solange aufgenommen wird; loslassen beendet die Aufnahme. Kurz drücken bleibt "
+                              "ein normales Foto.",
+                        "en": "Hold the shutter in the frame → GIF. The frame blinks red/white while "
+                              "recording; let go to stop. A short press is still a normal photo."},
+    "gif_on":          {"de": "Auslöser halten = GIF aufnehmen", "en": "Hold shutter = record GIF"},
+    "gif_max":         {"de": "Höchstens",        "en": "At most"},
+    "gif_note":        {"de": "Ist das an, wird ein Foto erst beim Loslassen gemacht (sonst sofort beim "
+                              "Drücken). GIFs landen in der Galerie, werden aber nicht übersetzt.",
+                        "en": "When on, a photo is taken when you let go (otherwise right when you press). "
+                              "GIFs go to the gallery but aren't translated."},
+    "out_card":        {"de": "Ausgabe (OSC / Datei)", "en": "Output (OSC / file)"},
+    "out_hint":        {"de": "Jede neue Übersetzung zusätzlich weitergeben – z. B. an ein Plugin in "
+                              "OSC-DreamChatbox, das sie in die Chatbox schreibt. Beides geht einzeln oder "
+                              "zusammen. Klappt auch, wenn nur der Hintergrund-Dienst läuft.",
+                        "en": "Also pass on every new translation – e.g. to a plugin in OSC-DreamChatbox that "
+                              "puts it into the chatbox. Use either one or both. Also works when only the "
+                              "background service is running."},
+    "out_osc":         {"de": "📡 Per OSC senden", "en": "📡 Send via OSC"},
+    "out_osc_host":    {"de": "Adresse",          "en": "Host"},
+    "out_osc_port":    {"de": "Port",             "en": "Port"},
+    "out_osc_note":    {"de": "Nachricht {address} mit 3 Texten: Übersetzung, Originaltext, Quelle "
+                              "(photo / lens). Nicht Port 9000 nehmen – der gehört VRChat.",
+                        "en": "Message {address} with 3 strings: translation, original text, source "
+                              "(photo / lens). Don't use port 9000 – that's VRChat's."},
+    "out_file":        {"de": "📄 In Datei schreiben (JSON, immer nur die letzte Übersetzung)",
+                        "en": "📄 Write to a file (JSON, always just the latest translation)"},
+    "out_file_note":   {"de": "Gleiche Infos wie bei OSC: translation, original, source – dazu id (neu bei jeder "
+                              "Übersetzung, auch bei gleichem Text) und time. Ein Plugin muss nur schauen, ob sich "
+                              "die id geändert hat.",
+                        "en": "Same info as OSC: translation, original, source – plus id (new for every translation, "
+                              "even with the same text) and time. A plugin just checks whether the id changed."},
+    "out_test":        {"de": "Test senden",      "en": "Send test"},
+    "out_test_text":   {"de": "ViewShot-Test ✔",  "en": "ViewShot test ✔"},
+    "out_test_ok":     {"de": "Gesendet",         "en": "Sent"},
+    "out_test_off":    {"de": "Erst OSC oder Textdatei einschalten.",
+                        "en": "Turn on OSC or the text file first."},
     "live_card":       {"de": "Lens (Live-Übersetzung)", "en": "Lens (live translation)"},
     "live_hint":       {"de": "Im Rahmen mit der Typ-Taste auf 🔁 Lens schalten, dann Auslöser: statt eines "
                               "Fotos wird der Bereich immer wieder fotografiert und übersetzt – z. B. für Welten "
@@ -709,25 +728,10 @@ TEXTS = {
     "qr_in_text":      {"de": "QR-Code",         "en": "QR code"},
     "qr_copied":       {"de": "✔ QR-Inhalt kopiert", "en": "✔ QR content copied"},
 
-    # Optionen – Zwischenablage
-    "clip_title":      {"de": "Zwischenablage", "en": "Clipboard"},
-    "clip_mirror":     {"de": "Kopiertes auch auf dem Desktop einfügbar machen (WayVR)",
-                        "en": "Make copied things pasteable on the desktop too (WayVR)"},
-    "clip_hint":       {"de": "In WayVR hat die App eine eigene Zwischenablage – Strg+V auf dem "
-                              "Desktop findet dann nichts. Mit dieser Option wird zusätzlich per "
-                              "wl-copy an den Desktop gegeben.",
-                        "en": "Inside WayVR the app has its own clipboard – Ctrl+V on the desktop "
-                              "finds nothing. With this option everything is also handed to the "
-                              "desktop via wl-copy."},
-    "clip_ok":         {"de": "✔ wl-copy ist installiert", "en": "✔ wl-copy is installed"},
-    "clip_missing":    {"de": "✘ wl-copy fehlt – installieren:  {cmd}",
-                        "en": "✘ wl-copy missing – install:  {cmd}"},
-    "clip_install":    {"de": "wl-clipboard installieren", "en": "Install wl-clipboard"},
-    "clip_installing": {"de": "Installiere …",   "en": "Installing …"},
-    "clip_password":   {"de": "Passwort-Fenster erscheint auf dem Desktop …",
+    # Paket installieren (z. B. npm für die KI-CLIs)
+    "pkg_installing":  {"de": "Installiere …",   "en": "Installing …"},
+    "pkg_password":    {"de": "Passwort-Fenster erscheint auf dem Desktop …",
                         "en": "Password window appears on the desktop …"},
-    "clip_install_failed": {"de": "✘ Installieren abgebrochen oder fehlgeschlagen",
-                            "en": "✘ Install cancelled or failed"},
 
     # Optionen
     "language":        {"de": "Sprache",         "en": "Language"},

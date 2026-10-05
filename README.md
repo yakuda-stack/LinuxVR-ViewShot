@@ -75,6 +75,8 @@ cd LinuxVR-ViewShot && ./install.sh          # ./install.sh uninstall
 - 📸 Photo of the area **between** your hands – fingers stay outside, like a camera frame
 - 👀 Frame matches what you see with both eyes; the red frame is never in the photo
 - 🎮 Shutter on left / right / both triggers
+- 📐 **Fixed aspect ratio** (free / 1:1 / 16:9) like a real camera – the frame keeps the format (Options → Shot)
+- 🎞 **GIF:** hold the shutter → GIF (up to 15 s, frame blinks red/white), let go to stop; a short press stays a photo
 - 🪟 **Translation panel in VR:** a window with the photo and numbers ①②③ on the text lines, the translations 1, 2, 3 below (long text: ▼ / ▲ pages) – service (+ mode 🤖 automatic / ✋ manual), task and languages by laser (point + trigger, round laser dot). **⚙** slides the settings down from the top like on a phone: size, opacity, attach to left/right hand, head or world, ✥ move (grip; glowing corner + trigger = width / height), ⟲ reset position, detection & buttons
 - 🖼 **Pages + gallery in the VR panel:** at the bottom **◀** left / **▶** right switch between 🌐 translation and 🖼 gallery, **⚙** stays at the top. Each page keeps its **own size** in VR (gallery bigger by default). Gallery fills the whole panel: thumbnails with **month dividers** (“── 2026 October ──”), ▲ / ▼ pages; tap one → large with **📋 Copy · ☁ Upload + link · ↗ Share · 🌐 Translate · ⓘ Info · 🗑 Delete** (tap twice) and ‹ ›
 - 🔘 **Button to open/close the panel** (like WayVR): sits on the same anchor as the panel (default: on top of the hand), laser + trigger = open/closed. In edit mode move, rotate and resize the button and the panel separately (e.g. next to the WayVR wrist menu) – the anchor (hand/head/world) stays the same; panel default = above the button. Colour pickable, **opens by itself after a photo** (on by default)
@@ -93,19 +95,18 @@ cd LinuxVR-ViewShot && ./install.sh          # ./install.sh uninstall
 - 🧠 **AI task** next to it: translate · explain context · answer a question in the photo (quiz, riddle …)
 - 🧭 **Service per task** (Options → Translation): **Mode** 🤖 automatic / ✋ manual · **Main** (e.g. local image LLM or LibreTranslate) · *Explain context* and *Answer question* each with their own AI (model = the one set for it) · 🤖 **Automatic** (only with an AI as main): for every photo the main AI decides – normal text it translates itself, jokes/memes → explain AI, quizzes → answer AI; if it guesses wrong, pick the task on the main page / in the VR panel – counts for the current + next photo, then automatic again · ✋ **Manual**: you pick the task, each task always uses its AI · nothing switches by itself · the local image LLM thinks first on quizzes (💡 proverb/hint), then ➜ number
 - 🏷 **Last AI** under *Task* (main page + VR panel): which AI (and model/task) wrote the answer shown – stays until the next answer
-- ⚙ **Without the app** (Options → Shot): background service `viewshot-daemon` (Rust, same OCR models, same services, same cache) – starts with every VR game or only with selected ones (systemd socket, woken by the layer), quits when the game ends; while the app is open it steps aside and the app does everything as before
+- ⚙ **Without the app** (Options → General): background service `viewshot-daemon` (Rust, same OCR models, same services, same cache) – starts with every VR game or only with selected ones (systemd socket, woken by the layer), quits when the game ends; while the app is open it steps aside and the app does everything as before
 - 📋 **Copy** button right above the translation · *Recognised text* folds away (▸, folded by default)
+- 📤 **Output** (Options → General, each on/off): 📡 **OSC** – every new translation as `/viewshot/translation` (translation, original, source) to e.g. `127.0.0.1:9025`, so an OSC-DreamChatbox plugin can put it into the chatbox · 📄 **file** `translation.json` with the same info (+ `id` that changes with every translation, `time`) – also from the background service
 - ↻ **Send again** (fresh answer); stuck AI requests are re-sent automatically (optional, per AI)
 - 🕘 **History** (optional): past translations, tap to show them again, ⧉ opens it in its own window · ✏ fix the **recognised text** yourself and translate it again
 - ⧉ **Pop out** the translation into its own window (in VR: its own panel)
 - 🔳 **QR codes** in a photo appear as **clickable links** right in the translation (📋 copy)
-- 📋 **Clipboard from WayVR:** copied things also land on the desktop (via `wl-copy`, package `wl-clipboard` – **install button** in Options for Arch, Fedora, Debian/Ubuntu, openSUSE) – Ctrl+V works there
 - 🖼 **Gallery:** equal tiles with size slider, large view with ‹ ›, **Copy · Share · Upload & copy link** ([directupload.eu](https://www.directupload.eu/), incl. delete link) **· Info · Delete** (trash)
 - 📁 **Gallery folders** (⚙ in the gallery): photo folder + more folders (e.g. `~/Pictures/VRChat`), each with *include subfolders* – desktop and VR gallery, month dividers. Only ViewShot photos are translated
 - 🏷️ **Image detection:** every photo gets 📝 text / 🔳 QR / 🖼 image – VRChat nameplates don't count as text; filter the gallery, change tags in *Info*
 - ☑ **Bulk select:** tap tiles → delete them all or set their type
 - 🧹 **Clean up on exit** (optional): QR / text photos go to the trash when you close the app
-- 🎨 **WayVR:** installs [Cubee's WayVR theme](https://github.com/cubee-cb/linux-vr-compat/tree/master/dotfiles/wayvr) + a watch button that opens this app **inside VR**
 - 🥽 Made for the VR laser: big buttons, wide sidebar, the mouse wheel never changes dropdowns by accident · EN / DE
 
 ### 💡 Tips
@@ -170,6 +171,8 @@ cd LinuxVR-ViewShot && ./install.sh          # ./install.sh uninstall
 - 📸 Foto vom Bereich **zwischen** den Händen – Finger bleiben draußen, wie bei einem Kamera-Rahmen
 - 👀 Ausschnitt passt zu dem, was du mit beiden Augen siehst; der rote Rahmen ist nie im Foto
 - 🎮 Auslöser auf linkem / rechtem / beiden Triggern
+- 📐 **Festes Seitenverhältnis** (frei / 1:1 / 16:9) wie bei einer echten Kamera – der Rahmen hält das Format (Optionen → Shot)
+- 🎞 **GIF:** Auslöser gedrückt halten → GIF (bis 15 s, Rahmen blinkt rot/weiß), loslassen beendet; kurz drücken bleibt ein Foto
 - 🪟 **Übersetzungs-Panel in VR:** Fenster mit dem Foto und Nummern ①②③ auf den Textzeilen, darunter die Übersetzungen 1, 2, 3 (langer Text: ▼ / ▲ blättern) – Dienst (+ Modus 🤖 Automatisch / ✋ Manuell), Aufgabe und Sprachen per Laser (zeigen + Trigger, runder Laser-Punkt). **⚙** klappt die Einstellungen wie beim Handy von oben herunter: Größe, Deckkraft, Hängt an linker/rechter Hand, Kopf oder Welt, ✥ Verschieben (Grip; leuchtende Ecke + Trigger = Breite / Höhe), ⟲ Position zurücksetzen, Erkennung & Tasten
 - 🖼 **Seiten + Galerie im VR-Panel:** unten **◀** links / **▶** rechts wechseln zwischen 🌐 Übersetzung und 🖼 Galerie, **⚙** bleibt oben. Jede Seite hat ihre **eigene Größe** in VR (Galerie standardmäßig größer). Die Galerie nutzt das ganze Panel: Vorschaubilder mit **Monats-Trennern** („── 2026 Oktober ──“), ▲ / ▼ blättern; Antippen → groß mit **📋 Kopieren · ☁ Hochladen + Link · ↗ Teilen · 🌐 Übersetzen · ⓘ Info · 🗑 Löschen** (zweimal tippen) und ‹ ›
 - 🔘 **Knopf zum Auf-/Zuklappen** (wie bei WayVR): hängt am selben Anker wie das Panel (Standard: oben auf der Hand), Laser + Trigger = auf/zu. Im Bearbeiten-Modus Knopf und Panel einzeln verschieben, drehen und vergrößern (z. B. neben das WayVR-Handgelenk-Menü) – der Anker (Hand/Kopf/Welt) bleibt gleich; Panel standardmäßig über dem Knopf. Farbe wählbar, **geht nach einem Foto von selbst auf** (Standard an)
@@ -188,19 +191,18 @@ cd LinuxVR-ViewShot && ./install.sh          # ./install.sh uninstall
 - 🧠 **KI-Aufgabe** daneben: übersetzen · Kontext erklären · Frage im Foto beantworten (Quiz, Rätsel …)
 - 🧭 **Dienst je Aufgabe** (Optionen → Übersetzung): **Modus** 🤖 Automatisch / ✋ Manuell · **Main** (z. B. lokales Bild-LLM oder LibreTranslate) · *Kontext erklären* und *Frage beantworten* je mit eigener KI (Modell = das bei ihr eingestellte) · 🤖 **Automatisch** (nur mit KI als Main): bei jedem Foto entscheidet die Main-KI – normalen Text übersetzt sie selbst, Witze/Memes → Kontext-KI, Quiz → Frage-KI; liegt sie daneben, Aufgabe auf der Main-Seite / im VR-Panel umstellen – gilt fürs aktuelle + nächste Foto, dann wieder automatisch · ✋ **Manuell**: Aufgabe selbst wählen, jede Aufgabe nimmt fest ihre KI · nichts stellt sich von selbst um · das lokale Bild-LLM denkt bei Quiz erst nach (💡 Sprichwort/Hinweis), dann ➜ Nummer
 - 🏷 **Letzte KI** unter *Aufgabe* (Main-Seite + VR-Panel): welche KI (mit Modell/Aufgabe) die angezeigte Antwort geschrieben hat – bleibt bis zur nächsten Antwort
-- ⚙ **Ohne App** (Optionen → Shot): Hintergrund-Dienst `viewshot-daemon` (Rust, gleiche OCR-Modelle, gleiche Dienste, gleicher Cache) – startet bei jedem VR-Spiel oder nur bei ausgewählten (systemd-Socket, der Layer weckt ihn), beendet sich nach dem Spiel; ist die App offen, hält er sich raus und die App macht alles wie gewohnt
+- ⚙ **Ohne App** (Optionen → General): Hintergrund-Dienst `viewshot-daemon` (Rust, gleiche OCR-Modelle, gleiche Dienste, gleicher Cache) – startet bei jedem VR-Spiel oder nur bei ausgewählten (systemd-Socket, der Layer weckt ihn), beendet sich nach dem Spiel; ist die App offen, hält er sich raus und die App macht alles wie gewohnt
 - 📋 **Kopieren**-Knopf direkt über der Übersetzung · *Erkannter Text* einklappbar (▸, standardmäßig zu)
+- 📤 **Ausgabe** (Optionen → General, je an/aus): 📡 **OSC** – jede neue Übersetzung als `/viewshot/translation` (Übersetzung, Original, Quelle) z. B. an `127.0.0.1:9025`, damit ein OSC-DreamChatbox-Plugin sie in die Chatbox schreiben kann · 📄 **Datei** `translation.json` mit denselben Infos (+ `id`, die sich bei jeder Übersetzung ändert, `time`) – klappt auch über den Hintergrund-Dienst
 - ↻ **Nochmal senden** (neue Antwort); hängt die KI, wird automatisch neu gesendet (optional, je KI)
 - 🕘 **Verlauf** (optional): frühere Übersetzungen, antippen zeigt sie wieder, ⧉ öffnet ihn in einem eigenen Fenster · ✏ **erkannten Text** selbst korrigieren und neu übersetzen
 - ⧉ Übersetzung in ein **eigenes Fenster** ausklinken (in VR: eigenes Panel)
 - 🔳 **QR-Codes** im Foto stehen als **anklickbare Links** direkt in der Übersetzung (📋 kopieren)
-- 📋 **Zwischenablage aus WayVR:** Kopiertes landet auch auf dem Desktop (per `wl-copy`, Paket `wl-clipboard` – **Installier-Knopf** in den Optionen für Arch, Fedora, Debian/Ubuntu, openSUSE) – Strg+V klappt dort
 - 🖼 **Galerie:** gleich große Kacheln mit Größen-Slider, große Ansicht mit ‹ ›, **Kopieren · Teilen · Hochladen & Link kopieren** ([directupload.eu](https://www.directupload.eu/), inkl. Lösch-Link) **· Info · Löschen** (Papierkorb)
 - 📁 **Galerie-Ordner** (⚙ in der Galerie): Foto-Ordner + weitere Ordner (z. B. `~/Bilder/VRChat`), je mit *Unterordner einbeziehen* – Desktop- und VR-Galerie, Monats-Trenner. Übersetzt wird nur, was ViewShot fotografiert
 - 🏷️ **Bild-Erkennung:** jedes Foto bekommt 📝 Text / 🔳 QR / 🖼 Bild – VRChat-Namensschilder zählen nicht als Text; Galerie danach filtern, Tags unter *Info* ändern
 - ☑ **Mehrfach-Auswahl:** Kacheln antippen → alle löschen oder ihren Typ setzen
 - 🧹 **Beim Beenden aufräumen** (optional): QR- / Text-Fotos kommen beim Schließen in den Papierkorb
-- 🎨 **WayVR:** installiert [Cubees WayVR-Design](https://github.com/cubee-cb/linux-vr-compat/tree/master/dotfiles/wayvr) + einen Uhr-Knopf, der diese App **in VR** öffnet
 - 🥽 Für den VR-Laser gemacht: große Knöpfe, breite Seitenleiste, das Mausrad verstellt keine Dropdowns aus Versehen · EN / DE
 
 ### 💡 Tipps
@@ -235,10 +237,10 @@ cd LinuxVR-ViewShot && ./install.sh          # ./install.sh uninstall
     <td align="center"><b>Shot</b> – frame size, eye, triggers, manual mode</td>
   </tr>
   <tr>
-    <td colspan="2"><img src="assets/general.png" alt="General options: community, language, folders, clean up, WayVR"></td>
+    <td colspan="2"><img src="assets/general.png" alt="General options: community, language, folders, clean up, output, background service"></td>
   </tr>
   <tr>
-    <td colspan="2" align="center"><b>General</b> – language, folders, clean up on exit, WayVR theme + watch button</td>
+    <td colspan="2" align="center"><b>General</b> – language, folders, clean up on exit, OSC / text file output, background service</td>
   </tr>
 </table>
 
@@ -266,7 +268,7 @@ daemon/           ⚙ background service viewshot-daemon (Rust) – translates +
   contract.json     texts, defaults, cache keys, prompts from the app (scripts/make_daemon_contract.py)
 UI/               desktop app (PyQt6)
   start.sh          start (sets the process name, see starter.py)
-  core/             paths, config, EN/DE texts, OCR, translation, tags, WayVR theme,
+  core/             paths, config, EN/DE/FR texts, OCR, translation, tags, output (OSC / file),
                     overlay.py (draws the VR translation image), vision.py (Ollama image LLM)
   ui/vr_panel.py    🪟 invisible Qt window → panel.png, clicks from VR via UDP
   ui/               window, style, pages (main / gallery / options)
@@ -281,7 +283,6 @@ assets/           README screenshots
 
 ## 🙏 Credits
 - Inspired by **VRHandsFrame**
-- WayVR theme: [**Cubee**](https://github.com/cubee-cb/linux-vr-compat/tree/master/dotfiles/wayvr) (GPL-3.0) – downloaded on demand, not bundled
 - Translators shared with [**OSC-DreamChatbox**](https://github.com/yakuda-stack/OSC-DreamChatbox)
 - Text recognition: [RapidOCR](https://github.com/RapidAI/RapidOCR) · Image hosting: [directupload.eu](https://www.directupload.eu/)
 

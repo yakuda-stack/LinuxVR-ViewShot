@@ -4,6 +4,8 @@
 //!   Idle ──(beide Grips, kein Trigger/Knopf, Hände auseinander)──► Arming
 //!   Arming ──(0,4 s gehalten)──► Active   (kurzes Vibrieren = Rahmen ist da)
 //!   Active ──(Auslöser-Trigger)──► Foto! ──► Cooldown
+//!   (mit 🎞 GIF: Auslöser ──► Holding ──(schnell los)──► Foto!
+//!                                     ──(HOLD_TIME gehalten)──► Recording ──(los)──► GIF fertig)
 //!   Active ──(Typ-Trigger, nur manuell)──► Typ wechseln ──► Cooldown
 //!   Cooldown ──(Trigger losgelassen)──► Active
 //!   Grips loslassen ──► Idle   (aus jedem Zustand)
@@ -18,17 +20,22 @@ use std::time::{Duration, Instant};
 /// So lange darf der zweite Trigger "nachkommen", damit es als "beide" zählt
 pub const COMBO_WINDOW: Duration = Duration::from_millis(150);
 
+/// 🎞 So lange den Auslöser halten, bis aus dem Foto ein GIF wird
+pub const HOLD_TIME: Duration = Duration::from_millis(450);
+
 /// Tastenbelegung für den offenen Rahmen
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Buttons {
     pub shutter: Combo,
     /// Typ wechseln (Bild → Text → QR) – None = automatischer Modus
     pub mode: Option<Combo>,
+    /// 🎞 Auslöser halten = GIF. Dann kommt das Foto erst beim Loslassen.
+    pub hold: bool,
 }
 
 impl Default for Buttons {
     fn default() -> Self {
-        Self { shutter: Combo::Right, mode: None }
+        Self { shutter: Combo::Right, mode: None, hold: false }
     }
 }
 
@@ -56,6 +63,10 @@ pub enum State {
     Active,
     /// Trigger gedrückt, noch unklar ob einer oder beide (seit, welche Hände)
     Pressing(Instant, [bool; 2]),
+    /// 🎞 Auslöser gedrückt (seit, welcher) – Foto oder GIF? Hängt am Loslassen.
+    Holding(Instant, Combo),
+    /// 🎞 GIF läuft, bis der Auslöser losgelassen wird
+    Recording(Combo),
     Cooldown,
 }
 
@@ -67,6 +78,10 @@ pub enum Event {
     TakePhoto,
     /// Typ weiterschalten (nur manueller Modus)
     CycleType,
+    /// 🎞 Auslöser lange gehalten → GIF-Aufnahme beginnt
+    GifStart,
+    /// 🎞 Auslöser losgelassen → GIF fertig
+    GifStop,
     FrameClosed,
 }
 
@@ -103,19 +118,33 @@ impl Gesture {
     }
 
     /// Welche Aktion gehört zu diesen Triggern? Danach: Cooldown.
-    fn resolve(&mut self, hands: [bool; 2], b: &Buttons) -> Event {
+    fn resolve(&mut self, hands: [bool; 2], b: &Buttons, now: Instant) -> Event {
         let combo = match hands {
             [true, true] => Combo::Both,
             [true, false] => Combo::Left,
             _ => Combo::Right,
         };
         self.state = State::Cooldown;
-        if combo == b.shutter {
+        if combo == b.shutter && b.hold {
+            // 🎞 erst schauen, wie lange gehalten wird
+            self.state = State::Holding(now, combo);
+            Event::None
+        } else if combo == b.shutter {
             Event::TakePhoto
         } else if Some(combo) == b.mode {
             Event::CycleType
         } else {
             Event::None
+        }
+    }
+
+    /// Ist der Auslöser (diese Hand / bei „beide“ irgendeine) noch gedrückt?
+    fn still_held(&self, i: &Inputs, combo: Combo) -> bool {
+        let down = |h: usize| i.trigger[h] >= self.cfg.trigger_idle;
+        match combo {
+            Combo::Left => down(0),
+            Combo::Right => down(1),
+            Combo::Both => down(0) || down(1),
         }
     }
 
@@ -129,7 +158,10 @@ impl Gesture {
 
         // Grips losgelassen → immer zurück zu Idle
         if !grips_held {
-            let was_open = matches!(self.state, State::Active | State::Pressing(..) | State::Cooldown);
+            let was_open = matches!(
+                self.state,
+                State::Active | State::Pressing(..) | State::Holding(..) | State::Recording(_) | State::Cooldown
+            );
             self.state = State::Idle;
             return if was_open { Event::FrameClosed } else { Event::None };
         }
@@ -158,7 +190,7 @@ impl Gesture {
                     Event::None
                 } else if fired == [true, true] || !b.uses_both() {
                     // eindeutig → sofort, ohne Wartezeit
-                    self.resolve(fired, b)
+                    self.resolve(fired, b, now)
                 } else {
                     self.state = State::Pressing(now, fired);
                     Event::None
@@ -168,10 +200,30 @@ impl Gesture {
                 let hands = [hands[0] || fired[0], hands[1] || fired[1]];
                 if hands == [true, true] || now.duration_since(since) >= COMBO_WINDOW || fired == [false, false] {
                     // beide da / Zeit um / schon wieder losgelassen (kurzes Antippen)
-                    self.resolve(hands, b)
+                    self.resolve(hands, b, now)
                 } else {
                     self.state = State::Pressing(since, hands);
                     Event::None
+                }
+            }
+            State::Holding(since, combo) => {
+                if !self.still_held(i, combo) {
+                    // kurz gedrückt → normales Foto
+                    self.state = State::Active;
+                    Event::TakePhoto
+                } else if now.duration_since(since) >= HOLD_TIME {
+                    self.state = State::Recording(combo);
+                    Event::GifStart
+                } else {
+                    Event::None
+                }
+            }
+            State::Recording(combo) => {
+                if self.still_held(i, combo) {
+                    Event::None
+                } else {
+                    self.state = State::Active;
+                    Event::GifStop
                 }
             }
             State::Cooldown => {
@@ -224,7 +276,7 @@ mod tests {
 
     #[test]
     fn manual_mode_cycles_with_left() {
-        let b = Buttons { shutter: Combo::Right, mode: Some(Combo::Left) };
+        let b = Buttons { shutter: Combo::Right, mode: Some(Combo::Left), hold: false };
         let (mut g, t) = active(&b);
         assert_eq!(g.update(&inp(1.0, L, false), ms(t, 10), &b), Event::CycleType);
         assert_eq!(g.update(&inp(1.0, NO, false), ms(t, 20), &b), Event::None);
@@ -233,7 +285,7 @@ mod tests {
 
     #[test]
     fn both_waits_for_second_trigger() {
-        let b = Buttons { shutter: Combo::Both, mode: Some(Combo::Left) };
+        let b = Buttons { shutter: Combo::Both, mode: Some(Combo::Left), hold: false };
         let (mut g, t) = active(&b);
         // links zuerst, rechts 80 ms später → "beide" = Foto
         assert_eq!(g.update(&inp(1.0, L, false), ms(t, 10), &b), Event::None);
@@ -251,11 +303,44 @@ mod tests {
 
     #[test]
     fn single_trigger_ignored_when_shutter_is_both() {
-        let b = Buttons { shutter: Combo::Both, mode: None };
+        let b = Buttons { shutter: Combo::Both, mode: None, hold: false };
         let (mut g, t) = active(&b);
         assert_eq!(g.update(&inp(1.0, R, false), ms(t, 10), &b), Event::None);
         assert_eq!(g.update(&inp(1.0, R, false), ms(t, 200), &b), Event::None);
         assert_eq!(g.state, State::Cooldown);
+    }
+
+    #[test]
+    fn hold_tap_is_photo_on_release() {
+        let b = Buttons { hold: true, ..Buttons::default() };
+        let (mut g, t) = active(&b);
+        assert_eq!(g.update(&inp(1.0, R, false), ms(t, 10), &b), Event::None);
+        assert_eq!(g.update(&inp(1.0, R, false), ms(t, 100), &b), Event::None);
+        assert_eq!(g.update(&inp(1.0, NO, false), ms(t, 150), &b), Event::TakePhoto);
+        assert_eq!(g.state, State::Active);
+    }
+
+    #[test]
+    fn hold_long_records_gif() {
+        let b = Buttons { hold: true, ..Buttons::default() };
+        let (mut g, t) = active(&b);
+        assert_eq!(g.update(&inp(1.0, R, false), ms(t, 10), &b), Event::None);
+        assert_eq!(g.update(&inp(1.0, R, false), ms(t, 300), &b), Event::None);
+        assert_eq!(g.update(&inp(1.0, R, false), ms(t, 500), &b), Event::GifStart);
+        assert_eq!(g.update(&inp(1.0, [0.0, 0.5], false), ms(t, 3000), &b), Event::None);
+        assert_eq!(g.update(&inp(1.0, NO, false), ms(t, 3100), &b), Event::GifStop);
+        // danach wieder normal fotografierbar
+        assert_eq!(g.update(&inp(1.0, R, false), ms(t, 3200), &b), Event::None);
+        assert_eq!(g.update(&inp(1.0, NO, false), ms(t, 3250), &b), Event::TakePhoto);
+    }
+
+    #[test]
+    fn grips_released_while_recording_closes_frame() {
+        let b = Buttons { hold: true, ..Buttons::default() };
+        let (mut g, t) = active(&b);
+        g.update(&inp(1.0, R, false), ms(t, 10), &b);
+        assert_eq!(g.update(&inp(1.0, R, false), ms(t, 500), &b), Event::GifStart);
+        assert_eq!(g.update(&inp(0.0, R, false), ms(t, 900), &b), Event::FrameClosed);
     }
 
     #[test]

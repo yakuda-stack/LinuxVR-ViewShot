@@ -18,7 +18,7 @@ from pathlib import Path
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QImageReader
 
-from core import layer_config, ocr, overlay, paths, translation
+from core import layer_config, ocr, output, overlay, paths, translation
 from core import llm_translator as llm
 from core.i18n import tr
 
@@ -128,6 +128,7 @@ class LiveMixin:
             return
         if (text, translated) != (self.live_text, self.live_result[0]):  # neu gefragt
             self.set_last_ai(used, self.last_task(used))
+            output.publish(self.cfg, translated, text, "lens")  # 📡 OSC / 📄 Textdatei
         self.auto_task = ""
         self.live_text, self.live_result = text, (translated, used)
         self.history_entry = None

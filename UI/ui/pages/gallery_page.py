@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PyQt6.QtCore import QBuffer, QEvent, QFile, QIODevice, QObject, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QIcon, QImage, QImageReader, QKeySequence, QPainter, QPixmap, QShortcut
+from PyQt6.QtGui import QColor, QIcon, QImage, QImageReader, QKeySequence, QMovie, QPainter, QPixmap, QShortcut
 from PyQt6.QtWidgets import (QCheckBox, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
                              QListWidget, QListWidgetItem, QMenu, QMessageBox, QPushButton,
                              QSizePolicy, QSlider, QStackedWidget, QVBoxLayout, QWidget)
@@ -224,12 +224,28 @@ class PhotoView(QLabel):
         # darf kleiner werden als das Bild, sonst wächst das Fenster mit
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
         self._full = QPixmap()
+        self._movie = None      # 🎞 läuft gerade ein GIF?
         self.placeholder = ""  # Text, wenn kein Foto da ist
 
     def set_photo(self, path):
-        """path = None → kein Foto (zeigt self.placeholder)."""
-        self._full = QPixmap(str(path)) if path else QPixmap()
+        """path = None → kein Foto (zeigt self.placeholder). GIFs laufen als Animation."""
+        if self._movie is not None:
+            self._movie.stop()
+            self._movie.deleteLater()
+            self._movie = None
+        if path and str(path).lower().endswith(".gif"):
+            self._movie = QMovie(str(path), parent=self)
+            self._movie.frameChanged.connect(self._gif_frame)
+            self._movie.start()
+            self._full = self._movie.currentPixmap()
+        else:
+            self._full = QPixmap(str(path)) if path else QPixmap()
         self._rescale()
+
+    def _gif_frame(self, _number: int):
+        if self._movie is not None:
+            self._full = self._movie.currentPixmap()
+            self._rescale()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

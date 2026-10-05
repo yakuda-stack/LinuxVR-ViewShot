@@ -15,6 +15,7 @@ mod i18n;
 mod imgops;
 mod log;
 mod ocr;
+mod output;
 mod overlay;
 mod panel;
 mod paths;

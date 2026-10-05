@@ -1,12 +1,14 @@
 """
 ui/pages/options_page.py – Optionen mit Tabs (wie bei OSC-DreamChatbox):
 
-    ⚙ General      Community-Links (Discord, Ko-fi …), Sprache, Ordner, Über
-    📸 Shot        Rahmengröße, linkes/rechtes Auge, Symbol-Ecke, 🔁 Lens, 🪟 Panel, 🥽 Overlay, Ausnahme-Programme
+    ⚙ General      Community-Links (Discord, Ko-fi …), Sprache, Main-Seite, Ordner, Aufräumen,
+                   📤 Ausgabe (OSC / Textdatei), ⚙ Ohne App (Hintergrund-Dienst), Über
+    📸 Shot        Rahmengröße, Auge, 📐 Seitenverhältnis, 🎞 GIF, Erkennung & Tasten, Symbol-Ecke, Ausnahmen
+    🥽 VR          🪟 Panel + 🔘 Knopf, 🔁 Lens, 🥽 Overlay
     🌐 Übersetzung Dienst (Lingva, Google, LibreTranslate, DeepL, eigene API,
                    KI: Claude Code / Gemini / ChatGPT / eigener Befehl), Zielsprache
 
-Die Shot-Einstellungen werden in layer.json gespeichert – der Layer übernimmt
+Die Shot- und VR-Einstellungen werden in layer.json gespeichert – der Layer übernimmt
 Änderungen sofort, auch während das Spiel läuft.
 
 Neuer Tab? In build_tabs() eine Zeile ("Name", self.build_xyz()) ergänzen.
@@ -19,9 +21,9 @@ from PyQt6.QtCore import QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QGridLayout, QHBoxLayout, QLabel,
                              QLineEdit, QListWidget, QPlainTextEdit, QPushButton, QRadioButton, QSlider,
-                             QVBoxLayout, QWidget)
+                             QSpinBox, QVBoxLayout, QWidget)
 
-from core import clipboard, config, i18n, layer_config, ocr, overlay, paths, translation
+from core import config, i18n, layer_config, ocr, output, overlay, paths, translation
 from core import llm_translator as L
 from core import vision
 from core import translators as T
@@ -114,8 +116,6 @@ class OptionsPage(QWidget):
     translation_changed = pyqtSignal()
     # Erkennung (auto/manuell) oder Tasten geändert → Main-Seite passt ihr Dropdown an
     layer_changed = pyqtSignal()
-    # Ergebnis der WayVR-Design-Installation (Hintergrund-Thread): (ok, Text)
-    _wayvr_done = pyqtSignal(bool, str)
     # Ergebnis des Test-Knopfs (kommt aus einem Hintergrund-Thread)
     _test_done = pyqtSignal(str)
     # Ergebnis der LibreTranslate-Suche (Adresse oder "")
@@ -132,9 +132,11 @@ class OptionsPage(QWidget):
         layout.addWidget(page_title(tr("nav_options")))
 
         # --- Tab-Knöpfe oben ------------------------------------------
+        # Reihenfolge = TAB_… unten (ui/welcome.py springt direkt zu Übersetzung)
         tabs = [
             ("⚙  " + tr("tab_general"), self.build_general()),
             ("📸  " + tr("tab_shot"), self.build_shot()),
+            ("🥽  " + tr("tab_vr"), self.build_vr()),
             ("🌐  " + tr("tab_translation"), self.build_translation()),
         ]
         row = QHBoxLayout()
@@ -197,8 +199,12 @@ class OptionsPage(QWidget):
         self.add_main_page_card(lay)
         self.add_folders_card(lay)
         self.add_cleanup_card(lay)
-        self.add_wayvr_card(lay)
-        self.add_clipboard_card(lay)
+
+        # --- 📤 Ausgabe: OSC / Textdatei (z. B. für ein OSC-DreamChatbox-Plugin) ---
+        self.add_output_card(lay)
+
+        # --- ⚙ Ohne App (Hintergrund-Dienst) ---
+        self.add_daemon_card(lay)
 
         card, box = make_card(tr("about"))
         box.addWidget(QLabel(f"LinuxVR-ViewShot  v{VERSION}"))
@@ -271,23 +277,17 @@ class OptionsPage(QWidget):
                       alignment=Qt.AlignmentFlag.AlignLeft)
         lay.addWidget(card)
 
+        # --- 📐 Seitenverhältnis ---
+        self.add_aspect_card(lay)
+
+        # --- 🎞 GIF ---
+        self.add_gif_card(lay)
+
         # --- Erkennung & Tasten ---
         self.add_buttons_card(lay)
 
         # --- Ecke des Typ-Symbols ---
         self.add_icon_position_card(lay)
-
-        # --- 🔁 Lens ---
-        self.add_live_card(lay)
-
-        # --- 🪟 Übersetzungs-Panel in VR ---
-        self.add_panel_card(lay)
-
-        # --- 🥽 Übersetzung in VR über dem Original ---
-        self.add_overlay_card(lay)
-
-        # --- ⚙ Ohne App (Hintergrund-Dienst) ---
-        self.add_daemon_card(lay)
 
         # --- Ausnahmen ---
         card, box = make_card(tr("excluded"))
@@ -307,6 +307,17 @@ class OptionsPage(QWidget):
         box.addLayout(row)
         box.addWidget(dim(tr("excluded_restart")))
         lay.addWidget(card)
+        return w
+
+    # ------------------------------------------------------------------
+    # Tab: VR – was in VR angezeigt wird: 🪟 Panel, 🔁 Lens, 🥽 Overlay
+    # (auch layer.json, wirkt sofort)
+    # ------------------------------------------------------------------
+    def build_vr(self) -> QWidget:
+        w, lay = self.tab_widget()
+        self.add_panel_card(lay)     # 🪟 Übersetzungs-Panel + 🔘 Knopf
+        self.add_live_card(lay)      # 🔁 Lens
+        self.add_overlay_card(lay)   # 🥽 Übersetzung über dem Original
         return w
 
     def add_buttons_card(self, lay: QVBoxLayout):
@@ -359,6 +370,57 @@ class OptionsPage(QWidget):
             combo.blockSignals(False)
         manual = fresh["detect_mode"] == "manual"
         self.buttons_note.setText(tr("buttons_manual_note") if manual else tr("buttons_auto_note"))
+
+    def add_aspect_card(self, lay: QVBoxLayout):
+        """📐 Festes Seitenverhältnis (frei / 1:1 / 16:9) – der Rahmen in VR passt sich sofort an."""
+        card, box = make_card("📐  " + tr("aspect_card"))
+        box.addWidget(dim(tr("aspect_hint")))
+        row = QHBoxLayout()
+        self.aspect_group = QButtonGroup(self)  # mit Parent, sonst räumt Python die Gruppe weg
+        current = self.layer.get("aspect", layer_config.DEFAULTS["aspect"])
+        names = {"free": tr("aspect_free"), "1:1": "1:1", "16:9": "16:9"}
+        for value in layer_config.ASPECTS:
+            radio = QRadioButton(names[value])
+            radio.setChecked(value == current)
+            radio.toggled.connect(lambda on, v=value: on and self.layer_set("aspect", v))
+            self.aspect_group.addButton(radio)
+            row.addWidget(radio)
+        row.addStretch()
+        box.addLayout(row)
+        lay.addWidget(card)
+
+    def add_gif_card(self, lay: QVBoxLayout):
+        """🎞 Auslöser gedrückt halten → GIF (kurz drücken bleibt ein Foto)."""
+        card, box = make_card("🎞  " + tr("gif_card"))
+        box.addWidget(dim(tr("gif_hint")))
+        on = QCheckBox(tr("gif_on"))
+        on.setChecked(bool(self.layer.get("gif_hold", layer_config.DEFAULTS["gif_hold"])))
+        on.toggled.connect(lambda checked: self.layer_set("gif_hold", checked))
+        box.addWidget(on)
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel(tr("gif_max")))
+        slider = QSlider(Qt.Orientation.Horizontal)
+        slider.setRange(1, 15)  # Sekunden
+        slider.setValue(int(self.layer.get("gif_max_s", layer_config.DEFAULTS["gif_max_s"])))
+        row.addWidget(slider, 1)
+        value = QLabel()
+        value.setMinimumWidth(50)
+        row.addWidget(value)
+        box.addLayout(row)
+
+        def max_changed(secs: int):
+            value.setText(tr("live_seconds", s=secs))
+            self.layer_set("gif_max_s", secs)
+
+        value.setText(tr("live_seconds", s=slider.value()))
+        slider.valueChanged.connect(max_changed)
+        box.addWidget(dim(tr("gif_note")))
+        lay.addWidget(card)
+
+    def layer_set(self, key: str, value):
+        """Einen Wert in layer.json ändern (frisch geladen → überschreibt nichts anderes)."""
+        self.layer[key] = layer_config.update(key, value)[key]
 
     def add_icon_position_card(self, lay: QVBoxLayout):
         """Ecke für das Typ-Symbol (🪄 / 🖼 / 📝 / 🔳 / 🔁)."""
@@ -668,123 +730,6 @@ class OptionsPage(QWidget):
             check.toggled.connect(lambda on, k=key: self.save_cfg(k, on))
             box.addWidget(check)
         lay.addWidget(card)
-
-    def add_clipboard_card(self, lay: QVBoxLayout):
-        """Kopiertes zusätzlich per wl-copy an den Desktop (sonst bleibt es in WayVR)."""
-        card, box = make_card(tr("clip_title"))
-        box.addWidget(dim(tr("clip_hint")))
-        check = QCheckBox(tr("clip_mirror"))
-        check.setChecked(bool(self.cfg["clipboard_mirror"]))
-
-        def toggled(on: bool):
-            clipboard.enabled = on
-            self.save_cfg("clipboard_mirror", on)
-
-        check.toggled.connect(toggled)
-        box.addWidget(check)
-        row = QHBoxLayout()
-        self.clip_status = QLabel()
-        self.clip_status.setWordWrap(True)
-        self.clip_status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        row.addWidget(self.clip_status, 1)
-        # 📦 Knopf: wl-clipboard mit dem Paketmanager der Distro installieren
-        self.clip_btn = button("📦  " + tr("clip_install"), self.install_wl_clipboard, "sendbtn")
-        self.clip_btn.setMinimumHeight(40)
-        row.addWidget(self.clip_btn)
-        box.addLayout(row)
-        self.clip_process = None
-        self.update_clip_status()
-        lay.addWidget(card)
-
-    def update_clip_status(self, failed: bool = False):
-        from core import pkginstall
-        found = shutil.which("wl-copy") is not None
-        if found:
-            text = tr("clip_ok")
-        else:
-            text = tr("clip_missing", cmd=pkginstall.manual_command("wl-clipboard"))
-            if failed:
-                text = tr("clip_install_failed") + "\n" + text
-        self.clip_status.setText(text)
-        self.clip_status.setObjectName("ok" if found else "bad")
-        self.clip_status.style().polish(self.clip_status)
-        can = not found and pkginstall.install_command("wl-clipboard") is not None
-        self.clip_btn.setVisible(can)
-        self.clip_btn.setEnabled(True)
-        self.clip_btn.setText("📦  " + tr("clip_install"))
-
-    def install_wl_clipboard(self):
-        """pkexec fragt das Passwort in einem Fenster ab – kein Terminal nötig."""
-        from PyQt6.QtCore import QProcess
-        from core import pkginstall
-        cmd = pkginstall.install_command("wl-clipboard")
-        if cmd is None or self.clip_process is not None:
-            return
-        self.clip_btn.setEnabled(False)
-        self.clip_btn.setText("⏳  " + tr("clip_installing"))
-        self.clip_status.setText(tr("clip_password"))
-        self.clip_process = QProcess(self)
-
-        def finished(code, _status):
-            self.clip_process = None
-            self.update_clip_status(failed=code != 0)
-
-        self.clip_process.finished.connect(finished)
-        self.clip_process.start(cmd[0], cmd[1:])
-
-    def add_wayvr_card(self, lay: QVBoxLayout):
-        """WayVR-Design von Cubee + ViewShot-Knopf auf der Uhr."""
-        from core import wayvr_theme
-        card, box = make_card(tr("wayvr_title"))
-        box.addWidget(dim(tr("wayvr_hint")))
-        row = QHBoxLayout()
-        self.wayvr_btn = button("", self.install_wayvr, "sendbtn")
-        self.wayvr_btn.setMinimumHeight(40)
-        row.addWidget(self.wayvr_btn)
-        row.addWidget(button("🐙  " + tr("wayvr_source"), open_url(wayvr_theme.SOURCE_URL)))
-        row.addStretch()
-        box.addLayout(row)
-        self.wayvr_status = QLabel()
-        self.wayvr_status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        box.addWidget(self.wayvr_status)
-        self._wayvr_done.connect(self.on_wayvr_done)
-        self.update_wayvr_btn()
-        lay.addWidget(card)
-
-    def update_wayvr_btn(self):
-        from core import wayvr_theme
-        key = "wayvr_reinstall" if wayvr_theme.installed() else "wayvr_install"
-        self.wayvr_btn.setText("🎨  " + tr(key))
-        self.wayvr_btn.setEnabled(True)
-
-    def install_wayvr(self):
-        from core import wayvr_theme
-        self.wayvr_btn.setEnabled(False)
-        self.wayvr_btn.setText("⏳  " + tr("wayvr_installing"))
-        self.wayvr_status.clear()
-
-        def work():  # Hintergrund – KEINE Widgets anfassen!
-            try:
-                r = wayvr_theme.install()
-                lines = [tr("wayvr_ok", n=r["files"], path=wayvr_theme.WAYVR_DIR)]
-                if r["backup"]:
-                    lines.append(tr("wayvr_backup", path=r["backup"]))
-                if not r["button"]:
-                    lines.append(tr("wayvr_no_button"))
-                if not r["wayvrctl"]:
-                    lines.append(tr("wayvr_no_ctl"))
-                lines.append(tr("wayvr_restart"))
-                self._wayvr_done.emit(True, "\n".join(lines))
-            except Exception as e:  # noqa: BLE001 – Netz, Rechte, GitHub geändert …
-                self._wayvr_done.emit(False, f"{tr('wayvr_failed')}: {e}")
-
-        threading.Thread(target=work, daemon=True).start()
-
-    def on_wayvr_done(self, ok: bool, text: str):
-        self.wayvr_status.setObjectName("ok" if ok else "bad")
-        self.wayvr_status.style().polish(self.wayvr_status)
-        self.wayvr_status.setText(text)
-        self.update_wayvr_btn()
 
     def save_cfg(self, key: str, value):
         self.cfg[key] = value
@@ -1113,6 +1058,68 @@ class OptionsPage(QWidget):
         self.sync_translation()
         return w
 
+    def add_output_card(self, lay: QVBoxLayout):
+        """📤 Übersetzung weitergeben: 📡 OSC und/oder 📄 JSON-Datei – beides einzeln an/aus."""
+        card, box = make_card("📤  " + tr("out_card"))
+        box.addWidget(dim(tr("out_hint")))
+
+        # 📡 OSC
+        osc = QCheckBox(tr("out_osc"))
+        osc.setChecked(bool(self.cfg.get("out_osc")))
+        osc.toggled.connect(lambda on: self.save_cfg("out_osc", on))
+        box.addWidget(osc)
+        row = QHBoxLayout()
+        row.addWidget(QLabel(tr("out_osc_host")))
+        host = QLineEdit(str(self.cfg.get("out_osc_host") or output.DEFAULTS["out_osc_host"]))
+        host.setPlaceholderText(output.DEFAULTS["out_osc_host"])
+        host.editingFinished.connect(lambda: self.save_cfg("out_osc_host", host.text().strip()
+                                                           or output.DEFAULTS["out_osc_host"]))
+        row.addWidget(host, 1)
+        row.addWidget(QLabel(tr("out_osc_port")))
+        port = QSpinBox()
+        port.setRange(1, 65535)
+        port.setValue(int(self.cfg.get("out_osc_port") or output.DEFAULTS["out_osc_port"]))
+        port.valueChanged.connect(lambda v: self.save_cfg("out_osc_port", v))
+        row.addWidget(port)
+        box.addLayout(row)
+        box.addWidget(dim(tr("out_osc_note", address=output.OSC_ADDRESS)))
+
+        # 📄 Textdatei
+        file_box = QCheckBox(tr("out_file"))
+        file_box.setChecked(bool(self.cfg.get("out_file")))
+        file_box.toggled.connect(lambda on: self.save_cfg("out_file", on))
+        box.addWidget(file_box)
+        row = QHBoxLayout()
+        path = QLineEdit(str(self.cfg.get("out_file_path") or ""))
+        path.setPlaceholderText(str(output.DEFAULT_FILE))
+        path.editingFinished.connect(lambda: self.save_cfg("out_file_path", path.text().strip()))
+        row.addWidget(path, 1)
+        def open_folder():
+            folder = output.file_path(self.cfg).parent
+            folder.mkdir(parents=True, exist_ok=True)
+            open_path(folder)
+
+        row.addWidget(button("📂  " + tr("open"), open_folder))
+        box.addLayout(row)
+        box.addWidget(dim(tr("out_file_note")))
+
+        # 🧪 Test
+        row = QHBoxLayout()
+        result = QLabel()
+        result.setWordWrap(True)
+
+        def test():
+            if not (self.cfg.get("out_osc") or self.cfg.get("out_file")):
+                result.setText(tr("out_test_off"))
+                return
+            error = output.publish(self.cfg, tr("out_test_text"), "", "test")
+            result.setText(f"✘  {error}" if error else "✔  " + tr("out_test_ok"))
+
+        row.addWidget(button("🧪  " + tr("out_test"), test, "sendbtn"))
+        row.addWidget(result, 1)
+        box.addLayout(row)
+        lay.addWidget(card)
+
     def add_task_rows(self, grid: QGridLayout, row: int):
         """Kontext erklären / Frage beantworten: [KI ▾] [Modell ▾] – je 2 Zeilen (+ Hinweis).
         Das Modell gehört zur KI (dasselbe wie bei ihr eingestellt)."""
@@ -1309,7 +1316,7 @@ class OptionsPage(QWidget):
         status, btn = self.llm_status[method]
         for _s, b in self.llm_status.values():
             b.setEnabled(False)
-        btn.setText("⏳  " + tr("clip_installing"))
+        btn.setText("⏳  " + tr("pkg_installing"))
 
         def next_step():
             if not steps:
@@ -1322,7 +1329,7 @@ class OptionsPage(QWidget):
                 self.after_llm_install(method, tr("tr_llm_install_failed"))
                 return
             if argv[0] == "pkexec":
-                status.setText(tr("clip_password"))
+                status.setText(tr("pkg_password"))
             else:
                 shown = argv[2] if argv[:2] == ["bash", "-c"] else " ".join(argv[1:])
                 status.setText(tr("tr_llm_installing", cmd=shown))

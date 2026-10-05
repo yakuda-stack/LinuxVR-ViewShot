@@ -20,6 +20,7 @@ mod config;
 mod dispatch;
 mod frame;
 mod gesture;
+mod gifrec;
 mod icons;
 #[macro_use]
 mod log;
@@ -131,6 +132,32 @@ struct SessionData {
     button_failed: bool,
     /// 🔘 Knopf: Klick / Greifen / Größe
     button_input: panel::Interaction,
+    /// 🎞 GIF soll starten – der nächste Frame legt den Ausschnitt fest
+    gif_start: bool,
+    /// 🎞 laufende GIF-Aufnahme
+    gif: Option<GifRec>,
+}
+
+/// 🎞 GIF-Aufnahme: fester Ausschnitt (wie 🔁 Lens am Kopf fest) + Bild-Takt
+struct GifRec {
+    img: frame::Rect,
+    rect: frame::Rect,
+    depth: f32,
+    started: Instant,
+    next: Instant,
+    rec: gifrec::Recorder,
+}
+
+/// 🎞 Aufnahme beenden (falls eine läuft). `true` = es lief eine.
+fn stop_gif(gif: &mut Option<GifRec>, start: &mut bool) -> bool {
+    *start = false;
+    match gif.take() {
+        Some(g) => {
+            g.rec.finish();
+            true
+        }
+        None => false,
+    }
 }
 
 /// Live-Modus: Ausschnitt (am Kopf fest, wie ein Untertitel-Fenster) + nächstes Foto
@@ -722,8 +749,15 @@ unsafe fn update_gesture(nx: &Next, session: xr::Session) {
         hand_distance: left.map(|p| (p.x * p.x + p.y * p.y + p.z * p.z).sqrt()),
     };
 
-    let buttons = config::get().buttons();
-    match s.gesture.update(&inputs, Instant::now(), &buttons) {
+    let cfg = config::get();
+    let buttons = cfg.buttons();
+    // 🔁 Lens gewählt? Dann startet Halten kein GIF, sondern Lens (wie ein Foto)
+    let lens = buttons.mode.is_some() && icons::current(cfg.manual()) == icons::PhotoType::Lens;
+    let mut event = s.gesture.update(&inputs, Instant::now(), &buttons);
+    if event == gesture::Event::GifStart && lens {
+        event = gesture::Event::TakePhoto;
+    }
+    match event {
         gesture::Event::FrameActivated => {
             vibrate(nx, session, a, 40, 0.3);
             if s.live.take().is_some() {
@@ -743,8 +777,31 @@ unsafe fn update_gesture(nx: &Next, session: xr::Session) {
             vibrate(nx, session, a, 25, 0.4);
             log!("Typ gewechselt: {}", icons::cycle(config::get().manual()).as_str());
         }
-        gesture::Event::FrameClosed => log!("Rahmen geschlossen"),
+        gesture::Event::GifStart => {
+            vibrate(nx, session, a, 60, 0.6);
+            s.gif_start = true;
+            log!("GIF: Auslöser gehalten – Aufnahme startet");
+        }
+        gesture::Event::GifStop => {
+            if stop_gif(&mut s.gif, &mut s.gif_start) {
+                vibrate(nx, session, a, 80, 0.8);
+                s.flash_until = Some(Instant::now() + std::time::Duration::from_millis(150));
+            }
+        }
+        gesture::Event::FrameClosed => {
+            if stop_gif(&mut s.gif, &mut s.gif_start) {
+                vibrate(nx, session, a, 80, 0.8);
+            }
+            log!("Rahmen geschlossen");
+        }
         gesture::Event::None => {}
+    }
+    // 🎞 Höchstlänge erreicht → von selbst beenden (Auslöser darf weiter gedrückt sein)
+    if s.gif.as_ref().is_some_and(|g| g.started.elapsed() >= cfg.gif_max()) {
+        stop_gif(&mut s.gif, &mut s.gif_start);
+        vibrate(nx, session, a, 80, 0.8);
+        s.flash_until = Some(Instant::now() + std::time::Duration::from_millis(150));
+        log!("GIF: Höchstlänge {:?} erreicht", cfg.gif_max());
     }
 }
 
@@ -797,6 +854,8 @@ unsafe extern "system" fn create_session(
             button_sc: None,
             button_failed: false,
             button_input: panel::Interaction::button(),
+            gif_start: false,
+            gif: None,
             vk_binding,
             vk: None,
             vk_failed: false,
@@ -983,6 +1042,7 @@ unsafe extern "system" fn end_frame(session: xr::Session, info: *const xr::Frame
     daemon_hello(false);
     // 1) Foto – nur aus den Ebenen des Spiels, der Rahmen ist also nie im Bild
     guard("capture", || try_capture(&nx, session, &*info));
+    guard("gif", || try_gif(&nx, session, &*info));
 
     // 2) 🥽 Übersetzung über dem Original, darüber der sichtbare Rahmen
     let mut quads = guard("overlay", || build_overlay_quads(&nx, session, &*info)).unwrap_or_default();
@@ -1085,7 +1145,7 @@ unsafe fn frame_geometry(
     let img = image_rect(view);
     let hand = |i: usize| locate(nx, s.spaces[i], proj.space, time).and_then(|p| frame::project(&eye, &view.fov, p));
     let (h0, h1) = (hand(0)?, hand(1)?);
-    let rect = frame::crop_rect(img, &view.fov, Some(h0), Some(h1), cfg.inset_m());
+    let rect = frame::crop_rect(img, &view.fov, Some(h0), Some(h1), cfg.inset_m(), cfg.aspect.ratio());
     Some((img, rect, eye, view.fov, (h0.depth + h1.depth) * 0.5))
 }
 
@@ -1305,12 +1365,22 @@ unsafe fn build_frame_quads(nx: &Next, session: xr::Session, info: &xr::FrameEnd
     let flash = s.flash_until.is_some_and(|t| now < t);
     let active = matches!(
         s.gesture.state,
-        gesture::State::Active | gesture::State::Pressing(..) | gesture::State::Cooldown
+        gesture::State::Active
+            | gesture::State::Pressing(..)
+            | gesture::State::Holding(..)
+            | gesture::State::Recording(_)
+            | gesture::State::Cooldown
     );
     if s.actions.is_none() {
         return Vec::new();
     }
     let Some(proj) = find_projection(info) else { return Vec::new() };
+    // 🎞 GIF läuft: fester Ausschnitt, blinkt rot/weiß (wie „REC“)
+    if let Some(r) = s.gif.as_ref() {
+        let layer = if (r.started.elapsed().as_millis() / 500) % 2 == 0 { 0 } else { 1 };
+        let (img, rect, depth) = (r.img, r.rect, r.depth);
+        return fixed_frame_quads(nx, session, s, proj, (img, rect, depth), layer, 0.008);
+    }
     if !(active || flash) {
         // Live-Modus: blauer Rahmen um den Bereich, der immer wieder fotografiert wird
         let Some(live) = s.live else { return Vec::new() };
@@ -1712,15 +1782,29 @@ unsafe fn live_frame_quads(
     proj: &xr::CompositionLayerProjection,
     live: Live,
 ) -> Vec<xr::CompositionLayerQuad> {
+    fixed_frame_quads(nx, session, s, proj, (live.img, live.rect, live.depth), 2, 0.005)
+}
+
+/// Rahmen um einen festen Ausschnitt (am Kopf fest): 🔁 Lens (blau) und 🎞 GIF (rot/weiß).
+/// `layer` = Farbe aus ensure_frame_swapchain, `thick` = Linienstärke pro Meter Tiefe.
+unsafe fn fixed_frame_quads(
+    nx: &Next,
+    session: xr::Session,
+    s: &mut SessionData,
+    proj: &xr::CompositionLayerProjection,
+    (img, rect, depth): (frame::Rect, frame::Rect, f32),
+    layer: u32,
+    thick: f32,
+) -> Vec<xr::CompositionLayerQuad> {
     let cfg = config::get();
     let (view, eye) = choose_view(proj, cfg.eye_t());
-    if image_rect(view) != live.img {
+    if image_rect(view) != img {
         return Vec::new();
     }
     let fov = view.fov;
     let Some(sc) = ensure_frame_swapchain(nx, session, s) else { return Vec::new() };
-    let thickness = live.depth * 0.005;
-    frame::edge_quads(&eye, &fov, live.img, live.rect, live.depth, thickness)
+    let thickness = depth * thick;
+    frame::edge_quads(&eye, &fov, img, rect, depth, thickness)
         .iter()
         .map(|e| xr::CompositionLayerQuad {
             ty: xr::CompositionLayerQuad::TYPE,
@@ -1734,7 +1818,7 @@ unsafe fn live_frame_quads(
                     offset: xr::Offset2Di { x: 0, y: 0 },
                     extent: xr::Extent2Di { width: 4, height: 4 },
                 },
-                image_array_index: 2,
+                image_array_index: layer,
             },
             pose: e.pose,
             size: xr::Extent2Df { width: e.width, height: e.height },
@@ -1844,7 +1928,7 @@ unsafe fn try_capture(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) 
         };
         let (h0, h1) = (hand(0), hand(1));
         let inset = cfg.inset_m();
-        let rect = frame::crop_rect(img, &view.fov, h0, h1, inset);
+        let rect = frame::crop_rect(img, &view.fov, h0, h1, inset, cfg.aspect.ratio());
         log!(
             "Bild {img:?}, Hände {h0:?} {h1:?}, Rand {:.0} cm, Auge {:.0} % rechts → Ausschnitt {rect:?}",
             inset * 100.0,
@@ -1913,6 +1997,83 @@ unsafe fn try_capture(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) 
             }
         }
         Err(e) => log!("Kopieren fehlgeschlagen: {e}"),
+    }
+}
+
+/// Pixel eines Ausschnitts aus dem zuletzt freigegebenen Bild dieses Auges kopieren.
+unsafe fn grab(s: &mut SessionData, view: &xr::CompositionLayerProjectionView, rect: frame::Rect) -> Result<Vec<u8>, String> {
+    let sub = view.sub_image;
+    let sc = s.swapchains.get(&sub.swapchain.into_raw()).ok_or("Swapchain unbekannt")?;
+    if !save::is_supported(sc.format) {
+        return Err(format!("Bildformat {} wird nicht unterstützt", sc.format));
+    }
+    if !sc.transfer_ok || sc.sample_count > 1 {
+        return Err("Swapchain erlaubt kein Kopieren".into());
+    }
+    let image = sc.last_released.and_then(|i| sc.images.get(i as usize)).copied().ok_or("kein freigegebenes Bild")?;
+    if !ensure_vk(s) {
+        return Err("kein Vulkan".into());
+    }
+    let vk = s.vk.as_ref().ok_or("kein Vulkan")?;
+    use ash::vk::Handle as _;
+    vk.copy_region(ash::vk::Image::from_raw(image), sub.image_array_index, (rect.x, rect.y, rect.w as u32, rect.h as u32))
+}
+
+/// 🎞 GIF: beim Start den Ausschnitt festlegen, danach im Takt (gif_fps) Bilder kopieren.
+unsafe fn try_gif(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) {
+    let mut g = state();
+    let Some(s) = g.session_mut(session) else { return };
+    if !s.gif_start && s.gif.is_none() {
+        return;
+    }
+    let now = Instant::now();
+    if s.gif.as_ref().is_some_and(|r| now < r.next) {
+        return;
+    }
+    let Some(proj) = find_projection(info) else { return };
+    let cfg = config::get();
+    let (view, eye) = choose_view(proj, cfg.eye_t());
+    let img = image_rect(view);
+    if s.gif_start {
+        s.gif_start = false;
+        let hand = |i: usize| {
+            locate(nx, s.spaces[i], proj.space, info.display_time).and_then(|p| frame::project(&eye, &view.fov, p))
+        };
+        let (h0, h1) = (hand(0), hand(1));
+        let rect = frame::crop_rect(img, &view.fov, h0, h1, cfg.inset_m(), cfg.aspect.ratio());
+        if rect == img {
+            log!("GIF: Hände zu nah / außerhalb – nicht gestartet");
+            return;
+        }
+        let depth = match (h0, h1) {
+            (Some(a), Some(b)) => (a.depth + b.depth) * 0.5,
+            _ => 0.6,
+        };
+        let Some(format) = s.swapchains.get(&view.sub_image.swapchain.into_raw()).map(|sc| sc.format) else {
+            log!("GIF: Swapchain unbekannt");
+            return;
+        };
+        let rec = gifrec::Recorder::start(save::gif_name(), format, rect.w as u32, rect.h as u32, cfg.gif_interval());
+        s.gif = Some(GifRec { img, rect, depth, started: now, next: now, rec });
+        log!("GIF: Aufnahme gestartet, Ausschnitt {rect:?}, höchstens {:?}", cfg.gif_max());
+    }
+    let Some(rect) = s.gif.as_ref().map(|r| r.rect) else { return };
+    if s.gif.as_ref().is_some_and(|r| r.img != img) {
+        log!("GIF: Bildgröße hat sich geändert – Aufnahme beendet");
+        stop_gif(&mut s.gif, &mut s.gif_start);
+        return;
+    }
+    match grab(s, view, rect) {
+        Ok(raw) => {
+            if let Some(r) = s.gif.as_mut() {
+                r.rec.push(raw, now);
+                r.next = now + cfg.gif_interval();
+            }
+        }
+        Err(e) => {
+            log!("GIF: {e} – Aufnahme beendet");
+            stop_gif(&mut s.gif, &mut s.gif_start);
+        }
     }
 }
 

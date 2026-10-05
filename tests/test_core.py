@@ -97,15 +97,6 @@ def test_layer_choices_match_rust_enums():
     assert set(variants("IconPosition")) == set(layer_config.ICON_POSITIONS)
 
 
-# ------------------------------------------------------- WayVR-Knopf
-def test_chat_button_is_replaced():
-    from core import wayvr_theme
-    xml = ('<div>\n<Button macro="button_style" _press="::OscSend /chatbox/input" _arg0="">\n'
-           '  <sprite src="watch/chat.svg" />\n</Button>\n</div>')
-    new, n = wayvr_theme.CHAT_BUTTON.subn(wayvr_theme.viewshot_button(Path("/x/open.sh")), xml)
-    assert n == 1 and "::ShellExec '/x/open.sh'" in new and "OscSend" not in new
-
-
 # ----------------------------------------------------------- Version
 def test_version_everywhere_the_same():
     from core.version import VERSION
@@ -159,19 +150,6 @@ def test_main_dropdown_favorites(monkeypatch):
     assert translation.menu_methods(cfg) == ["deepl"]
     cfg["tr_favorites"] = ["llm_gemini"]  # Favorit nicht eingerichtet → wie bisher
     assert translation.menu_methods(cfg) == ["lingva", "google", "deepl"]
-
-
-# ------------------------------------------------------ Zwischenablage
-def test_clipboard_finds_other_wayland_displays(tmp_path, monkeypatch):
-    import socket
-    from core import clipboard
-    for name in ("wayland-0", "wayland-1"):
-        s = socket.socket(socket.AF_UNIX)
-        s.bind(str(tmp_path / name))
-    (tmp_path / "wayland-0.lock").touch()
-    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
-    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-1")  # App läuft in WayVR
-    assert clipboard.other_displays() == ["wayland-0"]
 
 
 # ------------------------------------------------------ Paket per Knopf
@@ -1014,3 +992,52 @@ def test_welcome_on_first_start(tmp_path, monkeypatch):
     monkeypatch.setattr(welcome, "needs_install", lambda: False)
     welcome.run(win)
     assert len(shown) == 2 and installs == [1]
+
+
+# ------------------------------------------------- 📤 Ausgabe (OSC / Datei)
+def test_osc_message():
+    """Gleiche Bytes wie daemon/src/output.rs::same_bytes_as_python."""
+    from core import output
+    assert output.osc_message("/a", "äb") == b"/a\0\0,s\0\0\xc3\xa4b\0"
+    msg = output.osc_message(output.OSC_ADDRESS, "Hallo", "", "photo")
+    assert len(msg) % 4 == 0 and b",sss\0\0\0\0" in msg
+
+
+def test_output_publish_osc_and_file(tmp_path):
+    import socket
+    from core import output
+    rx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    rx.bind(("127.0.0.1", 0))
+    rx.settimeout(2)
+    target = tmp_path / "sub" / "tr.json"
+    cfg = dict(output.DEFAULTS, out_osc=True, out_osc_port=rx.getsockname()[1],
+               out_file=True, out_file_path=str(target))
+    assert output.publish(cfg, "  Hallo Welt ", "Hello world", "lens") == ""
+    data = rx.recv(4096)
+    assert data.startswith(b"/viewshot/translation\0\0\0,sss\0") and b"Hallo Welt\0" in data and b"lens" in data
+    import json
+    entry = json.loads(target.read_text(encoding="utf-8"))
+    assert (entry["translation"], entry["original"], entry["source"]) == ("Hallo Welt", "Hello world", "lens")
+    first = entry["id"]
+    import time
+    time.sleep(0.01)
+    output.publish(cfg, "Hallo Welt", "Hello world", "lens")  # gleicher Text → neue id
+    rx.recv(4096)
+    assert json.loads(target.read_text(encoding="utf-8"))["id"] > first
+    # aus = nichts passiert, leerer Text = nichts passiert
+    assert output.publish(dict(output.DEFAULTS), "x") == ""
+    assert output.publish(cfg, "   ") == ""
+    rx.close()
+
+
+def test_output_defaults_in_config():
+    from core import config, output
+    for key, value in output.DEFAULTS.items():
+        assert config.DEFAULTS[key] == value
+
+
+def test_aspect_choices_match_rust():
+    from core import layer_config
+    rs = (ROOT / "layer/src/config.rs").read_text(encoding="utf-8")
+    body = re.search(r"pub enum Aspect \{(.*?)\n\}", rs, re.S).group(1)
+    assert tuple(re.findall(r'rename = "([^"]+)"', body)) == layer_config.ASPECTS

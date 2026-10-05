@@ -1,6 +1,6 @@
 [package]
 name = "linuxvr-viewshot-daemon"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "Background service: OCR + translation + VR panel without the desktop app"
@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["load-dynamic", "std"] }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif"] }
 png = "0.18"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }

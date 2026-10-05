@@ -12,6 +12,10 @@
 //!                                 "manual" = Typ in VR wählen (Symbol am Rahmen)
 //!   "shutter": "right",           Auslöser: "left" / "right" / "both"
 //!   "mode_button": "left",        Typ wechseln (nur manual): "left" / "right" / "both"
+//!   "aspect": "free",             📐 Seitenverhältnis des Fotos: "free" / "1:1" / "16:9"
+//!   "gif_hold": true,             🎞 Auslöser gedrückt halten = GIF aufnehmen (max. gif_max_s)
+//!   "gif_max_s": 15,              längste GIF-Aufnahme in Sekunden (1–15)
+//!   "gif_fps": 10,                Bilder pro Sekunde im GIF (5–15)
 //!   "icon_position": "bottom_left" Symbol-Position (manual): "bottom_left" / "bottom_right" / "top_left" / "top_right"
 //!   "live_interval_s": 3,         🔁 Lens: alle so viele Sekunden neu fotografieren (→ live/live.png)
 //!   "overlay": false,             🥽 🔁 Lens: Übersetzung über dem Original (overlay/overlay.png, malt die UI)
@@ -57,6 +61,28 @@ pub enum DaemonMode {
     Selected,
 }
 
+/// 📐 Seitenverhältnis des Fotos – wie bei einer echten Kamera
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub enum Aspect {
+    #[serde(rename = "free")]
+    Free,
+    #[serde(rename = "1:1")]
+    Square,
+    #[serde(rename = "16:9")]
+    Wide,
+}
+
+impl Aspect {
+    /// Breite / Höhe (None = frei, wie die Hände es aufspannen)
+    pub fn ratio(self) -> Option<f32> {
+        match self {
+            Self::Free => None,
+            Self::Square => Some(1.0),
+            Self::Wide => Some(16.0 / 9.0),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IconPosition {
@@ -85,6 +111,12 @@ pub struct LayerConfig {
     pub shutter: Combo,
     pub mode_button: Combo,
     pub icon_position: IconPosition,
+    /// 📐 Seitenverhältnis (frei / 1:1 / 16:9)
+    pub aspect: Aspect,
+    /// 🎞 Auslöser halten = GIF (aus = Foto sofort beim Drücken, wie bisher)
+    pub gif_hold: bool,
+    pub gif_max_s: f32,
+    pub gif_fps: f32,
     pub live_interval_s: f32,
     pub overlay: bool,
     pub panel: bool,
@@ -113,6 +145,10 @@ impl Default for LayerConfig {
             shutter: Combo::Right,
             mode_button: Combo::Left,
             icon_position: IconPosition::BottomLeft,
+            aspect: Aspect::Free,
+            gif_hold: true,
+            gif_max_s: 15.0,
+            gif_fps: 10.0,
             live_interval_s: 3.0,
             overlay: false,
             panel: true,
@@ -143,11 +179,21 @@ impl LayerConfig {
     /// nie auf derselben Taste wie der Auslöser (dann gewinnt der Auslöser).
     pub fn buttons(&self) -> crate::gesture::Buttons {
         let mode = (self.mode_button != self.shutter).then_some(self.mode_button);
-        crate::gesture::Buttons { shutter: self.shutter, mode }
+        crate::gesture::Buttons { shutter: self.shutter, mode, hold: self.gif_hold }
     }
 
     pub fn manual(&self) -> bool {
         self.detect_mode == DetectMode::Manual
+    }
+
+    /// Längste GIF-Aufnahme (1–15 s)
+    pub fn gif_max(&self) -> Duration {
+        Duration::from_secs_f32(self.gif_max_s.clamp(1.0, 15.0))
+    }
+
+    /// Abstand zwischen zwei GIF-Bildern (5–15 Bilder pro Sekunde)
+    pub fn gif_interval(&self) -> Duration {
+        Duration::from_secs_f32(1.0 / self.gif_fps.clamp(5.0, 15.0))
     }
 
     /// Abstand zwischen zwei Live-Fotos (1–30 s)
@@ -270,6 +316,23 @@ mod tests {
         let c: LayerConfig = serde_json::from_str(r#"{"live_interval_s": 0.2}"#).unwrap();
         assert_eq!(c.live_interval(), Duration::from_secs(1));
         assert_eq!(LayerConfig::default().live_interval(), Duration::from_secs(3));
+    }
+
+    #[test]
+    fn aspect_from_json() {
+        let c: LayerConfig = serde_json::from_str(r#"{"aspect": "16:9"}"#).unwrap();
+        assert_eq!(c.aspect, Aspect::Wide);
+        assert_eq!(LayerConfig::default().aspect.ratio(), None);
+        let c: LayerConfig = serde_json::from_str(r#"{"aspect": "1:1"}"#).unwrap();
+        assert_eq!(c.aspect.ratio(), Some(1.0));
+    }
+
+    #[test]
+    fn gif_limits_are_clamped() {
+        let c: LayerConfig = serde_json::from_str(r#"{"gif_max_s": 99, "gif_fps": 100}"#).unwrap();
+        assert_eq!(c.gif_max(), Duration::from_secs(15));
+        assert!(c.gif_interval() >= Duration::from_millis(66));
+        assert!(LayerConfig::default().gif_hold);
     }
 
     #[test]

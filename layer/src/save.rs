@@ -61,6 +61,11 @@ pub fn photo_name() -> String {
     chrono::Local::now().format("ViewShot_%Y-%m-%d_%H-%M-%S%.3f.png").to_string()
 }
 
+/// 🎞 Name fürs nächste GIF (gleiches Schema wie die Fotos → Galerie sortiert richtig)
+pub fn gif_name() -> String {
+    chrono::Local::now().format("ViewShot_%Y-%m-%d_%H-%M-%S%.3f.gif").to_string()
+}
+
 pub fn save_png_async(name: String, raw: Vec<u8>, format: i64, w: u32, h: u32, photo_type: Option<&'static str>) {
     std::thread::spawn(move || {
         let rgb = to_rgb(&raw, format);

@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import QMessageBox
 from core import config, layer_install, paths
 from core.i18n import tr
 
-TRANSLATION_TAB = 2  # Optionen: General · Shot · Übersetzung
+TRANSLATION_TAB = 3  # Optionen: General · Shot · VR · Übersetzung
 
 
 def needs_install() -> bool:
