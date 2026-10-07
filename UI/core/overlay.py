@@ -53,18 +53,19 @@ def union_box(lines: list[dict], size: tuple[int, int]) -> list[int]:
 
 
 def _fit_font(text: str, rect: QRectF, start: float, minimum: float) -> tuple[QFont, QRectF]:
-    """Größte Schrift, mit der `text` (umbrochen) in die Breite von `rect` passt und
-    höchstens so hoch wird wie rect. Klappt das nicht: kleinste Schrift, Höhe wächst."""
+    """Größte Schrift, mit der `text` (umbrochen) in rect passt – Breite UND Höhe
+    (lange deutsche Wörter!). Klappt das nicht: kleinste Schrift, Höhe wächst."""
     font = QFont()
     font.setBold(True)
-    size = start
+    size = max(start, minimum)
     flags = int(Qt.TextFlag.TextWordWrap)
     while True:
         font.setPixelSize(max(1, round(size)))
         need = QFontMetricsF(font).boundingRect(rect, flags, text)
-        if need.height() <= rect.height() * 1.05 or size <= minimum:
+        fits = need.width() <= rect.width() * 1.02 and need.height() <= rect.height() * 1.05
+        if fits or size <= minimum:
             return font, need
-        size *= 0.9
+        size = max(minimum, size * 0.9)
 
 
 def render(size: tuple[int, int], lines: list[dict], translated: str) -> QImage:
@@ -81,23 +82,27 @@ def render(size: tuple[int, int], lines: list[dict], translated: str) -> QImage:
     painter = QPainter(img)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+    # kleinste Schrift: lieber klein als über den Rand / das halbe Bild zudecken
+    minimum = max(7.0, img.height() / 90)
     for box, text in pairs:
         x0, y0, x1, y1 = (v * scale for v in box)
         line_h = max(8.0, y1 - y0)
-        pad = max(3.0, line_h * 0.15)
-        # etwas breiter erlauben – Übersetzungen sind oft länger als das Original
-        width = min(img.width() - (x0 - pad), max(x1 - x0, line_h * 4) * 1.25 + 2 * pad)
-        area = QRectF(x0 - pad, y0 - pad, width, (y1 - y0) + 2 * pad)
+        pad = min(8.0, max(2.0, line_h * 0.12))
+        # Kästchen genau über dem Originaltext (nicht breiter) – zu langer Text → kleinere Schrift
+        ax, ay = max(0.0, x0 - pad), max(0.0, y0 - pad)
+        width = min(img.width() - ax, max(x1 - x0, line_h * 2) + 2 * pad)
+        area = QRectF(ax, ay, width, min(img.height() - ay, (y1 - y0) + 2 * pad))
         text_area = area.adjusted(pad, pad * 0.5, -pad, -pad * 0.5)
-        font, need = _fit_font(text, text_area, start=line_h * 0.8, minimum=max(9.0, img.height() / 40))
-        # Kästchen an den Text anpassen (wächst nach unten, bleibt im Bild)
-        area.setHeight(min(img.height() - area.top(), need.height() + pad * 1.5))
+        font, need = _fit_font(text, text_area, start=line_h * 0.8, minimum=minimum)
+        # passt es selbst mit kleinster Schrift nicht: Kästchen wächst nach unten (bleibt im Bild)
+        area.setHeight(min(img.height() - ay, max(area.height(), need.height() + pad)))
         path = QPainterPath()
         path.addRoundedRect(area, pad, pad)
         painter.fillPath(path, BACKGROUND)
         painter.setFont(font)
         painter.setPen(TEXT)
-        painter.drawText(area.adjusted(pad, pad * 0.5, -pad, 0),
+        top = ay + max(pad * 0.5, (area.height() - need.height()) / 2)  # senkrecht mittig
+        painter.drawText(QRectF(ax + pad, top, width - 2 * pad, need.height() + 1),
                          int(Qt.TextFlag.TextWordWrap | Qt.AlignmentFlag.AlignLeft), text)
     painter.end()
     return img

@@ -1,5 +1,12 @@
 # Changelog
 
+## [v1.0.2] – 2026-10-07
+Update: **AUR** `yay -Syu linuxvr-viewshot` or the **AppImage** – open the app once (or press ⬆ *Update layer*). From a clone: 🔧 *Rebuild & install*. Then restart the VR game. **Needs a service rebuild.**
+
+- **🥽 Lens overlay: translation sits exactly over the original** – the grey box now has the size and position of the recognised line instead of being up to 25 % wider and growing downwards, so it no longer covers half the view. Text is centred vertically in the box
+- **Long translations get a smaller font** instead of a bigger box (German texts are often longer) – the font shrinks until the text fits in width *and* height. Smallest font is now ~1/90 of the image height (was 1/40); only if it still doesn't fit, the box grows downwards
+- Same for the photo overlay (desktop app), so both look the same
+
 ## [v1.0.1] – 2026-10-05
 Update: **AUR** `yay -Syu linuxvr-viewshot` or the **AppImage** – open the app once (or press ⬆ *Update layer*). From a clone: 🔧 *Rebuild & install*. Then restart the VR game. **Needs a layer + service rebuild.**
 

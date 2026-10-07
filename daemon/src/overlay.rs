@@ -41,31 +41,39 @@ pub fn render(f: &mut Fonts, size: (u32, u32), lines: &[Line], translated: &str)
         return Some(c);
     }
     let pairs = pair_lines(lines, translated).unwrap_or_else(|| vec![(union_box(lines, size), translated.trim().to_string())]);
+    // kleinste Schrift: lieber klein als über den Rand / das halbe Bild zudecken
+    let minimum = (ih / 90.0).max(7.0);
     for (b, text) in pairs {
         let (x0, y0, x1, y1) = (b[0] as f32 * scale, b[1] as f32 * scale, b[2] as f32 * scale, b[3] as f32 * scale);
         let line_h = (y1 - y0).max(8.0);
-        let pad = (line_h * 0.15).max(3.0);
-        let width = (iw - (x0 - pad)).min((x1 - x0).max(line_h * 4.0) * 1.25 + 2.0 * pad);
-        let (ax, ay) = (x0 - pad, y0 - pad);
-        let text_w = width - 2.0 * pad;
-        let area_h = (y1 - y0) + 2.0 * pad;
-        let text_h = area_h - pad;
-        // größte Schrift, die in die Höhe passt (sonst kleinste, Kästchen wächst)
-        let minimum = (ih / 40.0).max(9.0);
-        let mut size_px = line_h * 0.8;
-        let (st, need) = loop {
-            let st = Style::new(size_px.round().max(1.0), true, 0xffffff);
-            let (_, nh) = measure(f, &text, Some(text_w.max(1.0)), st);
-            if nh <= text_h * 1.05 || size_px <= minimum {
-                break (st, nh);
-            }
-            size_px *= 0.9;
-        };
-        let box_h = (ih - ay).min(need + pad * 1.5);
+        let pad = (line_h * 0.12).clamp(2.0, 8.0);
+        // Kästchen genau über dem Originaltext (nicht breiter) – zu langer Text → kleinere Schrift
+        let (ax, ay) = ((x0 - pad).max(0.0), (y0 - pad).max(0.0));
+        let width = ((x1 - x0).max(line_h * 2.0) + 2.0 * pad).min(iw - ax);
+        let area_h = ((y1 - y0) + 2.0 * pad).min(ih - ay);
+        let (text_w, text_h) = ((width - 2.0 * pad).max(1.0), (area_h - pad).max(1.0));
+        let (st, need) = fit(f, &text, text_w, text_h, line_h * 0.8, minimum);
+        // passt es selbst mit kleinster Schrift nicht: Kästchen wächst nach unten (bleibt im Bild)
+        let box_h = area_h.max(need + pad).min(ih - ay);
         c.rounded(ax, ay, width, box_h, pad, Some(rgba(0x1e2028, 225)), None);
-        c.text(f, &text, ax + pad, ay + pad * 0.5, Some(text_w.max(1.0)), st);
+        let ty = ay + ((box_h - need) / 2.0).max(pad * 0.5); // senkrecht mittig
+        c.text(f, &text, ax + pad, ty, Some(text_w), st);
     }
     Some(c)
+}
+
+/// Größte Schrift (ab `start`, kleiner werdend), mit der `text` umbrochen in w×h passt –
+/// Breite UND Höhe (lange deutsche Wörter!). Klappt das nicht: `minimum`. → (Stil, Höhe)
+fn fit(f: &mut Fonts, text: &str, w: f32, h: f32, start: f32, minimum: f32) -> (Style, f32) {
+    let mut size_px = start.max(minimum);
+    loop {
+        let st = Style::new(size_px.round().max(1.0), true, 0xffffff);
+        let (nw, nh) = measure(f, text, Some(w), st);
+        if (nw <= w * 1.02 && nh <= h * 1.05) || size_px <= minimum {
+            return (st, nh);
+        }
+        size_px = (size_px * 0.9).max(minimum);
+    }
 }
 
 /// Overlay für 🔁 Lens schreiben (Größe = Live-Bild)
