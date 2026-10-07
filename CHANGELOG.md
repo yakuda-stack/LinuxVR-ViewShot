@@ -1,5 +1,16 @@
 # Changelog
 
+## [v1.0.3] – 2026-10-07
+Update: **AUR** `yay -Syu linuxvr-viewshot` or the **AppImage** – open the app once (or press ⬆ *Update layer*). From a clone: 🔧 *Rebuild & install*. Then restart the VR game. **Needs a layer + service rebuild.**
+
+- **🥽 Lens overlay is fixed in the world** – the translation no longer sticks to the blue frame in front of your face. The layer remembers where you looked for every Lens picture (`ViewShot-Seq` in `live.png` → copied into `overlay.png`), and the translation is placed exactly there, over the original text. Turn your head and it stays on the text. Placed 2 m away (real text distance is unknown – further away = less shifting when you move)
+- **🔁 Lens only translates** – no 🤖 Auto / explain / answer anymore, also when another task is chosen for photos
+- **🥽 No text anymore → overlay disappears** – Lens removes the old translation when the picture has no text, so you have a clear view again
+- **Fix: Lens translation jumping into the frame** – the translation was sometimes shown in the frame first and then at the right place. It is now only shown at the right place in the world (the layer keeps the last 16 pictures in order; unknown picture = nothing shown)
+- **📌 New type: Pin** – between photo and Lens in the type cycle (🪄 Auto → 📌 Pin → 🔁 Lens · 🖼 → 📝 → 🔳 → 📌 Pin → 🔁 Lens). Mark an area and press the shutter: the blue frame stays **fixed in the world** – you can walk around it. Whenever you look into it, the part of the picture inside the frame is translated and shown right over the original text, like Lens. Translation only. Not looking into it (less than half in view) → nothing is captured. New frame = off
+- **🥽 Tilted head: translation stays straight** (Lens + Pin) – the layer writes the head tilt into `live.png` (`ViewShot-Roll`), app / service turn the picture until the text is level (OCR reads it better too) and the layer turns the box back. So the translation lies exactly over the original text instead of tilting with your head (from 2° tilt)
+- **🔘 Panel doesn't open for a photo without translation** – with *Open when translating*, the closed panel now opens when a new photo has actually been translated (app / service writes `panel_open_request`), not right at the shutter
+
 ## [v1.0.2] – 2026-10-07
 Update: **AUR** `yay -Syu linuxvr-viewshot` or the **AppImage** – open the app once (or press ⬆ *Update layer*). From a clone: 🔧 *Rebuild & install*. Then restart the VR game. **Needs a service rebuild.**
 

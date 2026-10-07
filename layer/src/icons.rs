@@ -1,11 +1,13 @@
 //! Typ-Symbol am Rahmen und was der Auslöser damit macht.
 //!
 //! Mit der Typ-Taste (Standard: linker Trigger) schaltet man weiter:
-//!   automatisch:  🪄 Auto → 🔁 Lens → 🪄 Auto …
-//!   manuell:      🖼 Bild → 📝 Text → 🔳 QR → 🔁 Lens → 🖼 Bild …
+//!   automatisch:  🪄 Auto → 📌 Pin → 🔁 Lens → 🪄 Auto …
+//!   manuell:      🖼 Bild → 📝 Text → 🔳 QR → 📌 Pin → 🔁 Lens → 🖼 Bild …
 //! Bild/Text/QR landen als PNG-Text-Chunk "ViewShot-Type" im Foto – die UI taggt es
 //! direkt. Bei 🔁 Lens macht der Auslöser KEIN Foto, sondern startet den Live-Modus
 //! (derselbe Bereich wird alle paar Sekunden neu fotografiert und übersetzt).
+//! 📌 Pin wie Lens, aber der Rahmen bleibt fest in der Welt stehen (man kann drumherum
+//! laufen) – übersetzt wird, was man gerade durch den Rahmen sieht.
 //!
 //! Die Symbole liegen als kleine PNGs in layer/assets/ und werden beim
 //! Bauen fest in die .so eingebaut (include_bytes!).
@@ -21,15 +23,18 @@ pub enum PhotoType {
     Qr,
     Auto,
     Lens,
+    /// 📌 Rahmen fest in der Welt (Live-Übersetzung beim Hineinschauen)
+    Pin,
 }
 
 /// Reihenfolge beim Weiterschalten
-const MANUAL: [PhotoType; 4] = [PhotoType::Image, PhotoType::Text, PhotoType::Qr, PhotoType::Lens];
-const AUTO: [PhotoType; 2] = [PhotoType::Auto, PhotoType::Lens];
+const MANUAL: [PhotoType; 5] = [PhotoType::Image, PhotoType::Text, PhotoType::Qr, PhotoType::Pin, PhotoType::Lens];
+const AUTO: [PhotoType; 3] = [PhotoType::Auto, PhotoType::Pin, PhotoType::Lens];
 
 impl PhotoType {
     /// Alle Symbole – Reihenfolge = Ebene in der Symbol-Swapchain
-    pub const ALL: [PhotoType; 5] = [PhotoType::Image, PhotoType::Text, PhotoType::Qr, PhotoType::Auto, PhotoType::Lens];
+    pub const ALL: [PhotoType; 6] =
+        [PhotoType::Image, PhotoType::Text, PhotoType::Qr, PhotoType::Auto, PhotoType::Lens, PhotoType::Pin];
 
     /// Name wie in der UI (core/tags.py)
     pub fn as_str(self) -> &'static str {
@@ -39,7 +44,13 @@ impl PhotoType {
             PhotoType::Qr => "qr",
             PhotoType::Auto => "auto",
             PhotoType::Lens => "lens",
+            PhotoType::Pin => "pin",
         }
+    }
+
+    /// 🔁 Lens / 📌 Pin: Auslöser macht kein Foto, sondern übersetzt immer wieder
+    pub fn is_live(self) -> bool {
+        matches!(self, PhotoType::Lens | PhotoType::Pin)
     }
 
     /// Typ fürs PNG ("ViewShot-Type") – nur Bild/Text/QR, Auto erkennt die UI selbst
@@ -92,12 +103,13 @@ pub fn cycle(manual: bool) -> PhotoType {
     next
 }
 
-const PNGS: [&[u8]; 5] = [
+const PNGS: [&[u8]; 6] = [
     include_bytes!("../assets/icon_image.png"),
     include_bytes!("../assets/icon_text.png"),
     include_bytes!("../assets/icon_qr.png"),
     include_bytes!("../assets/icon_auto.png"),
     include_bytes!("../assets/icon_lens.png"),
+    include_bytes!("../assets/icon_world.png"),
 ];
 
 /// Alle Symbole als RGBA-Pixel (ICON_SIZE × ICON_SIZE), Reihenfolge wie PhotoType::ALL.
@@ -131,13 +143,15 @@ mod tests {
 
     #[test]
     fn cycle_order() {
-        // manuell: Bild → Text → QR → Lens → Bild
+        // manuell: Bild → Text → QR → Pin → Lens → Bild
         assert_eq!(PhotoType::Image.next(true), PhotoType::Text);
         assert_eq!(PhotoType::Text.next(true), PhotoType::Qr);
-        assert_eq!(PhotoType::Qr.next(true), PhotoType::Lens);
+        assert_eq!(PhotoType::Qr.next(true), PhotoType::Pin);
+        assert_eq!(PhotoType::Pin.next(true), PhotoType::Lens);
         assert_eq!(PhotoType::Lens.next(true), PhotoType::Image);
-        // automatisch: Auto ↔ Lens
-        assert_eq!(PhotoType::Auto.next(false), PhotoType::Lens);
+        // automatisch: Auto → Pin → Lens → Auto
+        assert_eq!(PhotoType::Auto.next(false), PhotoType::Pin);
+        assert_eq!(PhotoType::Pin.next(false), PhotoType::Lens);
         assert_eq!(PhotoType::Lens.next(false), PhotoType::Auto);
         // Typ aus dem anderen Modus → Anfang
         assert_eq!(PhotoType::Text.next(false), PhotoType::Auto);
@@ -149,6 +163,8 @@ mod tests {
         assert_eq!(PhotoType::Qr.tag(), Some("qr"));
         assert_eq!(PhotoType::Auto.tag(), None);
         assert_eq!(PhotoType::Lens.tag(), None);
+        assert_eq!(PhotoType::Pin.tag(), None);
+        assert!(PhotoType::Pin.is_live() && !PhotoType::Image.is_live());
     }
 
     #[test]

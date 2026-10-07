@@ -75,7 +75,8 @@ pub fn save_png_async(name: String, raw: Vec<u8>, format: i64, w: u32, h: u32, p
             return;
         }
         let path = dir.join(name);
-        let result = write_png(&path, &rgb, w, h, photo_type);
+        let text: Vec<(&str, &str)> = photo_type.map(|t| ("ViewShot-Type", t)).into_iter().collect();
+        let result = write_png(&path, &rgb, w, h, &text);
         match result {
             Ok(()) => crate::log!(
                 "Foto gespeichert: {} ({w}x{h}){}",
@@ -89,7 +90,10 @@ pub fn save_png_async(name: String, raw: Vec<u8>, format: i64, w: u32, h: u32, p
 
 /// Live-Modus: immer DIESELBE Datei überschreiben (live/live.png) – landet nicht in
 /// der Galerie. Die UI schaut auf die Änderungszeit und übersetzt das neue Bild.
-pub fn save_live_png_async(raw: Vec<u8>, format: i64, w: u32, h: u32) {
+/// `seq` = Nummer des Bilds ("ViewShot-Seq") – kommt mit der Übersetzung zurück,
+/// so weiß der Layer, von wo aus das Bild gemacht wurde.
+/// `roll` = Schräglage des Kopfes (Grad, "ViewShot-Roll") – der Dienst dreht das Bild gerade.
+pub fn save_live_png_async(raw: Vec<u8>, format: i64, w: u32, h: u32, seq: u64, roll: f32) {
     std::thread::spawn(move || {
         let rgb = to_rgb(&raw, format);
         let dir = output_dir().join("live");
@@ -97,7 +101,13 @@ pub fn save_live_png_async(raw: Vec<u8>, format: i64, w: u32, h: u32) {
             crate::log!("Ordner {} kann nicht angelegt werden: {e}", dir.display());
             return;
         }
-        if let Err(e) = write_png(&dir.join("live.png"), &rgb, w, h, None) {
+        if let Err(e) = write_png(
+            &dir.join("live.png"),
+            &rgb,
+            w,
+            h,
+            &[("ViewShot-Seq", &seq.to_string()), ("ViewShot-Roll", &format!("{roll:.2}"))],
+        ) {
             crate::log!("Live-Bild speichern fehlgeschlagen: {e}");
         }
     });
@@ -108,7 +118,7 @@ pub fn remove_live_png() {
     let _ = std::fs::remove_file(output_dir().join("live").join("live.png"));
 }
 
-/// RGB8-Pixel als PNG schreiben, optional mit Typ ("ViewShot-Type").
+/// RGB8-Pixel als PNG schreiben, mit Text-Stücken (z. B. "ViewShot-Type").
 ///
 /// Erst in eine VERSTECKTE Hilfsdatei (".ViewShot_….png.part"), dann in
 /// einem Schritt umbenennen. Die UI beobachtet den Ordner und würde sonst
@@ -119,7 +129,7 @@ pub fn write_png(
     rgb: &[u8],
     w: u32,
     h: u32,
-    photo_type: Option<&str>,
+    text: &[(&str, &str)],
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::Write;
     let name = path.file_name().ok_or("kein Dateiname")?.to_string_lossy();
@@ -129,8 +139,8 @@ pub fn write_png(
         let mut enc = png::Encoder::new(&mut buf, w, h);
         enc.set_color(png::ColorType::Rgb);
         enc.set_depth(png::BitDepth::Eight);
-        if let Some(t) = photo_type {
-            enc.add_text_chunk("ViewShot-Type".into(), t.into())?;
+        for (key, value) in text {
+            enc.add_text_chunk((*key).into(), (*value).into())?;
         }
         let mut writer = enc.write_header()?;
         writer.write_image_data(rgb)?;
@@ -160,7 +170,7 @@ mod tests {
     #[test]
     fn type_chunk_is_written() {
         let path = std::env::temp_dir().join("viewshot_type_test.png");
-        write_png(&path, &[255; 2 * 2 * 3], 2, 2, Some("qr")).unwrap();
+        write_png(&path, &[255; 2 * 2 * 3], 2, 2, &[("ViewShot-Type", "qr")]).unwrap();
         let dec = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(&path).unwrap()));
         let reader = dec.read_info().unwrap();
         let text = &reader.info().uncompressed_latin1_text;
@@ -174,7 +184,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("ViewShot_test.png");
-        write_png(&path, &[7; 4 * 4 * 3], 4, 4, None).unwrap();
+        write_png(&path, &[7; 4 * 4 * 3], 4, 4, &[]).unwrap();
         let names: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
         assert_eq!(names, vec![std::ffi::OsString::from("ViewShot_test.png")]);
         // vollständig lesbar (IEND geschrieben)

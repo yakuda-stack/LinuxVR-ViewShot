@@ -80,17 +80,19 @@ TEXTS = {
     "howto_3":         {"de": "3.  Auslöser-Trigger drücken (Standard: rechts) → Foto! Der Rahmen blitzt weiß",
                         "en": "3.  Press the shutter trigger (default: right) → photo! The frame flashes white"},
     "howto_4":         {"de": "4.  Manuell: Typ-Trigger (Standard: links) schaltet das Symbol im Rahmen um – "
-                              "🖼 Bild → 📝 Text → 🔳 QR → 🔁 Lens. Das Foto bekommt diesen Typ.",
+                              "🖼 Bild → 📝 Text → 🔳 QR → 📌 Pin → 🔁 Lens. Das Foto bekommt diesen Typ.",
                         "en": "4.  Manual: the type trigger (default: left) switches the icon in the frame – "
-                              "🖼 Image → 📝 Text → 🔳 QR → 🔁 Lens. The photo gets that type."},
+                              "🖼 Image → 📝 Text → 🔳 QR → 📌 Pin → 🔁 Lens. The photo gets that type."},
     "howto_4_auto":    {"de": "4.  Typ-Trigger (Standard: links) schaltet das Symbol im Rahmen um: "
-                              "🪄 Auto (Foto) ↔ 🔁 Lens (Live-Übersetzung).",
+                              "🪄 Auto (Foto) → 📌 Pin → 🔁 Lens (Live-Übersetzung).",
                         "en": "4.  The type trigger (default: left) switches the icon in the frame: "
-                              "🪄 Auto (photo) ↔ 🔁 Lens (live translation)."},
+                              "🪄 Auto (photo) → 📌 Pin → 🔁 Lens (live translation)."},
     "howto_5":         {"de": "5.  🔁 Lens + Auslöser → kein Foto, sondern ein blauer Rahmen: der Bereich wird "
-                              "alle paar Sekunden neu übersetzt. Neuer Rahmen = Lens aus.",
+                              "alle paar Sekunden neu übersetzt. 📌 Pin: der Rahmen bleibt fest in der Welt stehen – "
+                              "schau hinein und der Text darin wird übersetzt. Neuer Rahmen = aus.",
                         "en": "5.  🔁 Lens + shutter → no photo but a blue frame: the area is translated again "
-                              "every few seconds. New frame = Lens off."},
+                              "every few seconds. 📌 Pin: the frame stays fixed in the world – look into it and "
+                              "the text inside is translated. New frame = off."},
     "open_folder":     {"de": "Foto-Ordner",     "en": "Photo folder"},
 
     # Galerie
@@ -154,12 +156,12 @@ TEXTS = {
     "combo_right":     {"de": "Rechter Trigger", "en": "Right trigger"},
     "combo_both":      {"de": "Beide Trigger gleichzeitig", "en": "Both triggers together"},
     "buttons_auto_note": {"de": "Im Rahmen erscheint ein Symbol: 🪄 Auto (Foto, die App erkennt den Typ) ↔ "
-                                "🔁 Lens. Auslöser und Typ-Taste können nicht gleich sein.",
+                                "📌 Pin ↔ 🔁 Lens. Auslöser und Typ-Taste können nicht gleich sein.",
                           "en": "An icon appears in the frame: 🪄 Auto (photo, the app detects the type) ↔ "
-                                "🔁 Lens. Shutter and type button can't be the same."},
-    "buttons_manual_note": {"de": "Im Rahmen erscheint ein Symbol: 🖼 / 📝 / 🔳 / 🔁 Lens. "
+                                "📌 Pin ↔ 🔁 Lens. Shutter and type button can't be the same."},
+    "buttons_manual_note": {"de": "Im Rahmen erscheint ein Symbol: 🖼 / 📝 / 🔳 / 📌 Pin / 🔁 Lens. "
                                   "Auslöser und Typ-Taste können nicht gleich sein.",
-                            "en": "An icon appears in the frame: 🖼 / 📝 / 🔳 / 🔁 Lens. "
+                            "en": "An icon appears in the frame: 🖼 / 📝 / 🔳 / 📌 Pin / 🔁 Lens. "
                                   "Shutter and type button can't be the same."},
     "icon_position":   {"de": "Symbol-Position",   "en": "Icon position"},
     "icon_position_hint": {"de": "In welcher Ecke des Rahmens das Typ-Symbol sitzt. Wirkt sofort.",
@@ -607,10 +609,10 @@ TEXTS = {
                         "en": "Set up – starts by itself with the VR game (log: ~/.local/state/"
                               "linuxvr-viewshot/daemon.log)."},
     "overlay_card":    {"de": "🔁 Lens: Übersetzung über dem Original", "en": "🔁 Lens: translation over the original"},
-    "overlay_hint":    {"de": "Nur bei 🔁 Lens: legt im blauen Rahmen über jede erkannte Zeile ein graues "
-                              "Kästchen mit der Übersetzung. Fotos stehen im 🪟 Panel.",
-                        "en": "🔁 Lens only: puts a grey box with the translation over every recognised line "
-                              "inside the blue frame. Photos are shown in the 🪟 panel."},
+    "overlay_hint":    {"de": "Nur bei 🔁 Lens: legt über jede erkannte Zeile ein graues Kästchen mit der "
+                              "Übersetzung – fest in der Welt, genau über dem Originaltext. Fotos stehen im 🪟 Panel.",
+                        "en": "🔁 Lens only: puts a grey box with the translation over every recognised line – "
+                              "fixed in the world, right over the original text. Photos are shown in the 🪟 panel."},
     "overlay_on":      {"de": "🥽 Übersetzung über dem Text anzeigen", "en": "🥽 Show translation over the text"},
     "tr_favorites":    {"de": "Favoriten",        "en": "Favourites"},
     "tr_route":       {"de": "Modus", "en": "Mode"},

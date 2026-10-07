@@ -18,6 +18,10 @@ pub const LIVE: &str = "live";
 /// Ein geladenes Overlay-Bild (RGBA, nicht vormultipliert)
 pub struct Image {
     pub for_name: String,
+    /// 🔁 Lens: zu welchem Live-Bild ("ViewShot-Seq"), 0 = unbekannt
+    pub seq: u64,
+    /// Bild wurde um so viel geradegedreht (Radiant, "ViewShot-Roll" in Grad)
+    pub roll: f32,
     pub w: u32,
     pub h: u32,
     pub rgba: Vec<u8>,
@@ -38,20 +42,11 @@ pub fn decode(bytes: &[u8], modified: SystemTime) -> Result<Image, String> {
     let frame = reader.next_frame(&mut buf).map_err(|e| format!("Overlay: {e}"))?;
     let _ = reader.finish(); // Text-Stücke hinter den Bilddaten auch noch lesen
     let info = reader.info();
-    let for_name = info
-        .uncompressed_latin1_text
-        .iter()
-        .filter(|t| t.keyword == "ViewShot-For")
-        .map(|t| t.text.clone())
-        .chain(info.utf8_text.iter().filter(|t| t.keyword == "ViewShot-For").filter_map(|t| t.get_text().ok()))
-        .chain(
-            info.compressed_latin1_text
-                .iter()
-                .filter(|t| t.keyword == "ViewShot-For")
-                .filter_map(|t| t.get_text().ok()),
-        )
-        .next()
-        .unwrap_or_default();
+    let for_name = png_text(info, "ViewShot-For");
+    // 🔁 Lens: Nummer des Live-Bilds, zu dem die Übersetzung gehört (0 = unbekannt)
+    let seq = png_text(info, "ViewShot-Seq").trim().parse().unwrap_or(0);
+    // so weit hat der Dienst das Bild geradegedreht (Grad → Radiant), 0 = gar nicht
+    let roll = png_text(info, "ViewShot-Roll").trim().parse::<f32>().unwrap_or(0.0).to_radians();
 
     let px = &buf[..frame.buffer_size()];
     let rgba: Vec<u8> = match frame.color_type {
@@ -61,7 +56,19 @@ pub fn decode(bytes: &[u8], modified: SystemTime) -> Result<Image, String> {
         png::ColorType::Grayscale => px.iter().flat_map(|&g| [g, g, g, 255]).collect(),
         png::ColorType::Indexed => return Err("Overlay: Palette nicht erwartet".into()),
     };
-    Ok(Image { for_name, w: frame.width, h: frame.height, rgba, modified })
+    Ok(Image { for_name, seq, roll, w: frame.width, h: frame.height, rgba, modified })
+}
+
+/// Text-Stück aus dem PNG (alle drei Arten), "" = keins
+fn png_text(info: &png::Info, key: &str) -> String {
+    info.uncompressed_latin1_text
+        .iter()
+        .filter(|t| t.keyword == key)
+        .map(|t| t.text.clone())
+        .chain(info.utf8_text.iter().filter(|t| t.keyword == key).filter_map(|t| t.get_text().ok()))
+        .chain(info.compressed_latin1_text.iter().filter(|t| t.keyword == key).filter_map(|t| t.get_text().ok()))
+        .next()
+        .unwrap_or_default()
 }
 
 struct State {
@@ -151,5 +158,12 @@ mod tests {
     fn decode_without_target_is_empty_name() {
         let img = decode(&png_with_text("Other", "x"), SystemTime::UNIX_EPOCH).unwrap();
         assert_eq!(img.for_name, "");
+        assert_eq!(img.seq, 0);
+    }
+
+    #[test]
+    fn decode_reads_lens_seq() {
+        let img = decode(&png_with_text("ViewShot-Seq", "1791388657056"), SystemTime::UNIX_EPOCH).unwrap();
+        assert_eq!(img.seq, 1791388657056);
     }
 }

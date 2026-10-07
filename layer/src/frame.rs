@@ -116,6 +116,90 @@ pub fn rect_quad(eye: &xr::Posef, fov: &xr::Fovf, img: Rect, rect: Rect, depth: 
     }
 }
 
+/// 📌 Pin: Wo ist ein fest in der Welt stehender Rahmen GERADE im Bild?
+/// Der Rahmen = `rect` so wie von `eye0`/`fov0` aus in Tiefe `depth` gesehen. Seine 4 Ecken
+/// werden ins aktuelle Auge projiziert → umschließendes Rechteck (aufs Bild begrenzt).
+/// None = man schaut nicht hinein (Ecke hinter dem Kopf, weniger als die Hälfte im Bild, zu klein).
+#[allow(clippy::too_many_arguments)]
+pub fn world_rect(
+    eye0: &xr::Posef,
+    fov0: &xr::Fovf,
+    img0: Rect,
+    rect: Rect,
+    depth: f32,
+    eye: &xr::Posef,
+    fov: &xr::Fovf,
+    img: Rect,
+) -> Option<Rect> {
+    let (l, r) = (fov0.angle_left.tan(), fov0.angle_right.tan());
+    let (up, dn) = (fov0.angle_up.tan(), fov0.angle_down.tan());
+    let ex = |px: i32| (l + (px - img0.x) as f32 / img0.w as f32 * (r - l)) * depth;
+    let ey = |py: i32| (up - (py - img0.y) as f32 / img0.h as f32 * (up - dn)) * depth;
+    let (x0, x1) = (ex(rect.x), ex(rect.x + rect.w));
+    let (y0, y1) = (ey(rect.y), ey(rect.y + rect.h));
+    let (mut u0, mut v0, mut u1, mut v1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    for (x, y) in [(x0, y0), (x1, y0), (x0, y1), (x1, y1)] {
+        let off = rotate(eye0.orientation, [x, y, -depth]);
+        let p = xr::Vector3f { x: eye0.position.x + off[0], y: eye0.position.y + off[1], z: eye0.position.z + off[2] };
+        let pr = project(eye, fov, p)?;
+        let (px, py) = (img.x as f32 + pr.u * img.w as f32, img.y as f32 + pr.v * img.h as f32);
+        (u0, v0, u1, v1) = (u0.min(px), v0.min(py), u1.max(px), v1.max(py));
+    }
+    let full = (u1 - u0) * (v1 - v0);
+    let (ix1, iy1) = ((img.x + img.w) as f32, (img.y + img.h) as f32);
+    let (cx0, cy0) = (u0.clamp(img.x as f32, ix1), v0.clamp(img.y as f32, iy1));
+    let (cx1, cy1) = (u1.clamp(img.x as f32, ix1), v1.clamp(img.y as f32, iy1));
+    let seen = (cx1 - cx0) * (cy1 - cy0);
+    if full <= 0.0 || seen < full * 0.5 {
+        return None;
+    }
+    let out = Rect {
+        x: cx0.floor() as i32,
+        y: cy0.floor() as i32,
+        w: (cx1.ceil() - cx0.floor()) as i32,
+        h: (cy1.ceil() - cy0.floor()) as i32,
+    };
+    (out.w >= 32 && out.h >= 32).then_some(out)
+}
+
+/// Wie schräg ist der Kopf (Rollen um die Blickrichtung)? Radiant, + = Welt-Oben liegt im
+/// Bild nach RECHTS gekippt (Kopf nach links geneigt). Senkrecht hoch/runter schauen → 0.
+pub fn roll(q: xr::Quaternionf) -> f32 {
+    let (r, u, f) = (rotate(q, [1.0, 0.0, 0.0]), rotate(q, [0.0, 1.0, 0.0]), rotate(q, [0.0, 0.0, -1.0]));
+    if f[1].abs() > 0.94 {
+        return 0.0;
+    }
+    r[1].atan2(u[1])
+}
+
+fn quat_mul(a: xr::Quaternionf, b: xr::Quaternionf) -> xr::Quaternionf {
+    xr::Quaternionf {
+        w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+        x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+        y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+        z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+    }
+}
+
+/// 🥽 Overlay mit geradegerücktem Bild: Der Dienst hat das Live-Bild um `roll` gedreht (Text
+/// waagerecht) – das Quad wird gleich weit zurückgedreht und um die gedrehte (größere)
+/// Fläche vergrößert. So liegt der Text auch bei schrägem Kopf genau über dem Original.
+pub fn rolled_quad(base: EdgeQuad, rect: Rect, roll: f32) -> EdgeQuad {
+    if roll == 0.0 || rect.w <= 0 || rect.h <= 0 {
+        return base;
+    }
+    let (mx, my) = (base.width / rect.w as f32, base.height / rect.h as f32);
+    let (c, s) = (roll.cos().abs(), roll.sin().abs());
+    let (w, h) = (rect.w as f32, rect.h as f32);
+    let half = -roll * 0.5;
+    let rot_z = xr::Quaternionf { x: 0.0, y: 0.0, z: half.sin(), w: half.cos() };
+    EdgeQuad {
+        pose: xr::Posef { orientation: quat_mul(base.pose.orientation, rot_z), position: base.pose.position },
+        width: (w * c + h * s) * mx,
+        height: (w * s + h * c) * my,
+    }
+}
+
 /// Quadrat für das Typ-Symbol: INNEN in einer Ecke des Rahmens (`corner`).
 /// `size` = Kantenlänge in Metern (in Tiefe `depth`), `gap` = Abstand zu den Linien.
 #[allow(clippy::too_many_arguments)]
@@ -422,5 +506,46 @@ mod tests {
         let img = Rect { x: 0, y: 0, w: 1000, h: 1000 };
         let r = crop_rect(img, &fov(), p(0.52, 0.48, 0.5), p(0.48, 0.52, 0.5), 0.07, None);
         assert_eq!(r, img);
+    }
+
+    #[test]
+    fn world_rect_same_view_is_same_rect() {
+        let eye = xr::Posef {
+            orientation: xr::Quaternionf { x: 0.0, y: 0.0, z: 0.0, w: 1.0 },
+            position: xr::Vector3f { x: 0.0, y: 1.6, z: 0.0 },
+        };
+        let fov = xr::Fovf { angle_left: -0.8, angle_right: 0.8, angle_up: 0.8, angle_down: -0.8 };
+        let img = Rect { x: 0, y: 0, w: 1000, h: 1000 };
+        let rect = Rect { x: 300, y: 400, w: 200, h: 100 };
+        let r = world_rect(&eye, &fov, img, rect, 0.6, &eye, &fov, img).unwrap();
+        assert!((r.x - 300).abs() <= 1 && (r.y - 400).abs() <= 1 && (r.w - 200).abs() <= 2 && (r.h - 100).abs() <= 2, "{r:?}");
+        // Kopf umgedreht → Rahmen hinter einem → None
+        let back = xr::Posef { orientation: xr::Quaternionf { x: 0.0, y: 1.0, z: 0.0, w: 0.0 }, ..eye };
+        assert!(world_rect(&eye, &fov, img, rect, 0.6, &back, &fov, img).is_none());
+        // Kopf nach links gedreht → Rahmen wandert im Bild nach rechts
+        let a = 0.2f32;
+        let left = xr::Posef { orientation: xr::Quaternionf { x: 0.0, y: (a / 2.0).sin(), z: 0.0, w: (a / 2.0).cos() }, ..eye };
+        let r2 = world_rect(&eye, &fov, img, rect, 0.6, &left, &fov, img).unwrap();
+        assert!(r2.x > r.x, "{r2:?}");
+    }
+
+    #[test]
+    fn roll_of_tilted_head() {
+        let level = xr::Quaternionf { x: 0.0, y: 0.0, z: 0.0, w: 1.0 };
+        assert!(roll(level).abs() < 1e-5);
+        // Kopf nach links geneigt (gegen den Uhrzeigersinn um die Blickrichtung, +Z zum Betrachter)
+        let a = 0.3f32;
+        let left = xr::Quaternionf { x: 0.0, y: 0.0, z: (a / 2.0).sin(), w: (a / 2.0).cos() };
+        assert!((roll(left) - a).abs() < 1e-4, "{}", roll(left));
+        // Quad wird zurückgedreht → seine Oben-Richtung zeigt wieder nach Welt-Oben
+        let base = EdgeQuad {
+            pose: xr::Posef { orientation: left, position: xr::Vector3f { x: 0.0, y: 0.0, z: -1.0 } },
+            width: 0.4,
+            height: 0.2,
+        };
+        let q = rolled_quad(base, Rect { x: 0, y: 0, w: 400, h: 200 }, roll(left));
+        let up = rotate(q.pose.orientation, [0.0, 1.0, 0.0]);
+        assert!(up[0].abs() < 1e-4 && (up[1] - 1.0).abs() < 1e-4, "{up:?}");
+        assert!(q.width > 0.4 && q.height > 0.2);
     }
 }

@@ -170,7 +170,56 @@ struct Live {
     next: Instant,
     /// Start – ältere Overlay-Bilder gehören zu einem früheren Lens
     since: SystemTime,
+    /// Die letzten Live-Bilder: von wo (Auge, Blickfeld, Raum, Ausschnitt) sie gemacht wurden.
+    /// Die Übersetzung kommt ein paar Sekunden später – mit DIESER Position liegt sie
+    /// dann fest in der Welt genau über dem Originaltext (nicht mehr am Kopf).
+    shots: [Option<Shot>; 16],
+    /// nächster Platz in `shots` (reihum – die ältesten fliegen raus)
+    slot: usize,
+    /// 📌 Pin: Rahmen fest in der Welt (None = 🔁 Lens, Rahmen am Kopf)
+    world: Option<WorldFrame>,
 }
+
+/// Ein Live-Bild: Nummer ("ViewShot-Seq" im PNG) + Blick und Ausschnitt beim Aufnehmen
+#[derive(Clone, Copy, Debug)]
+struct Shot {
+    seq: u64,
+    eye: xr::Posef,
+    fov: xr::Fovf,
+    space: xr::Space,
+    rect: frame::Rect,
+}
+
+/// 📌 Pin: der Rahmen, so wie er beim Auslösen gesehen wurde – bleibt so in der Welt stehen
+#[derive(Clone, Copy, Debug)]
+struct WorldFrame {
+    eye: xr::Posef,
+    fov: xr::Fovf,
+    img: frame::Rect,
+    rect: frame::Rect,
+    depth: f32,
+    space: xr::Space,
+}
+
+impl Live {
+    fn new(img: frame::Rect, rect: frame::Rect, depth: f32, world: Option<WorldFrame>) -> Live {
+        Live { img, rect, depth, next: Instant::now(), since: SystemTime::now(), shots: [None; 16], slot: 0, world }
+    }
+
+    fn remember(&mut self, shot: Shot) {
+        self.shots[self.slot] = Some(shot);
+        self.slot = (self.slot + 1) % self.shots.len();
+    }
+
+    fn shot(&self, seq: u64) -> Option<Shot> {
+        self.shots.iter().flatten().find(|s| s.seq == seq).copied()
+    }
+}
+
+/// 🥽 Lens-Übersetzung: in dieser Entfernung (m) in die Welt legen. Wie weit der Text
+/// wirklich weg ist, wissen wir nicht – weiter weg = weniger Verrutschen beim Bewegen
+/// des Kopfes (die Größe wird mitskaliert, sieht also gleich groß aus).
+const LENS_OVERLAY_DEPTH: f32 = 2.0;
 
 /// Zustand pro OpenXR-Instanz. Ein Programm kann MEHRERE Instanzen
 /// gleichzeitig haben (z. B. wineopenxr erstellt Test-Instanzen parallel).
@@ -752,7 +801,7 @@ unsafe fn update_gesture(nx: &Next, session: xr::Session) {
     let cfg = config::get();
     let buttons = cfg.buttons();
     // 🔁 Lens gewählt? Dann startet Halten kein GIF, sondern Lens (wie ein Foto)
-    let lens = buttons.mode.is_some() && icons::current(cfg.manual()) == icons::PhotoType::Lens;
+    let lens = buttons.mode.is_some() && icons::current(cfg.manual()).is_live();
     let mut event = s.gesture.update(&inputs, Instant::now(), &buttons);
     if event == gesture::Event::GifStart && lens {
         event = gesture::Event::TakePhoto;
@@ -1379,7 +1428,7 @@ unsafe fn build_frame_quads(nx: &Next, session: xr::Session, info: &xr::FrameEnd
     if let Some(r) = s.gif.as_ref() {
         let layer = if (r.started.elapsed().as_millis() / 500) % 2 == 0 { 0 } else { 1 };
         let (img, rect, depth) = (r.img, r.rect, r.depth);
-        return fixed_frame_quads(nx, session, s, proj, (img, rect, depth), layer, 0.008);
+        return fixed_frame_quads(nx, session, s, proj, (img, rect, depth), layer, 0.008, None);
     }
     if !(active || flash) {
         // Live-Modus: blauer Rahmen um den Bereich, der immer wieder fotografiert wird
@@ -1446,18 +1495,22 @@ unsafe fn build_overlay_quads(nx: &Next, session: xr::Session, info: &xr::FrameE
         return Vec::new();
     }
     let Some(img) = overlay::get() else { return Vec::new() };
-    let Some(proj) = find_projection(info) else { return Vec::new() };
+    if find_projection(info).is_none() {
+        return Vec::new();
+    }
 
     // 🥽 Nur bei 🔁 Lens (Fotos stehen im 🪟 Panel): ein Overlay, das zu DIESEM Lens gehört
     let Some(live) = s.live else { return Vec::new() };
     if img.for_name != overlay::LIVE || img.modified < live.since {
         return Vec::new();
     }
-    let (view, eye) = choose_view(proj, cfg.eye_t());
-    if image_rect(view) != live.img {
-        return Vec::new();
-    }
-    let quad = frame::rect_quad(&eye, &view.fov, live.img, live.rect, live.depth);
+    // Fest in der Welt: dort, wo das Live-Bild zu dieser Übersetzung gemacht wurde.
+    // Unbekannte Nummer → NICHT anzeigen (nie im Rahmen am Kopf, nur an der richtigen Stelle)
+    let Some(sh) = live.shot(img.seq) else { return Vec::new() };
+    let depth = LENS_OVERLAY_DEPTH.max(live.depth);
+    // Kopf war schräg → Dienst hat das Bild geradegedreht, Quad zurückdrehen (Text bleibt waagerecht)
+    let quad = frame::rolled_quad(frame::rect_quad(&sh.eye, &sh.fov, live.img, sh.rect, depth), sh.rect, img.roll);
+    let space = sh.space;
 
     let Some(sc) = ensure_overlay_swapchain(nx, session, s, &img) else { return Vec::new() };
     vec![xr::CompositionLayerQuad {
@@ -1466,7 +1519,7 @@ unsafe fn build_overlay_quads(nx: &Next, session: xr::Session, info: &xr::FrameE
         // durchsichtige Stellen durchsichtig lassen (PNG ist nicht vormultipliert)
         layer_flags: xr::CompositionLayerFlags::BLEND_TEXTURE_SOURCE_ALPHA
             | xr::CompositionLayerFlags::UNPREMULTIPLIED_ALPHA,
-        space: proj.space,
+        space,
         eye_visibility: xr::EyeVisibility::BOTH,
         sub_image: xr::SwapchainSubImage {
             swapchain: sc,
@@ -1488,6 +1541,11 @@ unsafe fn build_panel_quads(nx: &Next, session: xr::Session, info: &xr::FrameEnd
     let cfg = config::get();
     if !cfg.panel {
         return Vec::new();
+    }
+    // 🔘 zugeklapptes Panel geht auf, sobald ein neues Foto übersetzt ist (nicht schon beim Foto)
+    if panel::take_open_request() && cfg.panel_open_on_shot && !panel::is_open() {
+        panel::set_open(true);
+        log!("Panel: Übersetzung da → aufgeklappt");
     }
     let mut g = state();
     let Some(s) = g.session_mut(session) else { return Vec::new() };
@@ -1782,11 +1840,17 @@ unsafe fn live_frame_quads(
     proj: &xr::CompositionLayerProjection,
     live: Live,
 ) -> Vec<xr::CompositionLayerQuad> {
-    fixed_frame_quads(nx, session, s, proj, (live.img, live.rect, live.depth), 2, 0.005)
+    match live.world {
+        // 📌 Pin: Rahmen steht fest in der Welt
+        Some(w) => fixed_frame_quads(nx, session, s, proj, (w.img, w.rect, w.depth), 2, 0.005, Some(&w)),
+        None => fixed_frame_quads(nx, session, s, proj, (live.img, live.rect, live.depth), 2, 0.005, None),
+    }
 }
 
 /// Rahmen um einen festen Ausschnitt (am Kopf fest): 🔁 Lens (blau) und 🎞 GIF (rot/weiß).
+/// Mit `world` (📌 Pin) steht er fest in der Welt, so wie er beim Auslösen gesehen wurde.
 /// `layer` = Farbe aus ensure_frame_swapchain, `thick` = Linienstärke pro Meter Tiefe.
+#[allow(clippy::too_many_arguments)]
 unsafe fn fixed_frame_quads(
     nx: &Next,
     session: xr::Session,
@@ -1795,13 +1859,19 @@ unsafe fn fixed_frame_quads(
     (img, rect, depth): (frame::Rect, frame::Rect, f32),
     layer: u32,
     thick: f32,
+    world: Option<&WorldFrame>,
 ) -> Vec<xr::CompositionLayerQuad> {
-    let cfg = config::get();
-    let (view, eye) = choose_view(proj, cfg.eye_t());
-    if image_rect(view) != img {
-        return Vec::new();
-    }
-    let fov = view.fov;
+    let (eye, fov, space) = match world {
+        Some(w) => (w.eye, w.fov, w.space),
+        None => {
+            let cfg = config::get();
+            let (view, eye) = choose_view(proj, cfg.eye_t());
+            if image_rect(view) != img {
+                return Vec::new();
+            }
+            (eye, view.fov, proj.space)
+        }
+    };
     let Some(sc) = ensure_frame_swapchain(nx, session, s) else { return Vec::new() };
     let thickness = depth * thick;
     frame::edge_quads(&eye, &fov, img, rect, depth, thickness)
@@ -1810,7 +1880,7 @@ unsafe fn fixed_frame_quads(
             ty: xr::CompositionLayerQuad::TYPE,
             next: std::ptr::null(),
             layer_flags: xr::CompositionLayerFlags::EMPTY,
-            space: proj.space,
+            space,
             eye_visibility: xr::EyeVisibility::BOTH,
             sub_image: xr::SwapchainSubImage {
                 swapchain: sc,
@@ -1909,7 +1979,7 @@ unsafe fn try_capture(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) 
     let sub = view.sub_image;
     let img = image_rect(view);
     let now = Instant::now();
-    let (rect, photo_name) = if let Some(live) = s.live.as_mut().filter(|_| live_due) {
+    let (rect, photo_name, live_seq) = if let Some(live) = s.live.as_mut().filter(|_| live_due) {
         // Live: derselbe Ausschnitt wie beim Start (am Kopf fest)
         if live.img != img {
             s.live = None;
@@ -1917,8 +1987,26 @@ unsafe fn try_capture(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) 
             log!("Lens beendet (Bildgröße hat sich geändert)");
             return;
         }
+        // 📌 Pin: Ausschnitt = wo der Rahmen in der Welt GERADE im Bild ist.
+        // Schaut man nicht hinein → kein Bild, gleich nochmal nachsehen.
+        let rect = match live.world {
+            Some(w) => {
+                let r = (w.space == proj.space)
+                    .then(|| frame::world_rect(&w.eye, &w.fov, w.img, w.rect, w.depth, &eye, &view.fov, img))
+                    .flatten();
+                let Some(r) = r else {
+                    live.next = now + Duration::from_millis(250);
+                    return;
+                };
+                r
+            }
+            None => live.rect,
+        };
         live.next = now + cfg.live_interval();
-        (live.rect, None)
+        // Nummer = ms seit 1970 (eindeutig, auch über mehrere Lens hinweg)
+        let seq = SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
+        live.remember(Shot { seq, eye, fov: view.fov, space: proj.space, rect });
+        (rect, None, (seq, frame::roll(eye.orientation).to_degrees()))
     } else {
         s.capture_pending = false;
         log!("Projektions-Ebene gefunden nach {} Frame(s), {} Views", s.pending_frames, proj.view_count);
@@ -1939,18 +2027,22 @@ unsafe fn try_capture(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) 
             (Some(a), Some(b)) => (a.depth + b.depth) * 0.5,
             _ => 0.6,
         };
-        if cfg.buttons().mode.is_some() && icons::current(cfg.manual()) == icons::PhotoType::Lens {
+        let kind = icons::current(cfg.manual());
+        if cfg.buttons().mode.is_some() && kind.is_live() {
             // 🔁 Lens: KEIN Foto für die Galerie – ab jetzt denselben Ausschnitt
             // immer wieder fotografieren (das erste Mal gleich im nächsten Frame)
             if rect == img {
                 log!("Lens: Hände zu nah / außerhalb – nicht gestartet");
                 return;
             }
-            s.live = Some(Live { img, rect, depth, next: now, since: SystemTime::now() });
-            log!("Lens gestartet: alle {:?} dieser Ausschnitt", cfg.live_interval());
+            // 📌 Pin: Rahmen bleibt so in der Welt stehen (man kann drumherum laufen)
+            let world = (kind == icons::PhotoType::Pin)
+                .then_some(WorldFrame { eye, fov: view.fov, img, rect, depth, space: proj.space });
+            s.live = Some(Live::new(img, rect, depth, world));
+            log!("{} gestartet: alle {:?}", if world.is_some() { "Pin" } else { "Lens" }, cfg.live_interval());
             return;
         }
-        (rect, Some(save::photo_name()))
+        (rect, Some(save::photo_name()), (0, 0.0))
     };
 
     let Some(sc) = s.swapchains.get(&sub.swapchain.into_raw()) else {
@@ -1983,18 +2075,15 @@ unsafe fn try_capture(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) 
         sub.image_array_index,
         (rect.x, rect.y, rect.w as u32, rect.h as u32),
     ) {
-        Ok(raw) if live_due => save::save_live_png_async(raw, format, rect.w as u32, rect.h as u32),
+        Ok(raw) if live_due => save::save_live_png_async(raw, format, rect.w as u32, rect.h as u32, live_seq.0, live_seq.1),
         Ok(raw) => {
             log!("Bild kopiert in {:?} ({}x{})", started.elapsed(), rect.w, rect.h);
             // manueller Modus → gewählten Typ ins PNG schreiben
             let photo_type = cfg.manual().then(|| icons::current(true).tag()).flatten();
             let name = photo_name.unwrap_or_else(save::photo_name);
             save::save_png_async(name, raw, format, rect.w as u32, rect.h as u32, photo_type);
-            // 🔘 zugeklapptes Panel geht auf – gleich steht die Übersetzung drin
-            if cfg.panel && cfg.panel_open_on_shot && !panel::is_open() {
-                panel::set_open(true);
-                log!("Panel: nach dem Foto aufgeklappt");
-            }
+            // 🔘 Panel geht NICHT mehr hier auf, sondern erst wenn die Übersetzung da ist
+            // (panel_open_request von App/Dienst) – nur ein Foto ohne Übersetzung → bleibt zu
         }
         Err(e) => log!("Kopieren fehlgeschlagen: {e}"),
     }

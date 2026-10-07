@@ -16,7 +16,6 @@ from datetime import datetime
 from pathlib import Path
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QImageReader
 
 from core import layer_config, ocr, output, overlay, paths, translation
 from core import llm_translator as llm
@@ -73,16 +72,20 @@ class LiveMixin:
         self.live_busy = True
         self.photo_label.set_photo(path)
         self.photo_title.setText("🔁  " + tr("live_title"))
-        cfg = translation.task_cfg(self.cfg)  # 🤖 Auto / gewählte Aufgabe
+        # 🔁 Lens macht NUR Übersetzen (kein Erklären / Frage beantworten / Auto)
+        cfg = dict(translation.task_cfg(self.cfg), tr_llm_mode=llm.MODE_TRANSLATE)
         last_text, last_result = self.live_text, self.live_result
 
         def work():  # Hintergrund – KEINE Widgets anfassen!
             try:
-                lines = ocr.read_lines(path, priority=True)
+                # live.png EINMAL lesen (wird ständig neu geschrieben) + bei schrägem Kopf geradedrehen
+                snap, size, seq, roll = overlay.upright_snapshot(path)
+                lines = ocr.read_lines(snap, priority=True)
                 self.live_lines = lines
                 text = "\n".join(line["text"] for line in lines)
                 vision = cfg.get("tr_method") == llm.METHOD_VISION  # liest notfalls selbst
                 if not text and not vision:
+                    overlay.clear()  # kein Text mehr → alte Übersetzung weg, freie Sicht
                     self._live_done.emit("", "", "", "")
                     return
                 if text and text == last_text and last_result[0]:
@@ -90,13 +93,12 @@ class LiveMixin:
                 else:
                     translated, used = translation.translate_text_used(
                         text, cfg, progress=lambda step, arg="": self._live_progress.emit(step, arg),
-                        image=path)
+                        image=snap)
                 self._live_done.emit(text, translated, "", used)
-                # 🥽 in VR über den Text im blauen Rahmen legen (Positionen jedes Mal neu –
-                # der Rahmen hängt am Kopf, der Text wandert also im Bild)
+                # 🥽 in VR über den Originaltext legen – fest in der Welt, dort wo dieses
+                # Live-Bild gemacht wurde (seq), nicht mehr am Kopf
                 if overlay.enabled():
-                    size = QImageReader(str(path)).size()
-                    overlay.write(overlay.LIVE, (size.width(), size.height()), lines, translated)
+                    overlay.write(overlay.LIVE, size, lines, translated, seq, roll)
             except Exception as e:  # noqa: BLE001
                 self._live_done.emit("", "", str(e), "")
 

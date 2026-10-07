@@ -317,6 +317,30 @@ pub fn set_button_placement(p: Placement, write: bool) {
 
 static OPEN: Mutex<Option<bool>> = Mutex::new(None);
 
+/// „Beim Übersetzen öffnen“: App / Hintergrund-Dienst legen diese Datei an, sobald ein
+/// NEUES Foto wirklich übersetzt wurde (nur Foto ohne Übersetzung → bleibt zu).
+pub fn open_request_file() -> Option<PathBuf> {
+    crate::config::path().map(|p| p.with_file_name("panel_open_request"))
+}
+
+static OPEN_REQUEST_CHECKED: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// Liegt eine frische Öffnen-Anfrage da? (höchstens alle 200 ms nachsehen, Datei wird verbraucht;
+/// älter als 30 s = von früher → nur wegräumen)
+pub fn take_open_request() -> bool {
+    {
+        let mut checked = OPEN_REQUEST_CHECKED.lock().unwrap_or_else(|e| e.into_inner());
+        if checked.is_some_and(|t| t.elapsed() < Duration::from_millis(200)) {
+            return false;
+        }
+        *checked = Some(Instant::now());
+    }
+    let Some(path) = open_request_file() else { return false };
+    let Ok(modified) = std::fs::metadata(&path).and_then(|m| m.modified()) else { return false };
+    let _ = std::fs::remove_file(&path);
+    SystemTime::now().duration_since(modified).is_ok_and(|age| age < Duration::from_secs(30))
+}
+
 /// Panel aufgeklappt? (Standard: ja)
 pub fn is_open() -> bool {
     let mut open = OPEN.lock().unwrap_or_else(|e| e.into_inner());

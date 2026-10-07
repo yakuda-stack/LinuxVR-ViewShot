@@ -13,6 +13,8 @@ import json
 from core.paths import CONFIG_DIR
 
 LAYER_FILE = CONFIG_DIR / "layer.json"
+# 🔘 „Beim Übersetzen öffnen“: Layer klappt das Panel erst auf, wenn diese Datei kommt
+PANEL_OPEN_REQUEST = CONFIG_DIR / "panel_open_request"
 
 DEFAULTS = {
     "frame_inset_cm": 7,          # Rand zwischen Händen und Rahmen
@@ -77,3 +79,12 @@ def save(cfg: dict) -> None:
     tmp = LAYER_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     tmp.replace(LAYER_FILE)
+
+
+def request_panel_open() -> None:
+    """Neues Foto übersetzt → Layer klappt das zugeklappte Panel auf (falls eingestellt).
+    Nur ein Foto ohne Übersetzung → keine Datei → Panel bleibt zu."""
+    try:
+        PANEL_OPEN_REQUEST.write_text("1\n", encoding="utf-8")
+    except OSError:
+        pass

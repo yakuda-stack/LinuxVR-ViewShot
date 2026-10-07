@@ -39,7 +39,9 @@ enum Job {
 enum Msg {
     Progress { id: u64, step: String, arg: String },
     Photo { id: u64, path: PathBuf, res: Result<trn::PhotoResult, String> },
-    Live { size: (u32, u32), lines: Vec<Line>, text: String, res: Result<Option<(String, String, String)>, String> },
+    /// `seq` = Nummer des Live-Bilds ("ViewShot-Seq") → kommt ins Overlay, damit der Layer weiß, wo es hingehört
+    /// `roll` = so weit wurde das Bild geradegedreht (Grad, "ViewShot-Roll") → kommt auch ins Overlay
+    Live { size: (u32, u32), seq: String, roll: String, lines: Vec<Line>, text: String, res: Result<Option<(String, String, String)>, String> },
     /// ☁ Hochladen fertig: (Bild-Link, Lösch-Link) oder Fehler
     Upload { path: PathBuf, res: Result<(String, String), String> },
 }
@@ -75,7 +77,7 @@ fn worker(jobs: Receiver<Job>, out: Sender<Msg>) {
             *engine.borrow_mut() = None;
             let res = Err(format!("interner Fehler: {why}"));
             let _ = out.send(if live {
-                Msg::Live { size: (0, 0), lines: Vec::new(), text: String::new(), res }
+                Msg::Live { size: (0, 0), seq: String::new(), roll: String::new(), lines: Vec::new(), text: String::new(), res }
             } else {
                 Msg::Photo { id, path, res: Err(format!("interner Fehler: {why}")) }
             });
@@ -131,11 +133,22 @@ fn handle(job: Job, engine: &std::cell::RefCell<Option<Engine>>, out: &Sender<Ms
             let progress = move |step: &str, arg: &str| {
                 let _ = tx.send(Msg::Progress { id, step: step.into(), arg: arg.into() });
             };
-            let size = image::image_dimensions(&path).unwrap_or((0, 0));
+            // Schnappschuss: live.png wird ständig neu geschrieben → EINMAL lesen (Nummer + Bild passen
+            // zusammen), bei schrägem Kopf geradedrehen (Text waagerecht) und als eigene Datei ablegen
+            let snap = std::env::temp_dir().join("linuxvr-viewshot-live.png");
+            let (size, seq, roll) = match overlay::upright_snapshot(&path, &snap) {
+                Ok(v) => v,
+                Err(e) => {
+                    let res = Err(e);
+                    let _ = out.send(Msg::Live { size: (0, 0), seq: String::new(), roll: String::new(), lines: Vec::new(), text: String::new(), res });
+                    return;
+                }
+            };
+            let path = snap;
             let lines = match ocr(&path) {
                 Ok(l) => l,
                 Err(e) => {
-                    let _ = out.send(Msg::Live { size, lines: Vec::new(), text: String::new(), res: Err(e) });
+                    let _ = out.send(Msg::Live { size, seq, roll, lines: Vec::new(), text: String::new(), res: Err(e) });
                     return;
                 }
             };
@@ -151,9 +164,14 @@ fn handle(job: Job, engine: &std::cell::RefCell<Option<Engine>>, out: &Sender<Ms
                     None => Err(errors.join("; ")),
                 }
             };
-            let _ = out.send(Msg::Live { size, lines, text, res });
+            let _ = out.send(Msg::Live { size, seq, roll, lines, text, res });
         }
     }
+}
+
+/// 🔘 „Beim Übersetzen öffnen“: dem Layer sagen, dass ein neues Foto übersetzt ist
+fn request_panel_open() {
+    let _ = std::fs::write(paths::config_dir().join("panel_open_request"), "1\n");
 }
 
 fn file_mtime(p: &Path) -> Option<SystemTime> {
@@ -389,7 +407,9 @@ impl State {
         self.live_shown = true;
         self.live_busy = true;
         self.next_id += 1;
-        let cfg = trn::task_cfg(&self.cfg);
+        // 🔁 Lens macht NUR Übersetzen (kein Erklären / Frage beantworten / Auto)
+        let mut cfg = trn::task_cfg(&self.cfg);
+        cfg.set("tr_llm_mode", llm::MODE_TRANSLATE);
         self.send(Job::Live {
             id: self.next_id,
             path: live,
@@ -468,6 +488,9 @@ impl State {
                             String::new()
                         };
                         if !r.translated.is_empty() {
+                            if !r.cached {
+                                request_panel_open(); // 🔘 zugeklapptes Panel aufmachen (layer.json panel_open_on_shot)
+                            }
                             self.set_last_ai(&r.method, &r.task);
                             let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
                             trn::add_history(&self.cfg, &name, &r.ocr, &r.translated, &r.method);
@@ -506,7 +529,7 @@ impl State {
                     self.gal_toast = toast;
                 }
             }
-            Msg::Live { size, lines, text, res } => {
+            Msg::Live { size, seq, roll, lines, text, res } => {
                 self.live_busy = false;
                 if !self.live_shown {
                     return;
@@ -516,6 +539,8 @@ impl State {
                 match res {
                     Err(e) => self.status = format!("🔁  {}: {e}", self.t("tr_failed", &[])),
                     Ok(None) => {
+                        // kein Text mehr im Bild → alte Übersetzung weg, freie Sicht
+                        overlay::clear();
                         self.live_lines = lines;
                         self.result.clear();
                         self.status = format!("🔁  {lens} · {now} · {}", self.t("no_text", &[]));
@@ -530,7 +555,7 @@ impl State {
                         self.result = translated.clone();
                         self.status = format!("🔁  {lens} · {now}");
                         if self.lcfg.b("overlay") && size.0 > 0 {
-                            overlay::write_live(&mut self.fonts, size, &lines, &translated);
+                            overlay::write_live(&mut self.fonts, size, &lines, &translated, &seq, &roll);
                         }
                         self.live_lines = lines;
                     }

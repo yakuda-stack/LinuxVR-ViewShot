@@ -16,10 +16,11 @@ gibt es EIN großes Kästchen über dem ganzen Text.
 """
 
 import os
+import tempfile
 from pathlib import Path
 
 from PyQt6.QtCore import QRectF, Qt
-from PyQt6.QtGui import QColor, QFont, QFontMetricsF, QImage, QPainter, QPainterPath
+from PyQt6.QtGui import QColor, QFont, QFontMetricsF, QImage, QPainter, QPainterPath, QTransform
 
 from core import layer_config, paths
 
@@ -27,6 +28,7 @@ MAX_SIZE = 1024                  # längste Seite des Overlay-Bilds (Pixel)
 BACKGROUND = QColor(30, 32, 40, 225)
 TEXT = QColor(255, 255, 255)
 LIVE = "live"                    # "ViewShot-For" im Lens-Modus
+MIN_ROLL_DEG = 2.0               # darunter wird ein schräges Live-Bild nicht gedreht
 
 
 def overlay_file() -> Path:
@@ -108,11 +110,47 @@ def render(size: tuple[int, int], lines: list[dict], translated: str) -> QImage:
     return img
 
 
-def write(for_name: str, size: tuple[int, int], lines: list[dict], translated: str) -> Path:
+def upright_snapshot(path: Path) -> tuple[Path, tuple[int, int], str, str]:
+    """🔁 Lens / 📌 Pin: live.png EINMAL lesen (wird ständig neu geschrieben) → eigene Datei.
+    War der Kopf schräg ("ViewShot-Roll" in Grad), wird das Bild gedreht, bis der Text
+    waagerecht liegt (Fläche wächst, Ecken schwarz). → (Datei, Größe, Nummer, Drehung)"""
+    img = QImage.fromData(Path(path).read_bytes(), "PNG")
+    if img.isNull():
+        raise OSError(f"Live-Bild nicht lesbar: {path}")
+    seq = img.text("ViewShot-Seq")
+    try:
+        roll = float(img.text("ViewShot-Roll") or 0)
+    except ValueError:
+        roll = 0.0
+    if abs(roll) >= MIN_ROLL_DEG:
+        # Qt: positiver Winkel = im Uhrzeigersinn → minus = gegen den Uhrzeigersinn
+        turned = img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied).transformed(
+            QTransform().rotate(-roll), Qt.TransformationMode.SmoothTransformation)
+        img = QImage(turned.size(), QImage.Format.Format_RGB32)
+        img.fill(Qt.GlobalColor.black)
+        p = QPainter(img)
+        p.drawImage(0, 0, turned)
+        p.end()
+    else:
+        roll = 0.0
+    snap = Path(tempfile.gettempdir()) / "linuxvr-viewshot-live-app.png"
+    if not img.save(str(snap), "PNG"):
+        raise OSError(f"Kann nicht speichern: {snap}")
+    return snap, (img.width(), img.height()), seq, f"{roll:.2f}"
+
+
+def write(for_name: str, size: tuple[int, int], lines: list[dict], translated: str, seq: str = "",
+          roll: str = "") -> Path:
     """Overlay-Bild für ein Foto (Dateiname) bzw. LIVE schreiben. Erst in eine
-    Hilfsdatei, dann umbenennen → der Layer liest nie ein halbes Bild."""
+    Hilfsdatei, dann umbenennen → der Layer liest nie ein halbes Bild.
+    seq = Nummer des Live-Bilds ("ViewShot-Seq") → Layer legt es fest in die Welt.
+    roll = so weit wurde das Bild geradegedreht (Grad) → Layer dreht das Quad zurück."""
     img = render(size, lines, translated)
     img.setText("ViewShot-For", for_name)
+    if seq:
+        img.setText("ViewShot-Seq", seq)
+    if roll:
+        img.setText("ViewShot-Roll", roll)
     target = overlay_file()
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_name(".overlay.png.part")
