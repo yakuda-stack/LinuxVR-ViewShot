@@ -1,6 +1,6 @@
 [package]
 name = "linuxvr-viewshot-daemon"
-version = "1.0.4"
+version = "1.0.5"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "Background service: OCR + translation + VR panel without the desktop app"
@@ -25,3 +25,4 @@ libc = "0.2"
 rqrr = "0.10"
 tiny-skia = "0.11"
 cosmic-text = "0.14"
+gif = "0.14"  # 🗜 gif-shrink (dieselbe Version wie in image)

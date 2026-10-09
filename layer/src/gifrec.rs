@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 pub const MAX_SIDE: u32 = 512;
 
 pub struct Recorder {
-    tx: Sender<(Vec<u8>, Instant)>,
+    tx: Sender<(Vec<u8>, u32, u32, Instant)>,
     pub frames: u32,
 }
 
@@ -28,8 +28,9 @@ impl Recorder {
         Recorder { tx, frames: 0 }
     }
 
-    pub fn push(&mut self, raw: Vec<u8>, at: Instant) {
-        if self.tx.send((raw, at)).is_ok() {
+    /// `w`/`h` = Größe DIESES Bilds (📌 Pin-GIF: ändert sich, wenn man sich bewegt)
+    pub fn push(&mut self, raw: Vec<u8>, w: u32, h: u32, at: Instant) {
+        if self.tx.send((raw, w, h, at)).is_ok() {
             self.frames += 1;
         }
     }
@@ -82,7 +83,7 @@ fn centis(d: Duration) -> u16 {
 }
 
 fn run(
-    rx: Receiver<(Vec<u8>, Instant)>,
+    rx: Receiver<(Vec<u8>, u32, u32, Instant)>,
     dir: &std::path::Path,
     name: &str,
     format: i64,
@@ -108,8 +109,9 @@ fn run(
         };
         // Ein Bild zurückhalten: seine Anzeigedauer = Abstand zum nächsten
         let mut pending: Option<(Vec<u8>, Instant)> = None;
-        for (raw, at) in rx {
-            let rgb = downscale(&crate::save::to_rgb(&raw, format), w, h, ow, oh);
+        for (raw, fw, fh, at) in rx {
+            // jedes Bild auf dieselbe GIF-Größe (Pin: Ausschnitt ist mal größer, mal kleiner)
+            let rgb = downscale(&crate::save::to_rgb(&raw, format), fw, fh, ow, oh);
             if let Some((prev, t0)) = pending.replace((rgb, at)) {
                 write(&mut enc, prev, centis(at.duration_since(t0)))?;
             }
@@ -164,9 +166,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let (tx, rx) = channel();
         let t0 = Instant::now();
-        for i in 0..3u8 {
-            let raw = [i * 80, 10, 200, 255].repeat(8 * 4); // 8×4 RGBA
-            tx.send((raw, t0 + Duration::from_millis(100 * i as u64))).unwrap();
+        // 📌 Pin-GIF: die Bilder sind unterschiedlich groß → alle landen in 8×4
+        for (i, (w, h)) in [(8u32, 4u32), (12, 6), (6, 3)].into_iter().enumerate() {
+            let raw = [i as u8 * 80, 10, 200, 255].repeat((w * h) as usize); // RGBA
+            tx.send((raw, w, h, t0 + Duration::from_millis(100 * i as u64))).unwrap();
         }
         drop(tx);
         run(rx, &dir, "t.gif", crate::save::R8G8B8A8_SRGB, 8, 4, Duration::from_millis(100)).unwrap();

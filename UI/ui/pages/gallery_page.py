@@ -26,7 +26,7 @@ from PyQt6.QtWidgets import (QCheckBox, QDialog, QFileDialog, QFrame, QGridLayou
                              QListWidget, QListWidgetItem, QMenu, QMessageBox, QPushButton,
                              QSizePolicy, QSlider, QStackedWidget, QVBoxLayout, QWidget)
 
-from core import clipboard, config, paths, share, tags, uploader
+from core import clipboard, config, gifshrink, paths, share, tags, uploader
 from core.i18n import month_title, tr
 from ui.widgets import open_path, page_title
 
@@ -280,6 +280,8 @@ class UploadSignals(QObject):
     checked = pyqtSignal(str, bool)       # Foto-Pfad, noch online?
     trashed = pyqtSignal(str, bool)       # Foto-Pfad, im Papierkorb?
     check_failed = pyqtSignal(str, str)   # Foto-Pfad, Fehlertext
+    compressed = pyqtSignal(str, dict)    # 🗜 GIF-Pfad, Ergebnis (gifshrink.compress)
+    compress_failed = pyqtSignal(str, str)  # 🗜 GIF-Pfad, Fehlertext
 
 
 def photo_taken(photo: Path) -> datetime:
@@ -419,6 +421,9 @@ class GalleryPage(QWidget):
         self.signals.checked.connect(self.on_check_done)
         self.signals.check_failed.connect(self.on_check_failed)
         self.signals.trashed.connect(self.on_trashed)
+        self.signals.compressed.connect(self.on_compressed)
+        self.signals.compress_failed.connect(self.on_compress_failed)
+        self.compressing = set()  # 🗜 GIFs, die gerade komprimiert werden
         # fertige Vorschaubilder merken → Aktualisieren ist fast sofort fertig
         self.thumb_cache = {}  # (Pfad, Änderungszeit, Größe) → QIcon
         self.checking = set()  # Fotos, deren Upload gerade geprüft wird
@@ -718,11 +723,13 @@ class GalleryPage(QWidget):
         self.share_btn.menu().aboutToShow.connect(self.fill_share_menu)
         self.upload_btn = self.make_action("☁  " + tr("upload"), self.upload_photo)
         info_btn = self.make_action("ⓘ  " + tr("info"), self.show_info)
+        # 🗜 nur bei GIFs: für Discord unter 10 MB bringen
+        self.compress_btn = self.make_action(tr("gif_compress"), self.compress_gif)
         delete_btn = self.make_action("🗑  " + tr("delete"), self.delete_photo)
         delete_btn.setObjectName("dangerbtn")  # wird beim Drüberfahren rot
         # nur sichtbar, wenn das Foto hochgeladen wurde
         self.check_btn = self.make_action("↻  " + tr("check_upload"), self.check_upload)
-        for b in (copy_btn, self.share_btn, self.upload_btn, info_btn, delete_btn, self.check_btn):
+        for b in (copy_btn, self.share_btn, self.upload_btn, self.compress_btn, info_btn, delete_btn, self.check_btn):
             bar.addWidget(b)
         bar.addStretch()
         layout.addLayout(bar)
@@ -1007,9 +1014,66 @@ class GalleryPage(QWidget):
         busy_check = photo in self.checking
         self.check_btn.setEnabled(not busy_check)
         self.check_btn.setText("⏳  " + tr("checking") if busy_check else "↻  " + tr("check_upload"))
+        # 🗜 Komprimieren nur bei GIFs
+        self.compress_btn.setVisible(photo.suffix.lower() == ".gif")
+        busy_gif = photo in self.compressing
+        self.compress_btn.setEnabled(not busy_gif)
+        self.compress_btn.setText("⏳  " + tr("gif_compressing") if busy_gif else tr("gif_compress"))
         if links:
             self.link_fields["view"].setText(links["view"])
             self.link_fields["delete"].setText(links["delete"])
+
+    # ------------------------------------------------------------------ 🗜 GIF komprimieren
+    def compress_gif(self):
+        """Fragen (komprimieren / mit Backup), dann im Hintergrund auf unter 10 MB bringen."""
+        photo = self.photo()
+        if photo in self.compressing or not photo.is_file():
+            return
+        mb = f"{photo.stat().st_size / 1e6:.1f}"
+        if gifshrink.small_enough(photo):
+            self.notify(tr("gif_small_enough", mb=mb))
+            return
+        if gifshrink.binary() is None:
+            self.notify(tr("gif_no_tool"))
+            return
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("gif_compress_title"))
+        box.setText(tr("gif_compress_question", name=photo.name, mb=mb))
+        plain = box.addButton(tr("gif_compress"), QMessageBox.ButtonRole.AcceptRole)
+        backup = box.addButton(tr("gif_compress_backup"), QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(tr("cancel"), QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(backup)
+        box.exec()
+        if box.clickedButton() not in (plain, backup):
+            return
+        keep = box.clickedButton() is backup
+        self.compressing.add(photo)
+        self.update_upload_state()
+
+        def work():  # Hintergrund – KEINE Widgets anfassen!
+            try:
+                self.signals.compressed.emit(str(photo), gifshrink.compress(photo, keep))
+            except Exception as e:  # noqa: BLE001
+                self.signals.compress_failed.emit(str(photo), str(e))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def on_compressed(self, photo: str, res: dict):
+        path = Path(photo)
+        self.compressing.discard(path)
+        text = tr("gif_compressed", old=f"{res['old'] / 1e6:.1f}", new=f"{res['new'] / 1e6:.1f}",
+                  w=res["w"], h=res["h"], fps=res["fps"])
+        if res.get("backup"):
+            text += "  ·  " + tr("gif_backup_saved")
+        self.notify(text)
+        if self.photos and self.photo() == path:
+            self.view.set_photo(path)  # neue (kleinere) Datei zeigen
+        self.update_upload_state()
+
+    def on_compress_failed(self, photo: str, error: str):
+        self.compressing.discard(Path(photo))
+        self.update_upload_state()
+        self.notify(tr("gif_no_tool") if error == "viewshot-daemon" else f"{tr('gif_compress_failed')}: {error}")
 
     def show_info(self):
         photo = self.photo()

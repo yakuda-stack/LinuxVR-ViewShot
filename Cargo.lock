@@ -598,12 +598,13 @@ dependencies = [
 
 [[package]]
 name = "linuxvr-viewshot-daemon"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "base64",
  "chrono",
  "cosmic-text",
  "dirs",
+ "gif 0.14.2",
  "image",
  "libc",
  "ort",
@@ -619,7 +620,7 @@ dependencies = [
 
 [[package]]
 name = "linuxvr-viewshot-layer"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "ash",
  "chrono",

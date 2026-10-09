@@ -8,9 +8,11 @@
 //!   viewshot-daemon            normal starten (auch per systemd-Socket)
 //!   viewshot-daemon --stay     nicht von selbst beenden (von Hand gestartet)
 //!   viewshot-daemon ocr BILD   nur Text lesen (Test)
+//!   viewshot-daemon gif-shrink EIN AUS [MAX_BYTES]   🗜 GIF unter MAX_BYTES bringen (App → Galerie)
 
 mod actions;
 mod app;
+mod gifshrink;
 mod i18n;
 mod imgops;
 mod log;
@@ -51,6 +53,7 @@ fn main() {
                 }
             }
         }
+        Some("gif-shrink") => std::process::exit(gifshrink::main(&args[2..])),
         Some("--version") => println!("viewshot-daemon {}", env!("CARGO_PKG_VERSION")),
         Some("--stay") => app::run(true),
         None => app::run(false),

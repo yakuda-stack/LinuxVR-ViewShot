@@ -384,15 +384,39 @@ TEXTS = {
     "gif_card":        {"de": "GIF-Aufnahme",     "en": "GIF recording"},
     "gif_hint":        {"de": "Auslöser im Rahmen gedrückt halten → GIF. Der Rahmen blinkt rot/weiß, "
                               "solange aufgenommen wird; loslassen beendet die Aufnahme. Kurz drücken bleibt "
-                              "ein normales Foto.",
+                              "ein normales Foto. Mit 📌 Pin: der Rahmen bleibt fest in der Welt stehen, "
+                              "die Hände sind frei – Ende mit neuem Rahmen, nochmal Auslöser oder nach der Höchstlänge.",
                         "en": "Hold the shutter in the frame → GIF. The frame blinks red/white while "
-                              "recording; let go to stop. A short press is still a normal photo."},
+                              "recording; let go to stop. A short press is still a normal photo. With 📌 Pin: "
+                              "the frame stays fixed in the world and your hands are free – stop with a new "
+                              "frame, the shutter again or at the max. length."},
     "gif_on":          {"de": "Auslöser halten = GIF aufnehmen", "en": "Hold shutter = record GIF"},
     "gif_max":         {"de": "Höchstens",        "en": "At most"},
     "gif_note":        {"de": "Ist das an, wird ein Foto erst beim Loslassen gemacht (sonst sofort beim "
                               "Drücken). GIFs landen in der Galerie, werden aber nicht übersetzt.",
                         "en": "When on, a photo is taken when you let go (otherwise right when you press). "
                               "GIFs go to the gallery but aren't translated."},
+    # 🗜 GIF komprimieren (Desktop-Galerie)
+    "gif_compress":        {"de": "🗜  Komprimieren", "en": "🗜  Compress"},
+    "gif_compress_backup": {"de": "🗜  Komprimieren + Backup", "en": "🗜  Compress + backup"},
+    "gif_compress_title":  {"de": "GIF komprimieren", "en": "Compress GIF"},
+    "gif_compress_question": {"de": "{name} ist {mb} MB groß.\n\nAuf unter 10 MB verkleinern, damit Discord es "
+                                    "annimmt? Dafür werden weniger Bilder pro Sekunde und/oder ein kleineres Bild "
+                                    "genommen – die Länge bleibt gleich.\n\nMit Backup bleibt das Original im "
+                                    "Ordner „backup“ im Foto-Ordner (nicht in der Galerie).",
+                              "en": "{name} is {mb} MB.\n\nShrink it below 10 MB so Discord accepts it? This uses "
+                                    "fewer frames per second and/or a smaller picture – the length stays the same."
+                                    "\n\nWith backup the original is kept in the “backup” folder inside the photo "
+                                    "folder (not shown in the gallery)."},
+    "gif_compressing":     {"de": "Komprimiere …", "en": "Compressing …"},
+    "gif_compressed":      {"de": "✔ Komprimiert: {old} → {new} MB ({w}×{h}, {fps} Bilder/s)",
+                            "en": "✔ Compressed: {old} → {new} MB ({w}×{h}, {fps} fps)"},
+    "gif_backup_saved":    {"de": "Original im Ordner „backup“", "en": "original in the “backup” folder"},
+    "gif_small_enough":    {"de": "✔ Schon unter 10 MB ({mb} MB) – Discord nimmt es so",
+                            "en": "✔ Already below 10 MB ({mb} MB) – Discord takes it as it is"},
+    "gif_compress_failed": {"de": "Komprimieren fehlgeschlagen", "en": "Compressing failed"},
+    "gif_no_tool":         {"de": "Hintergrund-Dienst fehlt – einmal 🔧 Installieren / Neu bauen",
+                            "en": "Background service missing – press 🔧 Install / Rebuild once"},
     "out_card":        {"de": "Ausgabe (OSC / Datei)", "en": "Output (OSC / file)"},
     "out_hint":        {"de": "Jede neue Übersetzung zusätzlich weitergeben – z. B. an ein Plugin in "
                               "OSC-DreamChatbox, das sie in die Chatbox schreibt. Beides geht einzeln oder "

@@ -871,10 +871,32 @@ pub fn thumb(path: &std::path::Path, w: u32, h: u32) -> Option<image::RgbaImage>
 
 /// Foto so verkleinert/vergrößert, dass es in w × h passt (Seitenverhältnis bleibt)
 pub fn fit_photo(path: &std::path::Path, w: u32, h: u32) -> Option<image::RgbaImage> {
-    let img = image::open(path).ok()?;
+    Some(fit_image(image::open(path).ok()?, w, h))
+}
+
+/// Bild so verkleinert/vergrößert, dass es in w × h passt (🎞 GIF: jedes Einzelbild)
+pub fn fit_image(img: image::DynamicImage, w: u32, h: u32) -> image::RgbaImage {
     let scale = (w as f32 / img.width() as f32).min(h as f32 / img.height() as f32);
     let (nw, nh) = ((img.width() as f32 * scale).round().max(1.0) as u32, (img.height() as f32 * scale).round().max(1.0) as u32);
-    Some(img.resize_exact(nw, nh, image::imageops::FilterType::Triangle).to_rgba8())
+    img.resize_exact(nw, nh, image::imageops::FilterType::Triangle).to_rgba8()
+}
+
+/// 🔘 Ist das Panel in VR aufgeklappt? (panel_state.json schreibt der Layer; fehlt = ja)
+pub fn is_open() -> bool {
+    std::fs::read_to_string(crate::paths::config_dir().join("panel_state.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v["open"].as_bool())
+        .unwrap_or(true)
+}
+
+/// 🎞 GIF Bild für Bild lesen (nur das aktuelle Bild liegt im Speicher)
+pub type GifFrames = image::Frames<'static>;
+
+pub fn gif_frames(path: &std::path::Path) -> Option<GifFrames> {
+    use image::AnimationDecoder;
+    let file = std::io::BufReader::new(std::fs::File::open(path).ok()?);
+    Some(image::codecs::gif::GifDecoder::new(file).ok()?.into_frames())
 }
 
 /// panel_sizes.json: Größe je Seite + aktuelle Seite (gleiche Datei wie vr_panel.switch_page_size)

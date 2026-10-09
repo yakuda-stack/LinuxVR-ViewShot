@@ -227,6 +227,16 @@ type PhotoCache = ((PathBuf, Option<SystemTime>, Vec<Line>), Option<image::RgbaI
 /// (Foto, Änderungszeit) → Foto in der Galerie-Einzelansicht (verkleinert)
 type BigCache = Option<((PathBuf, Option<SystemTime>), Option<image::RgbaImage>)>;
 
+/// 🎞 GIF in der VR-Galerie läuft: Bilder kommen der Reihe nach aus der Datei
+struct GifPlay {
+    key: (PathBuf, Option<SystemTime>),
+    frames: panel::GifFrames,
+    next: Instant,
+}
+
+/// So schnell höchstens neue Panel-Bilder fürs GIF (der Layer schaut alle 80 ms)
+const GIF_MIN_FRAME: Duration = Duration::from_millis(125);
+
 struct State {
     fonts: Fonts,
     cfg: Cfg,
@@ -278,6 +288,7 @@ struct State {
     newest_mtime: Option<SystemTime>,
     thumbs: HashMap<(PathBuf, Option<SystemTime>), Option<image::RgbaImage>>,
     big_cache: BigCache,
+    gif_play: Option<GifPlay>,
     result_page: usize,
     pages: usize,
     paged_result: String,
@@ -824,6 +835,63 @@ impl State {
         }
     }
 
+    /// 🎞 GIF groß in der VR-Galerie → nächstes Bild ins Panel (nur wenn das Panel offen ist)
+    fn tick_gif(&mut self) {
+        let shown = (self.page == Page::Gallery && !self.sheet_open && self.gal_sub.is_none())
+            .then(|| self.gal_open.clone())
+            .flatten()
+            .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("gif")));
+        let Some(path) = shown else {
+            self.gif_play = None;
+            return;
+        };
+        let now = Instant::now();
+        let mtime = self.gal_index(&path).map(|i| self.gal_list[i].mtime);
+        let key = (path.clone(), mtime);
+        if self.gif_play.as_ref().is_none_or(|g| g.key != key) {
+            // erstes Bild zeigt redraw() wie ein Foto – danach geht es hier weiter
+            self.gif_play = panel::gif_frames(&path).map(|frames| GifPlay { key: key.clone(), frames, next: now + GIF_MIN_FRAME });
+            if let Some(g) = self.gif_play.as_mut() {
+                let _ = g.frames.next();
+            }
+            return;
+        }
+        let Some(g) = self.gif_play.as_mut() else { return };
+        if now < g.next {
+            return;
+        }
+        if !panel::is_open() {
+            g.next = now + Duration::from_millis(500); // zugeklappt → nichts malen
+            return;
+        }
+        let frame = match g.frames.next() {
+            Some(Ok(f)) => f,
+            _ => {
+                // Ende → von vorn
+                match panel::gif_frames(&path).and_then(|mut f| {
+                    let first = f.next()?.ok()?;
+                    Some((f, first))
+                }) {
+                    Some((frames, first)) => {
+                        g.frames = frames;
+                        first
+                    }
+                    None => {
+                        self.gif_play = None;
+                        return;
+                    }
+                }
+            }
+        };
+        let (n, d) = frame.delay().numer_denom_ms();
+        let delay = Duration::from_millis(u64::from(n.checked_div(d).unwrap_or(100)));
+        g.next = now + delay.max(GIF_MIN_FRAME);
+        let (w, h) = panel::single_size();
+        let img = panel::fit_image(image::DynamicImage::ImageRgba8(frame.into_buffer()), w, h);
+        self.big_cache = Some((key, Some(img)));
+        self.redraw(true);
+    }
+
     fn redraw(&mut self, force: bool) {
         if !self.lcfg.b("panel") {
             let _ = std::fs::remove_file(paths::panel_file());
@@ -1209,6 +1277,7 @@ pub fn run(stay: bool) {
         newest_mtime: None,
         thumbs: HashMap::new(),
         big_cache: None,
+        gif_play: None,
         result_page: 0,
         pages: 1,
         paged_result: String::new(),
@@ -1293,6 +1362,9 @@ pub fn run(stay: bool) {
         while let Ok(msg) = msg_rx.try_recv() {
             st.on_msg(msg);
             st.redraw(false);
+        }
+        if st.slide.is_empty() {
+            st.tick_gif(); // 🎞 GIF in der VR-Galerie animiert
         }
         if let Some((_, sock)) = &panel_sock {
             let mut clicks = Vec::new();

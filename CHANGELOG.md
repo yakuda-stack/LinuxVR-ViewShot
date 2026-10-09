@@ -1,5 +1,15 @@
 # Changelog
 
+## [v1.0.5] – 2026-10-09
+Update: **AUR** `yay -Syu linuxvr-viewshot` or the **AppImage** – open the app once (or press ⬆ *Update layer*). From a clone: 🔧 *Rebuild & install*. Then restart the VR game. **Needs a layer + service rebuild.**
+
+- **🎞 GIF with 📌 Pin** – with 📌 Pin selected, **holding** the shutter (~0.45 s) records a GIF whose frame stays **fixed in the world** (like Pin) instead of sticking to your head. You can let go of the grips and the shutter and move your head – the GIF keeps filming the same spot. A short press is still 📌 Pin (translation) as before
+  - Stops with a **new frame**, **pressing the shutter again** or at the max. length (Options → Shot, 1–15 s)
+  - Not looking into the frame (less than half in view) → that moment is skipped. Every picture is scaled to the size at the start, so the GIF keeps one size
+- **🎞 GIFs are animated in the VR gallery** – open a GIF in the 🖼 gallery of the 🪟 VR panel and it plays (app and background service, ~8 frames/s). Only while the panel is open – a closed panel doesn't redraw
+- **🗜 Compress GIF** (desktop gallery, only for GIFs) – shrinks the GIF below **10 MB** so Discord takes it, also 15 s GIFs. Asks first: *Compress* or *Compress + backup* (the original is kept in `backup/` inside the photo folder, hidden from the gallery). Fewer frames per second (max. 10) and a smaller picture until it fits – the length stays the same; already below 10 MB → nothing to do. Name and date stay, so the GIF keeps its place in the gallery. Done by the background service binary (`viewshot-daemon gif-shrink IN OUT [MAX_BYTES]`), no extra Python package
+- Texts in DE / EN / FR, README updated
+
 ## [v1.0.4] – 2026-10-09
 Update: **AUR** `yay -Syu linuxvr-viewshot` or the **AppImage** – open the app once (or press ⬆ *Update layer*). From a clone: 🔧 *Rebuild & install*. Then restart the VR game. **Needs a layer + service rebuild.**
 

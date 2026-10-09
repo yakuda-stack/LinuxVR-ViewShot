@@ -143,6 +143,8 @@ struct SessionData {
     button_input: panel::Interaction,
     /// 🎞 GIF soll starten – der nächste Frame legt den Ausschnitt fest
     gif_start: bool,
+    /// 🎞 das startende GIF ist ein 📌 Pin-GIF (Rahmen fest in der Welt)
+    gif_pin: bool,
     /// 🎞 laufende GIF-Aufnahme
     gif: Option<GifRec>,
 }
@@ -152,6 +154,9 @@ struct GifRec {
     img: frame::Rect,
     rect: frame::Rect,
     depth: f32,
+    /// 📌 Pin-GIF: Rahmen steht fest in der Welt (Hände frei, Kopf darf sich bewegen).
+    /// None = normales GIF, Ausschnitt am Kopf fest
+    world: Option<WorldFrame>,
     started: Instant,
     next: Instant,
     rec: gifrec::Recorder,
@@ -814,15 +819,38 @@ unsafe fn update_gesture(nx: &Next, session: xr::Session) {
 
     let cfg = config::get();
     let buttons = cfg.buttons();
-    // 🔁 Lens gewählt? Dann startet Halten kein GIF, sondern Lens (wie ein Foto)
-    let lens = buttons.mode.is_some() && icons::current(cfg.manual()).is_live();
+    // 🔁 Lens gewählt? Dann startet Halten kein GIF, sondern Lens (wie ein Foto).
+    // 📌 Pin gewählt: kurz drücken = Pin (übersetzen), halten = GIF mit festem Rahmen in der Welt
+    let kind = icons::current(cfg.manual());
+    let lens = buttons.mode.is_some() && kind == icons::PhotoType::Lens;
+    let pin = buttons.mode.is_some() && kind == icons::PhotoType::Pin;
     let mut event = s.gesture.update(&inputs, Instant::now(), &buttons);
     if event == gesture::Event::GifStart && lens {
         event = gesture::Event::TakePhoto;
     }
+    // 📌 Pin-GIF läuft weiter, auch wenn Auslöser/Grips losgelassen werden (Hände frei) –
+    // Ende: Höchstlänge oder neuer Rahmen
+    let pinned_gif = s.gif.as_ref().is_some_and(|r| r.world.is_some());
+    if pinned_gif && matches!(event, gesture::Event::GifStop | gesture::Event::FrameClosed) {
+        if event == gesture::Event::GifStop {
+            log!("GIF (Pin): Auslöser los – Aufnahme läuft weiter, Ende mit neuem Rahmen oder nach {:?}", cfg.gif_max());
+        }
+        event = gesture::Event::None;
+    }
+    // 📌 Pin-GIF läuft und man drückt nochmal den Auslöser → Aufnahme beenden (kein Foto/Pin)
+    if pinned_gif && matches!(event, gesture::Event::TakePhoto | gesture::Event::GifStart) {
+        stop_gif(&mut s.gif, &mut s.gif_start);
+        vibrate(nx, session, a, 80, 0.8);
+        s.flash_until = Some(Instant::now() + std::time::Duration::from_millis(150));
+        event = gesture::Event::None;
+    }
     match event {
         gesture::Event::FrameActivated => {
             vibrate(nx, session, a, 40, 0.3);
+            // 📌 Pin-GIF: neuer Rahmen beendet die Aufnahme
+            if stop_gif(&mut s.gif, &mut s.gif_start) {
+                s.flash_until = Some(Instant::now() + std::time::Duration::from_millis(150));
+            }
             if s.live.take().is_some() {
                 save::remove_live_png();
                 log!("Lens beendet (neuer Rahmen)");
@@ -843,7 +871,8 @@ unsafe fn update_gesture(nx: &Next, session: xr::Session) {
         gesture::Event::GifStart => {
             vibrate(nx, session, a, 60, 0.6);
             s.gif_start = true;
-            log!("GIF: Auslöser gehalten – Aufnahme startet");
+            s.gif_pin = pin;
+            log!("GIF{}: Auslöser gehalten – Aufnahme startet", if pin { " (Pin, Rahmen fest in der Welt)" } else { "" });
         }
         gesture::Event::GifStop => {
             if stop_gif(&mut s.gif, &mut s.gif_start) {
@@ -918,6 +947,7 @@ unsafe extern "system" fn create_session(
             button_failed: false,
             button_input: panel::Interaction::button(),
             gif_start: false,
+            gif_pin: false,
             gif: None,
             vk_binding,
             vk: None,
@@ -1465,8 +1495,8 @@ unsafe fn build_frame_quads(nx: &Next, session: xr::Session, info: &xr::FrameEnd
     // 🎞 GIF läuft: fester Ausschnitt, blinkt rot/weiß (wie „REC“)
     if let Some(r) = s.gif.as_ref() {
         let layer = if (r.started.elapsed().as_millis() / 500) % 2 == 0 { 0 } else { 1 };
-        let (img, rect, depth) = (r.img, r.rect, r.depth);
-        return fixed_frame_quads(nx, session, s, proj, (img, rect, depth), layer, 0.008, None);
+        let (img, rect, depth, world) = (r.img, r.rect, r.depth, r.world);
+        return fixed_frame_quads(nx, session, s, proj, (img, rect, depth), layer, 0.008, world.as_ref());
     }
     if !(active || flash) {
         // Live-Modus: blauer Rahmen um den Bereich, der immer wieder fotografiert wird
@@ -2231,19 +2261,39 @@ unsafe fn try_gif(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) {
             return;
         };
         let rec = gifrec::Recorder::start(save::gif_name(), format, rect.w as u32, rect.h as u32, cfg.gif_interval());
-        s.gif = Some(GifRec { img, rect, depth, started: now, next: now, rec });
-        log!("GIF: Aufnahme gestartet, Ausschnitt {rect:?}, höchstens {:?}", cfg.gif_max());
+        // 📌 Pin: Rahmen bleibt so in der Welt stehen, wie er beim Start gesehen wurde
+        let world = s.gif_pin.then_some(WorldFrame { eye, fov: view.fov, img, rect, depth, space: proj.space });
+        s.gif = Some(GifRec { img, rect, depth, world, started: now, next: now, rec });
+        log!("GIF{}: Aufnahme gestartet, Ausschnitt {rect:?}, höchstens {:?}", if world.is_some() { " (Pin)" } else { "" }, cfg.gif_max());
     }
-    let Some(rect) = s.gif.as_ref().map(|r| r.rect) else { return };
+    let Some((rect0, world)) = s.gif.as_ref().map(|r| (r.rect, r.world)) else { return };
     if s.gif.as_ref().is_some_and(|r| r.img != img) {
         log!("GIF: Bildgröße hat sich geändert – Aufnahme beendet");
         stop_gif(&mut s.gif, &mut s.gif_start);
         return;
     }
+    // 📌 Pin-GIF: Ausschnitt = wo der Rahmen in der Welt GERADE im Bild ist.
+    // Schaut man nicht hinein → dieses Bild auslassen, gleich nochmal nachsehen.
+    let rect = match world {
+        Some(w) => {
+            let r = (w.space == proj.space)
+                .then(|| frame::world_rect(&w.eye, &w.fov, w.img, w.rect, w.depth, &eye, &view.fov, img))
+                .flatten();
+            let Some(r) = r else {
+                if let Some(g) = s.gif.as_mut() {
+                    g.next = now + Duration::from_millis(100);
+                }
+                return;
+            };
+            r
+        }
+        None => rect0,
+    };
     match grab(s, view, rect) {
         Ok(raw) => {
             if let Some(r) = s.gif.as_mut() {
-                r.rec.push(raw, now);
+                // Größe kann sich beim Pin ändern – der GIF-Thread bringt jedes Bild auf die Startgröße
+                r.rec.push(raw, rect.w as u32, rect.h as u32, now);
                 r.next = now + cfg.gif_interval();
             }
         }

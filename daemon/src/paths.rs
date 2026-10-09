@@ -100,7 +100,7 @@ pub fn newest_photo() -> Option<PathBuf> {
 }
 
 /// Hilfsordner im Foto-Ordner – nie in der Galerie (wie HELPER_DIRS in paths.py)
-const HELPER_DIRS: [&str; 3] = ["panel", "overlay", "live"];
+const HELPER_DIRS: [&str; 4] = ["panel", "overlay", "live", "backup"]; // backup = 🗜 Original vor dem Komprimieren
 const IMAGE_EXTS: [&str; 4] = ["png", "jpg", "jpeg", "gif"]; // gif = 🎞 GIF-Aufnahmen
 /// so tief in Unterordner (VRChat: VRChat/2026-10/…)
 const MAX_DEPTH: usize = 4;

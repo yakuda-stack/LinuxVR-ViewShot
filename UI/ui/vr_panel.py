@@ -28,10 +28,11 @@ import logging
 import os
 import re
 import threading
+import time
 from pathlib import Path
 
 from PyQt6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import (QColor, QFont, QFontMetrics, QIcon, QImage, QImageReader, QMouseEvent, QPainter,
+from PyQt6.QtGui import (QColor, QFont, QFontMetrics, QIcon, QImage, QImageReader, QMouseEvent, QMovie, QPainter,
                          QPixmap, QTextLayout)
 from PyQt6.QtNetwork import QHostAddress, QUdpSocket
 from PyQt6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton,
@@ -59,6 +60,7 @@ THUMB_RATIO = 0.75       # Höhe/Breite einer Kachel
 MONTH_H = 34             # Höhe eines Monats-Trenners im Raster
 GALLERY_H = 760          # Galerie ohne von Hand gezogene Höhe: so hoch wird das Panel
 SINGLE_MAX_H = 360       # Einzelansicht: so hoch darf das Foto höchstens werden
+GIF_MIN_FRAME_S = 0.125  # 🎞 GIF in VR: höchstens so oft ein neues Panel-Bild (der Layer schaut alle 80 ms)
 PAGES = ("translate", "gallery")
 PAGE_SIZE_DEFAULT = {"translate": 0.32, "gallery": 0.48}  # Breite in VR (m) je Seite
 # Stapel-Seiten im Panel
@@ -74,6 +76,14 @@ def panel_file() -> Path:
 
 def pose_file() -> Path:
     return paths.CONFIG_DIR / "panel_pose.json"
+
+
+def panel_open() -> bool:
+    """🔘 Ist das Panel in VR aufgeklappt? (panel_state.json schreibt der Layer; fehlt = ja)"""
+    try:
+        return bool(json.loads((paths.CONFIG_DIR / "panel_state.json").read_text()).get("open", True))
+    except (OSError, ValueError, AttributeError):
+        return True
 
 
 def number(i: int) -> str:
@@ -370,6 +380,9 @@ class VRPanel(QWidget):
         self.gal_open = None     # Galerie: Foto in der Einzelansicht (Path) oder None
         self.gal_confirm = False  # 🗑 einmal angetippt → „Wirklich löschen?“
         self.gal_toast = ""      # Rückmeldung in der Einzelansicht („✔ Link kopiert“)
+        self.gif_movie = None    # 🎞 GIF groß in der VR-Galerie: läuft als Animation
+        self.gif_path = None
+        self.gif_written = 0.0   # wann zuletzt ein GIF-Bild ins Panel ging
         self.gal_pages_cache = []  # Raster-Seiten: [[("month", text) | ("row", [Fotos])]]
         self.uploading = set()
         self.thumbs = {}         # (Pfad, Änderungszeit, Breite) → Vorschaubild
@@ -874,7 +887,10 @@ class VRPanel(QWidget):
         i = photos.index(photo)
         self.single_title.setText(photo.stem.removeprefix("ViewShot_"))
         self.single_info.setText(f"{i + 1} / {len(photos)}   ·   {month_title(*paths.month_key(photo))}")
-        pix = QPixmap(str(photo))
+        pix = self.gif_pixmap(photo) if photo.suffix.lower() == ".gif" else None
+        if pix is None:
+            self.stop_gif()
+            pix = QPixmap(str(photo))
         if not pix.isNull():
             pix = pix.scaled(self.content_w(), SINGLE_MAX_H, Qt.AspectRatioMode.KeepAspectRatio,
                              Qt.TransformationMode.SmoothTransformation)
@@ -891,6 +907,40 @@ class VRPanel(QWidget):
         self.single_upload.setEnabled(not busy)
         self.single_delete.setText("🗑  " + tr("vr_delete_sure" if self.gal_confirm else "delete"))
         self.mark({True: self.single_delete}, self.gal_confirm)  # blau = nochmal tippen löscht
+
+    # ------------------------------------------------------------ 🎞 GIF animiert
+    def gif_pixmap(self, photo: Path) -> QPixmap | None:
+        """GIF als Animation: QMovie liefert Bild für Bild, jedes neue Bild → Panel neu malen."""
+        if self.gif_movie is None or self.gif_path != photo:
+            self.stop_gif()
+            movie = QMovie(str(photo))
+            if not movie.isValid():
+                return None
+            movie.frameChanged.connect(self.on_gif_frame)
+            self.gif_movie, self.gif_path = movie, photo
+        if self.gif_movie.state() != QMovie.MovieState.Running:
+            self.gif_movie.start()
+        pix = self.gif_movie.currentPixmap()
+        return None if pix.isNull() else pix
+
+    def stop_gif(self):
+        if self.gif_movie is not None:
+            self.gif_movie.stop()
+            self.gif_movie.deleteLater()
+        self.gif_movie, self.gif_path = None, None
+
+    def on_gif_frame(self, _number: int):
+        if self.stack.currentIndex() != PAGE_SINGLE or self.gal_open != self.gif_path:
+            self.stop_gif()  # Einzelansicht verlassen / anderes Foto
+            return
+        now = time.monotonic()
+        if self.slide or not enabled() or not panel_open() or now - self.gif_written < GIF_MIN_FRAME_S:
+            return  # ⚙ klappt gerade / Panel zu / zu schnell – dieses Bild auslassen
+        self.gif_written = now
+        try:
+            self.write(self.render())
+        except Exception:  # noqa: BLE001 – das Panel darf die App nie stören
+            logging.exception("VR-Panel: GIF-Bild konnte nicht gezeichnet werden")
 
     def open_photo(self, photo: Path):
         self.gal_open, self.gal_confirm, self.gal_toast = photo, False, ""

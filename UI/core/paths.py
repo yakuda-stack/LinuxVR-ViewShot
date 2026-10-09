@@ -82,7 +82,7 @@ def list_photos() -> list[Path]:
 # ----------------------------------------------------------------------
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif"}  # .gif = 🎞 GIF-Aufnahmen
 # Hilfsordner im Foto-Ordner – nie in der Galerie
-HELPER_DIRS = {"panel", "overlay", "live"}
+HELPER_DIRS = {"panel", "overlay", "live", "backup"}  # backup = 🗜 Original vor dem Komprimieren
 MAX_DEPTH = 4            # so tief in Unterordner (VRChat: VRChat/2026-10/…)
 SCAN_SECONDS = 2.0       # Liste so lange merken (das VR-Panel fragt oft)
 _scan_cache: dict = {}
