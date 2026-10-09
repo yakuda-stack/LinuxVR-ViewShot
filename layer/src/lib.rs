@@ -123,6 +123,15 @@ struct SessionData {
     /// Alte Overlay-Swapchains – erst im nächsten Frame löschen (Compositor evtl. noch dran)
     overlay_trash: Vec<xr::Swapchain>,
     overlay_failed: bool,
+    /// Runtime hat eine Overlay-/Panel-Ebene abgelehnt → bis dahin Pause, dann neu versuchen
+    /// (früher: für den Rest der Session aus – dann kam nie wieder ein grauer Kasten)
+    overlay_retry: Option<Instant>,
+    /// so oft hintereinander abgelehnt – ab OVERLAY_MAX_REJECTS endgültig aus
+    overlay_rejects: u32,
+    /// 🔁 Lens / 📌 Pin: für diesen Start schon „Übersetzung angezeigt“ geloggt
+    overlay_logged: Option<SystemTime>,
+    /// 🔁 Lens / 📌 Pin: zuletzt geloggte unbekannte Bild-Nummer (nur einmal loggen)
+    overlay_unknown_seq: u64,
     /// 🪟 Swapchain mit dem Panel-Bild der UI (+ Änderungszeit)
     panel_sc: Option<(xr::Swapchain, SystemTime)>,
     /// Laser / Klicks / Greifen / Größe
@@ -220,6 +229,11 @@ impl Live {
 /// wirklich weg ist, wissen wir nicht – weiter weg = weniger Verrutschen beim Bewegen
 /// des Kopfes (die Größe wird mitskaliert, sieht also gleich groß aus).
 const LENS_OVERLAY_DEPTH: f32 = 2.0;
+
+/// Overlay/Panel von der Runtime abgelehnt → so lange Pause, dann nochmal
+const OVERLAY_RETRY: Duration = Duration::from_secs(3);
+/// so oft hintereinander abgelehnt → für diese Session endgültig aus
+const OVERLAY_MAX_REJECTS: u32 = 5;
 
 /// Zustand pro OpenXR-Instanz. Ein Programm kann MEHRERE Instanzen
 /// gleichzeitig haben (z. B. wineopenxr erstellt Test-Instanzen parallel).
@@ -926,6 +940,10 @@ unsafe extern "system" fn create_session(
             overlay_sc: None,
             overlay_trash: Vec::new(),
             overlay_failed: false,
+            overlay_retry: None,
+            overlay_rejects: 0,
+            overlay_logged: None,
+            overlay_unknown_seq: 0,
             flash_until: None,
         });
     }
@@ -1095,9 +1113,16 @@ unsafe extern "system" fn end_frame(session: xr::Session, info: *const xr::Frame
 
     // 2) 🥽 Übersetzung über dem Original, darüber der sichtbare Rahmen
     let mut quads = guard("overlay", || build_overlay_quads(&nx, session, &*info)).unwrap_or_default();
+    let n_overlay = quads.len();
     quads.extend(guard("panel", || build_panel_quads(&nx, session, &*info)).unwrap_or_default());
+    let n_panel = quads.len() - n_overlay;
+    // Kaputte Posen (Hand kurz verloren → Drehung 0/NaN) nie an die Runtime geben –
+    // sonst lehnt sie den ganzen Frame ab (ERROR_POSE_INVALID)
+    quads.retain_mut(sane_quad);
     let with_overlay = !quads.is_empty();
-    quads.extend(guard("frame", || build_frame_quads(&nx, session, &*info)).unwrap_or_default());
+    let mut frame_quads = guard("frame", || build_frame_quads(&nx, session, &*info)).unwrap_or_default();
+    frame_quads.retain_mut(sane_quad);
+    quads.extend(frame_quads);
     if quads.is_empty() {
         return (nx.end_frame)(session, info);
     }
@@ -1114,14 +1139,27 @@ unsafe extern "system" fn end_frame(session: xr::Session, info: *const xr::Frame
 
     let r = (nx.end_frame)(session, &copy);
     if ok(r) {
+        if with_overlay {
+            if let Some(s) = state().session_mut(session) {
+                s.overlay_rejects = 0; // klappt wieder
+            }
+        }
         return r;
     }
     // Runtime mag unsere Ebenen nicht → abschalten, Frame normal beenden.
     // War ein Overlay dabei, zuerst nur das Overlay abschalten (Rahmen bleibt).
     if let Some(s) = state().session_mut(session) {
         if with_overlay {
-            log!("Overlay-Ebene abgelehnt ({r:?}) – Overlay aus");
-            s.overlay_failed = true;
+            // Nicht mehr für die ganze Session aus: kurz Pause, dann nochmal (Lens/Pin/Panel
+            // kamen sonst bis zum Neustart des Spiels nie wieder)
+            s.overlay_rejects += 1;
+            if s.overlay_rejects >= OVERLAY_MAX_REJECTS {
+                log!("Overlay-Ebene abgelehnt ({r:?}, {n_overlay} Overlay + {n_panel} Panel) – {OVERLAY_MAX_REJECTS}× hintereinander, Overlay aus");
+                s.overlay_failed = true;
+            } else {
+                log!("Overlay-Ebene abgelehnt ({r:?}, {n_overlay} Overlay + {n_panel} Panel) – Pause, gleich nochmal");
+                s.overlay_retry = Some(Instant::now() + OVERLAY_RETRY);
+            }
         } else {
             log!("Rahmen-Ebenen abgelehnt ({r:?}) – Rahmen-Anzeige aus");
             s.frame_failed = true;
@@ -1482,6 +1520,46 @@ unsafe fn build_frame_quads(nx: &Next, session: xr::Session, info: &xr::FrameEnd
     quads
 }
 
+/// Overlay/Panel gerade aus? (endgültig kaputt oder Pause nach Ablehnung durch die Runtime)
+fn overlay_paused(s: &mut SessionData) -> bool {
+    if s.overlay_failed {
+        return true;
+    }
+    match s.overlay_retry {
+        Some(t) if Instant::now() < t => true,
+        Some(_) => {
+            s.overlay_retry = None;
+            false
+        }
+        None => false,
+    }
+}
+
+/// Quad prüfen, bevor er an die Runtime geht: Drehung auf Länge 1 bringen, kaputte
+/// (0 / NaN – z. B. Controller kurz nicht getrackt) und leere Quads weglassen.
+/// `false` = weglassen. Sonst lehnt die Runtime den GANZEN Frame ab (ERROR_POSE_INVALID).
+fn sane_quad(q: &mut xr::CompositionLayerQuad) -> bool {
+    static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    let o = &mut q.pose.orientation;
+    let len = (o.x * o.x + o.y * o.y + o.z * o.z + o.w * o.w).sqrt();
+    let p = q.pose.position;
+    let fine = len.is_finite()
+        && len > 0.5
+        && [p.x, p.y, p.z].iter().all(|v| v.is_finite())
+        && q.size.width.is_finite()
+        && q.size.height.is_finite()
+        && q.size.width > 0.0
+        && q.size.height > 0.0;
+    if !fine {
+        if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            log!("Ungültige Ebene weggelassen (Pose {:?}, Größe {:?})", q.pose, q.size);
+        }
+        return false;
+    }
+    (o.x, o.y, o.z, o.w) = (o.x / len, o.y / len, o.z / len, o.w / len);
+    true
+}
+
 /// 🥽 Übersetzung über dem Original: bei 🔁 Lens im blauen Rahmen (am Kopf fest),
 /// sonst an der Stelle im Raum, wo das letzte Foto gemacht wurde.
 unsafe fn build_overlay_quads(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) -> Vec<xr::CompositionLayerQuad> {
@@ -1491,7 +1569,7 @@ unsafe fn build_overlay_quads(nx: &Next, session: xr::Session, info: &xr::FrameE
         (nx.destroy_swapchain)(sc); // wurde im letzten Frame nicht mehr benutzt
     }
     let cfg = config::get();
-    if !cfg.overlay || s.overlay_failed || s.actions.is_none() {
+    if !cfg.overlay || overlay_paused(s) || s.actions.is_none() {
         return Vec::new();
     }
     let Some(img) = overlay::get() else { return Vec::new() };
@@ -1506,7 +1584,17 @@ unsafe fn build_overlay_quads(nx: &Next, session: xr::Session, info: &xr::FrameE
     }
     // Fest in der Welt: dort, wo das Live-Bild zu dieser Übersetzung gemacht wurde.
     // Unbekannte Nummer → NICHT anzeigen (nie im Rahmen am Kopf, nur an der richtigen Stelle)
-    let Some(sh) = live.shot(img.seq) else { return Vec::new() };
+    let Some(sh) = live.shot(img.seq) else {
+        if img.seq != s.overlay_unknown_seq {
+            s.overlay_unknown_seq = img.seq;
+            log!("Lens/Pin: Übersetzung zu unbekanntem Bild ({}) – nicht angezeigt", img.seq);
+        }
+        return Vec::new();
+    };
+    if s.overlay_logged != Some(live.since) {
+        s.overlay_logged = Some(live.since);
+        log!("{}: Übersetzung über dem Original angezeigt", if live.world.is_some() { "Pin" } else { "Lens" });
+    }
     let depth = LENS_OVERLAY_DEPTH.max(live.depth);
     // Kopf war schräg → Dienst hat das Bild geradegedreht, Quad zurückdrehen (Text bleibt waagerecht)
     let quad = frame::rolled_quad(frame::rect_quad(&sh.eye, &sh.fov, live.img, sh.rect, depth), sh.rect, img.roll);
@@ -1549,7 +1637,7 @@ unsafe fn build_panel_quads(nx: &Next, session: xr::Session, info: &xr::FrameEnd
     }
     let mut g = state();
     let Some(s) = g.session_mut(session) else { return Vec::new() };
-    if s.overlay_failed || s.actions.is_none() {
+    if overlay_paused(s) || s.actions.is_none() {
         return Vec::new();
     }
     let img = overlay::PANEL.get();

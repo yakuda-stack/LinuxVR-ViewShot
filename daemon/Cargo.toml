@@ -1,6 +1,6 @@
 [package]
 name = "linuxvr-viewshot-daemon"
-version = "1.0.3"
+version = "1.0.4"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "Background service: OCR + translation + VR panel without the desktop app"

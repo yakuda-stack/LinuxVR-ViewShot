@@ -247,6 +247,8 @@ struct State {
     live_text: String,
     live_result: Option<(String, String, String)>,
     live_lines: Vec<Line>,
+    /// zuletzt geloggter Lens/Pin-Zustand (nur Änderungen ins Log, kein Spam alle 3 s)
+    live_note: String,
     choosing: Option<Choice>,
     hits: panel::Hits,
     panel_size: (u32, u32),
@@ -386,6 +388,8 @@ impl State {
             if mtime.is_none() || age > (3.0 * interval).max(STALE_MIN_S) {
                 // Lens beendet → wieder das normale Foto
                 self.live_shown = false;
+                self.live_note.clear();
+                log::line("Lens/Pin: keine neuen Bilder mehr – beendet");
                 self.live_text.clear();
                 self.live_result = None;
                 self.live_lines.clear();
@@ -404,6 +408,9 @@ impl State {
             return;
         }
         self.live_mtime = Some(m);
+        if !self.live_shown {
+            log::line("Lens/Pin: Live-Bild vom Layer – Dienst übersetzt");
+        }
         self.live_shown = true;
         self.live_busy = true;
         self.next_id += 1;
@@ -536,6 +543,17 @@ impl State {
                 }
                 let now = chrono::Local::now().format("%H:%M:%S").to_string();
                 let lens = self.t("live_status", &[]);
+                let note = match &res {
+                    Err(e) => format!("Lens/Pin: Übersetzung fehlgeschlagen: {e}"),
+                    Ok(None) => "Lens/Pin: kein Text im Bild".to_string(),
+                    Ok(Some(_)) if !self.lcfg.b("overlay") => "Lens/Pin: übersetzt – 🥽 Overlay ist aus (layer.json)".to_string(),
+                    Ok(Some(_)) if size.0 == 0 => "Lens/Pin: übersetzt – Bildgröße unbekannt, kein Overlay".to_string(),
+                    Ok(Some(_)) => "Lens/Pin: übersetzt → Overlay geschrieben".to_string(),
+                };
+                if note != self.live_note {
+                    log::line(&note);
+                    self.live_note = note;
+                }
                 match res {
                     Err(e) => self.status = format!("🔁  {}: {e}", self.t("tr_failed", &[])),
                     Ok(None) => {
@@ -1170,6 +1188,7 @@ pub fn run(stay: bool) {
         live_text: String::new(),
         live_result: None,
         live_lines: Vec::new(),
+        live_note: String::new(),
         choosing: None,
         hits: Vec::new(),
         panel_size: (1, 1),

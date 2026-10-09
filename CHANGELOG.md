@@ -1,5 +1,13 @@
 # Changelog
 
+## [v1.0.4] – 2026-10-09
+Update: **AUR** `yay -Syu linuxvr-viewshot` or the **AppImage** – open the app once (or press ⬆ *Update layer*). From a clone: 🔧 *Rebuild & install*. Then restart the VR game. **Needs a layer + service rebuild.**
+
+- **Fix: 🔁 Lens / 📌 Pin showed no translation (only the frame)** – when the runtime rejected one overlay layer once (`ERROR_POSE_INVALID`, e.g. a controller briefly lost tracking), the layer turned the overlay **and** the 🪟 panel off until the game was restarted. Now it only pauses for 3 s and tries again; only after 5 rejections in a row it stays off
+- **Broken poses are no longer sent to the runtime** – quads with an invalid rotation (0 / NaN), position or size are left out for that frame, rotations are normalised before every frame. So one bad quad can't make the runtime reject the whole frame anymore
+- **Better logs for Lens / Pin** – `layer.log`: “Translation over the original shown” once per Lens/Pin, and a note when a translation belongs to an unknown picture. `daemon.log`: live picture received, translated → overlay written, no text, translation failed (only changes are logged, no spam every 3 s)
+- **`daemon.log` from the last start is kept** as `daemon.log.1` – before, a game restart overwrote it
+
 ## [v1.0.3] – 2026-10-07
 Update: **AUR** `yay -Syu linuxvr-viewshot` or the **AppImage** – open the app once (or press ⬆ *Update layer*). From a clone: 🔧 *Rebuild & install*. Then restart the VR game. **Needs a layer + service rebuild.**
 

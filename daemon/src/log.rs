@@ -1,4 +1,5 @@
-//! Log: ~/.local/state/linuxvr-viewshot/daemon.log (bei jedem Start neu)
+//! Log: ~/.local/state/linuxvr-viewshot/daemon.log (bei jedem Start neu,
+//! das vom letzten Start bleibt als daemon.log.1 – Spiel neu gestartet = Log nicht weg)
 
 use std::io::Write;
 use std::sync::Mutex;
@@ -10,6 +11,7 @@ pub fn start() {
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
+    let _ = std::fs::rename(&path, path.with_extension("log.1"));
     if let Ok(f) = std::fs::File::create(&path) {
         *FILE.lock().unwrap_or_else(|e| e.into_inner()) = Some(f);
     }

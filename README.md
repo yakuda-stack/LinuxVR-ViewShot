@@ -66,7 +66,7 @@ cd LinuxVR-ViewShot && ./install.sh          # ./install.sh uninstall
 2. Hands at least ~15 cm apart for 0.4 s → short vibration, **red frame** appears
 3. Press the **shutter trigger** (default: right) → **photo!** The frame flashes white
 4. The area between your hands lands as PNG in `~/Pictures/LinuxVR-ViewShot/`
-5. **The desktop app doesn't have to be open:** a small background service (Rust) starts with the VR game and translates, draws the 🪟 panel and runs 🔁 Lens – the app is for settings and for looking at what you did (gallery, history)
+5. **The desktop app doesn't have to be open:** a small background service (Rust) starts with the VR game and translates, draws the 🪟 panel and runs 🔁 Lens / 📌 Pin incl. the translation over the original – the app is for settings and for looking at what you did (gallery, history)
 
 ### ✨ Features
 
@@ -163,7 +163,7 @@ cd LinuxVR-ViewShot && ./install.sh          # ./install.sh uninstall
 2. Hände mind. ~15 cm auseinander, 0,4 s halten → kurzes Vibrieren, **roter Rahmen** erscheint
 3. **Auslöser-Trigger** drücken (Standard: rechts) → **Foto!** Der Rahmen blitzt weiß
 4. Der Bereich zwischen den Händen landet als PNG in `~/Bilder/LinuxVR-ViewShot/`
-5. **Die Desktop-App muss nicht offen sein:** ein kleiner Hintergrund-Dienst (Rust) startet mit dem VR-Spiel und übersetzt, malt das 🪟 Panel und macht 🔁 Lens – die App ist zum Einstellen und zum Ansehen (Galerie, Verlauf)
+5. **Die Desktop-App muss nicht offen sein:** ein kleiner Hintergrund-Dienst (Rust) startet mit dem VR-Spiel und übersetzt, malt das 🪟 Panel und macht 🔁 Lens / 📌 Pin samt Übersetzung über dem Original – die App ist zum Einstellen und zum Ansehen (Galerie, Verlauf)
 
 ### ✨ Funktionen
 
