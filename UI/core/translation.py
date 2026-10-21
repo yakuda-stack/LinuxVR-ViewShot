@@ -19,6 +19,7 @@ from pathlib import Path
 
 from core import llm_translator as L
 from core import ocr
+from core import task_rules
 from core import translators as T
 from core import vision
 from core.custom_translator import LIBRE_EXAMPLE
@@ -261,25 +262,34 @@ def route(cfg: dict, text: str, image=None, log=lambda s: None,
     method = L.task_method(cfg, mode)
     if mode != L.MODE_TRANSLATE and (not method or not is_configured(method, cfg)
                                      or (not text.strip() and method != L.METHOD_VISION)):
-        method, mode = cfg["tr_method"], L.MODE_TRANSLATE  # kann der Dienst nicht → übersetzen
+        method, mode = L.task_method(cfg, L.MODE_TRANSLATE), L.MODE_TRANSLATE  # → übersetzen
+    if mode == L.MODE_TRANSLATE and method != cfg["tr_method"] and (
+            not is_configured(method, cfg) or (not text.strip() and method != L.METHOD_VISION)):
+        method = cfg["tr_method"]  # 🌐 Übersetzen-Dienst nicht eingerichtet → Main übersetzt
     return dict(cfg, tr_method=method or cfg["tr_method"], tr_llm_mode=mode, _routed=auto)
 
 
-_QUIZ_MARKS = ("?", "？", "○", "〇", "＿", "___", "□")
-
-
 def looks_like_quiz(text: str) -> bool:
-    """Ohne KI zum Entscheiden: Fragezeichen/Lücke + mehrere Zeilen (Antworten) = Quiz."""
-    lines = [t for t in text.splitlines() if t.strip()]
-    return len(lines) >= 3 and any(m in text for m in _QUIZ_MARKS)
+    """Ohne KI zum Entscheiden: Regeln in core/task_rules.py (Fragezeichen, Optionen, Lücken …)."""
+    return task_rules.looks_like_quiz(text)
+
+
+CLASSIFY_RULES, CLASSIFY_AI = "rules", "ai"
+
+
+def classify_mode(cfg: dict) -> str:
+    """🤖 Automatisch: wer entscheidet? ⚡ Regeln (Standard, ohne KI) oder 🧠 die Main-KI."""
+    return CLASSIFY_AI if cfg.get("tr_classify") == CLASSIFY_AI else CLASSIFY_RULES
 
 
 def classify(cfg: dict, text: str, image=None, log=lambda s: None,
              progress=lambda step, arg="": None) -> str:
-    """🤖 Auto: Aufgabe für dieses Foto. Die Haupt-KI entscheidet (kurze Ein-Wort-Frage);
-    ist der Haupt-Dienst keine KI (z. B. LibreTranslate) → einfache Regel (looks_like_quiz)."""
+    """🤖 Auto: Aufgabe für dieses Foto.
+    ⚡ Regeln (Standard): looks_like_quiz – kein KI-Aufruf, spart Leistung.
+    🧠 Main-KI: kurze Ein-Wort-Frage an die Haupt-KI; klappt das nicht → Regeln."""
     main = cfg["tr_method"]
-    if L.is_llm(main) and is_configured(main, cfg) and (text.strip() or main == L.METHOD_VISION):
+    ask_ai = classify_mode(cfg) == CLASSIFY_AI and L.is_llm(main) and is_configured(main, cfg)
+    if ask_ai and (text.strip() or main == L.METHOD_VISION):
         progress("classify", main)
         try:
             if main == L.METHOD_VISION:
@@ -326,8 +336,11 @@ def _key(cfg: dict) -> str:
     main = cfg["tr_method"]
     method = _svc(main, cfg)
     mode = cfg.get("tr_llm_mode") or L.MODE_TRANSLATE
+    # 🌐 eigener Übersetzen-Dienst (nur wenn ≠ Main – sonst bleiben alte Schlüssel gleich)
+    trans = L.task_method(cfg, L.MODE_TRANSLATE)
+    trans = f"translate={_svc(trans, cfg)}" if trans != main else ""
     if mode == L.MODE_AUTO and L.has_tasks(cfg):  # 🤖 alle beteiligten Dienste gehören dazu
-        method += "#auto" + "".join(f"|{m}={_svc(L.task_method(cfg, m), cfg)}"
+        method += "#auto" + (f"|{trans}" if trans else "") + "".join(f"|{m}={_svc(L.task_method(cfg, m), cfg)}"
                                     f"{L.prompt_version(L.task_method(cfg, m), m)}"
                                     for m in L.TASK_KEYS if L.task_method(cfg, m))
     elif mode in L.TASK_KEYS and L.task_method(cfg, mode):  # Kontext / Antwort ≠ Übersetzung
@@ -335,6 +348,8 @@ def _key(cfg: dict) -> str:
         method += f"#{mode}{L.prompt_version(svc, mode)}"
         if svc != main:
             method += "=" + _svc(svc, cfg)
+    elif trans:
+        method += "#" + trans
     return f"{method}|{cfg.get('tr_source', '') or 'auto'}|{cfg['tr_target']}"
 
 
@@ -455,8 +470,7 @@ def translate_photo(photo: Path, cfg: dict, log=lambda s: None,
             return "", "", method  # auch das Bild-LLM hat keinen Text gefunden
         # unter dem Dienst merken, der es wirklich übersetzt hat (Ersatz wie Lingva → eigener
         # Eintrag; Kontext-/Rätsel-Dienst gehört zu den Einstellungen → normaler Schlüssel)
-        planned = {cfg["tr_method"]} | {L.task_method(cfg, m) for m in L.TASK_KEYS}
-        used = cfg if method in planned else dict(cfg, tr_method=method, tr_llm_mode=L.MODE_TRANSLATE)
+        used = cfg if method in L.planned_methods(cfg) else dict(cfg, tr_method=method, tr_llm_mode=L.MODE_TRANSLATE)
         with _cache_lock:
             cache = _load_cache()
             entry = cache.setdefault(photo.name, {})

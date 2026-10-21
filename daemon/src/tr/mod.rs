@@ -4,6 +4,7 @@
 //! also später an, was der Dienst übersetzt hat, ohne neu zu fragen.
 
 pub mod llm;
+pub mod rules;
 pub mod services;
 pub mod vision;
 
@@ -18,7 +19,7 @@ pub const ROUTE_AUTO: &str = "auto";
 pub const ROUTE_MANUAL: &str = "manual";
 
 /// Reihenfolge wie im Dropdown der App
-pub const METHODS: [&str; 11] = [
+pub const METHODS: [&str; 12] = [
     services::LINGVA,
     services::GOOGLE,
     services::LIBRE,
@@ -28,6 +29,7 @@ pub const METHODS: [&str; 11] = [
     llm::CLAUDE,
     llm::GEMINI,
     llm::CHATGPT,
+    llm::GROK,
     llm::LLM_CUSTOM,
     llm::VISION,
 ];
@@ -62,10 +64,22 @@ fn mode_or_translate(cfg: &Cfg) -> String {
 /// Welcher Dienst macht diese Aufgabe? "" = kann keiner (nur übersetzen)
 pub fn task_method(cfg: &Cfg, mode: &str) -> String {
     let main = cfg.s("tr_method");
+    if mode == MODE_TRANSLATE {
+        // 🌐 Übersetzen: eigener Dienst (jeder Übersetzer oder jede KI), "" = wie Main
+        let t = cfg.s(llm::TRANSLATE_KEY);
+        return if t.is_empty() { main } else { t };
+    }
     let Some((_, key)) = TASK_KEYS.iter().find(|(m, _)| *m == mode) else { return main };
     let m = cfg.s(key);
     let method = if m.is_empty() { main } else { m };
     if is_llm(&method) { method } else { String::new() }
+}
+
+/// Dienste, die laut Einstellung dran sein dürfen (alles andere = Ersatz wie Lingva)
+pub fn planned(cfg: &Cfg) -> Vec<String> {
+    let mut p = vec![cfg.s("tr_method"), task_method(cfg, MODE_TRANSLATE)];
+    p.extend(TASK_KEYS.iter().map(|(m, _)| task_method(cfg, m)));
+    p
 }
 
 pub fn has_tasks(cfg: &Cfg) -> bool {
@@ -110,9 +124,17 @@ pub fn photo_task_cfg(cfg: &mut Cfg, photo_name: &str) -> (Cfg, bool) {
     (task_cfg(cfg), changed)
 }
 
+/// Ohne KI zum Entscheiden: Regeln in rules.rs (Fragezeichen, Optionen, Lücken …)
 pub fn looks_like_quiz(text: &str) -> bool {
-    let lines = crate::ocr::splitlines(text).into_iter().filter(|t| !t.trim().is_empty()).count();
-    lines >= 3 && ["?", "？", "○", "〇", "＿", "___", "□"].iter().any(|m| text.contains(m))
+    rules::looks_like_quiz(text)
+}
+
+pub const CLASSIFY_RULES: &str = "rules";
+pub const CLASSIFY_AI: &str = "ai";
+
+/// 🤖 Automatisch: wer entscheidet? ⚡ Regeln (Standard, ohne KI) oder 🧠 die Main-KI
+pub fn classify_mode(cfg: &Cfg) -> &'static str {
+    if cfg.s("tr_classify") == CLASSIFY_AI { CLASSIFY_AI } else { CLASSIFY_RULES }
 }
 
 pub trait Progress {
@@ -127,7 +149,8 @@ impl<F: Fn(&str, &str)> Progress for F {
 
 pub fn classify(cfg: &Cfg, text: &str, image: Option<&Path>, log: &mut Vec<String>, progress: &dyn Progress) -> String {
     let main = cfg.s("tr_method");
-    if is_llm(&main) && is_configured(&main, cfg) && (!text.trim().is_empty() || main == llm::VISION) {
+    let ask_ai = classify_mode(cfg) == CLASSIFY_AI && is_llm(&main) && is_configured(&main, cfg);
+    if ask_ai && (!text.trim().is_empty() || main == llm::VISION) {
         progress.step("classify", &main);
         let r = if main == llm::VISION {
             vision::classify(cfg, text, image).map(String::from)
@@ -155,8 +178,15 @@ pub fn route(cfg: &Cfg, text: &str, image: Option<&Path>, log: &mut Vec<String>,
     if mode != MODE_TRANSLATE
         && (method.is_empty() || !is_configured(&method, cfg) || (text.trim().is_empty() && method != llm::VISION))
     {
-        method = cfg.s("tr_method");
+        method = task_method(cfg, MODE_TRANSLATE);
         mode = MODE_TRANSLATE.into();
+    }
+    let main = cfg.s("tr_method");
+    if mode == MODE_TRANSLATE
+        && method != main
+        && (!is_configured(&method, cfg) || (text.trim().is_empty() && method != llm::VISION))
+    {
+        method = main; // 🌐 Übersetzen-Dienst nicht eingerichtet → Main übersetzt
     }
     let mut out = cfg.clone();
     out.set("tr_method", if method.is_empty() { cfg.s("tr_method") } else { method });
@@ -238,8 +268,14 @@ pub fn key(cfg: &Cfg) -> String {
     let main = cfg.s("tr_method");
     let mut method = svc(&main, cfg);
     let mode = mode_or_translate(cfg);
+    // 🌐 eigener Übersetzen-Dienst (nur wenn ≠ Main – sonst bleiben alte Schlüssel gleich)
+    let t = task_method(cfg, MODE_TRANSLATE);
+    let trans = if t != main { format!("translate={}", svc(&t, cfg)) } else { String::new() };
     if mode == MODE_AUTO && has_tasks(cfg) {
         method.push_str("#auto");
+        if !trans.is_empty() {
+            method.push_str(&format!("|{trans}"));
+        }
         for (m, _) in TASK_KEYS {
             let t = task_method(cfg, m);
             if !t.is_empty() {
@@ -252,6 +288,8 @@ pub fn key(cfg: &Cfg) -> String {
         if s != main {
             method.push_str(&format!("={}", svc(&s, cfg)));
         }
+    } else if !trans.is_empty() {
+        method.push_str(&format!("#{trans}"));
     }
     let src = cfg.s("tr_source");
     format!("{method}|{}|{}", if src.is_empty() { "auto" } else { &src }, cfg.s("tr_target"))
@@ -385,9 +423,7 @@ pub fn translate_photo(
     };
     method = done.method.clone();
     // unter dem Dienst merken, der es wirklich übersetzt hat
-    let mut planned = vec![cfg.s("tr_method")];
-    planned.extend(TASK_KEYS.iter().map(|(m, _)| task_method(cfg, m)));
-    let used_key = if planned.contains(&method) {
+    let used_key = if planned(cfg).contains(&method) {
         k
     } else {
         key(&cfg.with(&[("tr_method", &method), ("tr_llm_mode", MODE_TRANSLATE)]))

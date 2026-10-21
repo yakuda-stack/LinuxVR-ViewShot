@@ -459,9 +459,7 @@ impl State {
     }
 
     fn planned(&self) -> Vec<String> {
-        let mut p = vec![self.cfg.s("tr_method")];
-        p.extend(llm::TASK_KEYS.iter().map(|(m, _)| trn::task_method(&self.cfg, m)));
-        p
+        trn::planned(&self.cfg)
     }
 
     fn on_msg(&mut self, msg: Msg) {

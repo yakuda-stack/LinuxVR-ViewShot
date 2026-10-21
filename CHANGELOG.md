@@ -1,5 +1,16 @@
 # Changelog
 
+## [v1.0.6] – 2026-10-21
+Update: **AUR** `yay -Syu linuxvr-viewshot` or the **AppImage** – open the app once (or press ⬆ *Update layer*). From a clone: 🔧 *Rebuild & install*. Then restart the VR game. **Needs a service rebuild.**
+
+- **⚡ 🤖 Automatic decides without AI (new default)** – before, the main AI was asked for every photo whether it is normal text, a joke/meme or a quiz. With the local image LLM that was one more full image pass per photo. Now simple text rules decide – no AI call, costs nearly no performance. The AI is only used afterwards for the task itself (translate / answer)
+  - New in Options → Translation: **Decision** ⚡ *Rules (fast, no AI)* / 🧠 *Main AI (more accurate, slower)* – only shown with 🤖 Automatic. Want the old behaviour? Pick 🧠 *Main AI*
+  - With ⚡ Rules, *Explain context* (jokes, memes) is never picked automatically – rules can't recognise that reliably. Pick it by hand on the main page / in the VR panel (counts for the current + next photo)
+- **Better quiz rules** (also used when the AI can't be reached): points instead of one check – question mark at the end of a line (also か / 吗 / 까) +2, question word at the start (who, welche, quel, 何 …) +1, ≥ 2 answer options (A) B) / 1. 2. / ① ②) +2, blank (___ / □ / （　）) +3, ○ / 〇 +1, words like *quiz / Rätsel / 問題* +1, ≥ 2 short answer-like lines after the question +1. Quiz from 3 points – and it has to look like one (≥ 3 lines, answer options or a blank). So a sign like “Where is the exit?” or a numbered rule list stays a normal translation
+- Same rules in the app (`UI/core/task_rules.py`) and the background service (`daemon/src/tr/rules.rs`), tested with the same examples
+- **Fix: error in the log when closing the window while loading** – the QR search (main page) and the thumbnails (gallery) load in the background; if the window was already closed, they hit the deleted window (`RuntimeError: wrapped C/C++ object … has been deleted`). Now they just stop quietly
+- Texts in DE / EN / FR, README updated
+
 ## [v1.0.5] – 2026-10-09
 Update: **AUR** `yay -Syu linuxvr-viewshot` or the **AppImage** – open the app once (or press ⬆ *Update layer*). From a clone: 🔧 *Rebuild & install*. Then restart the VR game. **Needs a layer + service rebuild.**
 

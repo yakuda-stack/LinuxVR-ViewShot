@@ -118,6 +118,28 @@ def test_llm_custom_command_placeholders():
     assert stdin == "PROMPT"  # ohne {prompt} → über stdin
 
 
+def test_llm_custom_model_choice():
+    """Modell-Auswahl beim eigenen Befehl: ersetzt {model} bzw. das Modell nach „ollama run“."""
+    from core import llm_translator as L
+    cfg = {"tr_llm_custom_cmd": "ollama run llama3.2 {prompt}"}
+    assert L.custom_has_model(cfg) and L.model_of(L.METHOD_LLM_CUSTOM, cfg) == "llama3.2"
+    cfg["tr_llm_custom_model"] = "qwen3:8b"
+    argv, _ = L.build_command(L.METHOD_LLM_CUSTOM, cfg, "P", "t", "", "de")
+    assert argv == ["ollama", "run", "qwen3:8b", "P"]
+    cfg = {"tr_llm_custom_cmd": "tool -m {model} {prompt}", "tr_llm_custom_model": "x1"}
+    argv, _ = L.build_command(L.METHOD_LLM_CUSTOM, cfg, "P", "t", "", "de")
+    assert argv == ["tool", "-m", "x1", "P"]
+    cfg = {"tr_llm_custom_cmd": "tool {prompt}", "tr_llm_custom_model": "x1"}
+    assert not L.custom_has_model(cfg) and L.model_of(L.METHOD_LLM_CUSTOM, cfg) == ""
+
+
+def test_llm_grok_command():
+    from core import llm_translator as L
+    argv, stdin = L.build_command(L.METHOD_GROK, {}, "P", "t", "", "de")
+    assert argv == ["grok", "-p", "P", "--output-format", "plain", "--no-auto-update", "-m", "grok-4.7"]
+    assert stdin is None and L.manual_install_command(L.METHOD_GROK) == L.GROK_INSTALLER
+
+
 def test_llm_claude_model_flag():
     from core import llm_translator as L
     argv, _ = L.build_command(L.METHOD_CLAUDE, {"tr_llm_claude_model": "opus"}, "P", "t", "", "de")
@@ -649,6 +671,7 @@ def test_auto_main_ai_hands_tasks_to_their_service(fake_ollama, monkeypatch, ver
     monkeypatch.setattr(translation, "_try", fake_try)
     monkeypatch.setattr(translation, "is_configured", lambda m, cfg: True)
     cfg = dict(DEFAULTS, tr_method="llm_vision", tr_vision_url=url, tr_llm_mode=L.MODE_AUTO,
+               tr_classify="ai",  # 🧠 Main-KI entscheidet (Standard wäre ⚡ Regeln)
                tr_answer_method="llm_claude", tr_llm_claude_model="opus",
                tr_explain_method="llm_gemini", tr_target="de")
     out, method = translation.translate_text_used("Q?\nA\nB", cfg)
@@ -1041,3 +1064,58 @@ def test_aspect_choices_match_rust():
     rs = (ROOT / "layer/src/config.rs").read_text(encoding="utf-8")
     body = re.search(r"pub enum Aspect \{(.*?)\n\}", rs, re.S).group(1)
     assert tuple(re.findall(r'rename = "([^"]+)"', body)) == layer_config.ASPECTS
+
+
+def test_translate_task_own_service():
+    """🌐 Übersetzen mit eigenem Dienst (Main bleibt die entscheidende KI)."""
+    from core import llm_translator as L, translation
+    cfg = dict(translation.DEFAULTS, tr_method="llm_vision", tr_translate_method="lingva",
+               tr_llm_mode="translate")
+    assert translation.route(cfg, "Hallo")["tr_method"] == "lingva"
+    assert translation.route(cfg, "")["tr_method"] == "llm_vision"  # ohne Text liest nur das Bild-LLM
+    assert "lingva" in L.planned_methods(cfg)
+    assert translation._key(cfg) == "llm_vision@qwen2.5vl:7b#translate=lingva|auto|de"
+    cfg["tr_translate_method"] = "deepl"  # kein Key → Main übersetzt
+    assert translation.route(cfg, "Hallo")["tr_method"] == "llm_vision"
+    cfg = dict(translation.DEFAULTS, tr_method="lingva")  # nichts eingestellt → Schlüssel wie bisher
+    assert translation._key(cfg) == "lingva|auto|de"
+
+
+# Gleiche Beispiele wie daemon/src/tr/rules.rs (same_scores_as_app)
+TASK_RULE_CASES = [
+    ("Welches Tier?\nHund\nKatze", 4),
+    ("Willkommen\nim Hotel", 0),
+    ("Hello? Is anyone there?\nI heard something.\nLet's go.", 2),
+    ("Capital of France?\nA) Paris\nB) Rome\nC) Berlin", 5),
+    ("The sky is ___.", 3),
+    ("Rules:\n1. No running\n2. No food\n3. Have fun", 2),
+    ("Where is the exit?\nFollow the signs", 0),
+    ("問題：日本の首都は？\nA. 東京\nB. 大阪", 6),
+    ("これは何ですか？\nりんご\nみかん\nぶどう", 4),
+]
+
+
+def test_task_rules():
+    """⚡ Regeln ohne KI: Punkte für Quiz / Frage (gleich wie im Rust-Dienst)."""
+    from core import task_rules
+    for text, score in TASK_RULE_CASES:
+        assert task_rules.quiz_score(text) == score, text
+    assert task_rules.looks_like_quiz("Capital of France?\nA) Paris\nB) Rome")
+    assert not task_rules.looks_like_quiz("Rules:\n1. No running\n2. No food")
+
+
+def test_classify_uses_rules_by_default(monkeypatch):
+    """🤖 Automatisch: Standard = ⚡ Regeln, die KI wird NICHT gefragt; 🧠 Main-KI nur, wenn gewählt."""
+    from core import llm_translator as L, translation, vision
+    from core.config import DEFAULTS
+    asked = []
+    monkeypatch.setattr(translation, "is_configured", lambda m, cfg: True)
+    monkeypatch.setattr(vision, "classify", lambda cfg, text, image=None: asked.append(text) or L.MODE_EXPLAIN)
+    cfg = dict(DEFAULTS, tr_method="llm_vision", tr_llm_mode="auto")
+    assert DEFAULTS["tr_classify"] == "rules"
+    assert translation.classify(cfg, "Welches Tier?\nHund\nKatze") == L.MODE_ANSWER
+    assert translation.classify(cfg, "Willkommen\nim Hotel") == L.MODE_TRANSLATE
+    assert asked == []  # keine KI gefragt
+    assert translation.classify(dict(cfg, tr_classify="ai"), "Hallo") == L.MODE_EXPLAIN
+    assert asked == ["Hallo"]
+

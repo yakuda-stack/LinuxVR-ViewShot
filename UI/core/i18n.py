@@ -275,6 +275,7 @@ TEXTS = {
                         "en": "AI: Claude Code (Opus / Sonnet / Haiku)"},
     "tr_m_llm_gemini": {"de": "KI: Gemini CLI", "en": "AI: Gemini CLI"},
     "tr_m_llm_chatgpt": {"de": "KI: ChatGPT (Codex CLI)", "en": "AI: ChatGPT (Codex CLI)"},
+    "tr_m_llm_grok":    {"de": "KI: Grok (Grok CLI)", "en": "AI: Grok (Grok CLI)"},
     "tr_m_llm_custom": {"de": "KI: eigener Befehl (z. B. Ollama)",
                         "en": "AI: custom command (e.g. Ollama)"},
     "tr_task":         {"de": "Aufgabe",         "en": "Task"},
@@ -358,11 +359,15 @@ TEXTS = {
                          "en": "⚠ {failed} failed – translated with {used} this time. {error}"},
     "tr_no_answer":    {"de": "keine Antwort", "en": "no answer"},
     "tr_llm_custom_info": {"de": "Beliebiges Programm. {prompt} = fertige Übersetzungs-Anweisung "
-                                 "mit Text. Außerdem: {text} {source} {target}. Ohne {prompt}/{text} "
-                                 "kommt der Prompt über stdin. Die Ausgabe ist die Übersetzung.",
+                                 "mit Text. Außerdem: {text} {source} {target} {model}. Ohne {prompt}/{text} "
+                                 "kommt der Prompt über stdin. Die Ausgabe ist die Übersetzung. "
+                                 "Modell (auch auf der Main-Seite wählbar): ersetzt {model} bzw. "
+                                 "das Modell nach „ollama run“.",
                            "en": "Any program. {prompt} = finished translation instruction incl. "
-                                 "text. Also: {text} {source} {target}. Without {prompt}/{text} the "
-                                 "prompt goes to stdin. The output is the translation."},
+                                 "text. Also: {text} {source} {target} {model}. Without {prompt}/{text} the "
+                                 "prompt goes to stdin. The output is the translation. "
+                                 "Model (also selectable on the main page): replaces {model} or "
+                                 "the model after “ollama run”."},
     "privacy_local":   {"de": "🔒 Läuft auf deinem PC – der erkannte Text verlässt ihn nicht.",
                         "en": "🔒 Runs on your PC – the recognised text never leaves it."},
     "privacy_cloud":   {"de": "☁ Der erkannte Text (nicht das Foto) wird zum Übersetzen an {service} "
@@ -642,12 +647,21 @@ TEXTS = {
     "tr_route":       {"de": "Modus", "en": "Mode"},
     "tr_route_auto":  {"de": "🤖 Automatisch", "en": "🤖 Automatic"},
     "tr_route_manual": {"de": "✋ Manuell", "en": "✋ Manual"},
-    "tr_route_hint_auto": {"de": "Bei jedem Foto entscheidet die Main-KI: normalen Text übersetzt sie selbst, "
-                                 "Erklärungen und Quiz gehen an die KI darunter. Aufgabe auf der Main-Seite / "
+    "tr_route_hint_auto": {"de": "Bei jedem Foto wird entschieden (siehe „Entscheidung“): normalen Text übersetzt die Main-KI "
+                                 "(oder der Dienst bei „Übersetzen“), Erklärungen und Quiz gehen an die KI darunter. Aufgabe auf der Main-Seite / "
                                  "im VR-Panel umstellen gilt nur fürs aktuelle + nächste Foto.",
-                           "en": "For every photo the main AI decides: it translates normal text itself, "
-                                 "explanations and quizzes go to the AI below. Changing the task on the main "
+                           "en": "Decided for every photo (see “Decision”): the main AI translates normal text "
+                                 "(or the service set for “Translate”), explanations and quizzes go to the AI below. Changing the task on the main "
                                  "page / in the VR panel only counts for the current + next photo."},
+    "tr_classify":       {"de": "Entscheidung", "en": "Decision"},
+    "tr_classify_rules": {"de": "⚡ Regeln (schnell, ohne KI)", "en": "⚡ Rules (fast, no AI)"},
+    "tr_classify_ai":    {"de": "🧠 Main-KI (genauer, langsamer)", "en": "🧠 Main AI (more accurate, slower)"},
+    "tr_classify_hint":  {"de": "⚡ Regeln: Quiz/Fragen werden an Fragezeichen, Antwort-Optionen (A) B) 1) 2)) und "
+                                "Lücken (___) erkannt – kostet keine Leistung. „Kontext erklären“ dann nur von Hand. "
+                                "🧠 Main-KI: fragt die KI bei jedem Foto (beim lokalen Bild-LLM ein ganzer Bild-Durchlauf mehr).",
+                          "en": "⚡ Rules: quizzes/questions are recognised by question marks, answer options (A) B) 1) 2)) "
+                                "and blanks (___) – costs no performance. “Explain context” only by hand then. "
+                                "🧠 Main AI: asks the AI for every photo (with the local image LLM one more full image pass)."},
     "tr_route_hint_manual": {"de": "Du wählst die Aufgabe auf der Main-Seite / im VR-Panel – jede Aufgabe "
                                    "nimmt fest ihre KI. Nichts stellt sich von selbst um.",
                              "en": "You pick the task on the main page / in the VR panel – each task always "

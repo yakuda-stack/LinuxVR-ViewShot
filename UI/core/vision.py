@@ -115,6 +115,23 @@ def vision_models(url: str = DEFAULT_URL, timeout: float = 0.8) -> list[str]:
     return found
 
 
+_all_cache: dict[str, tuple[float, list[str]]] = {}
+
+
+def all_models(url: str = DEFAULT_URL, timeout: float = 0.8) -> list[str]:
+    """Alle installierten Ollama-Modelle (für „KI: eigener Befehl“, [] = Ollama läuft nicht)."""
+    hit = _all_cache.get(url)
+    if hit and time.monotonic() - hit[0] < 20:
+        return hit[1]
+    try:
+        with _request(url, "/api/tags", timeout=timeout) as r:
+            found = [m.get("name", "") for m in json.load(r).get("models", []) if m.get("name")]
+    except (OSError, ValueError):
+        found = []
+    _all_cache[url] = (time.monotonic(), found)
+    return found
+
+
 def model_list(url: str = DEFAULT_URL) -> list[str]:
     """Fürs Dropdown: installierte Bild-Modelle zuerst, dann Vorschläge."""
     installed = vision_models(url)

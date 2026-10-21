@@ -82,7 +82,10 @@ class ThumbLoader(QObject):
                 image = thumbnail_image(path, thumb)
             except Exception:  # noqa: BLE001 – kaputtes Bild: Kachel bleibt leer
                 continue
-            self.loaded.emit(key, image)
+            try:
+                self.loaded.emit(key, image)
+            except RuntimeError:  # Galerie schon zu (Objekt gelöscht) → Thread beenden
+                return
 
 
 def month_header(text: str) -> QWidget:

@@ -13,9 +13,10 @@ use std::time::{Duration, Instant};
 pub const CLAUDE: &str = "llm_claude";
 pub const GEMINI: &str = "llm_gemini";
 pub const CHATGPT: &str = "llm_chatgpt";
+pub const GROK: &str = "llm_grok";
 pub const LLM_CUSTOM: &str = "llm_custom";
 pub const VISION: &str = "llm_vision";
-pub const METHODS: [&str; 5] = [CLAUDE, GEMINI, CHATGPT, LLM_CUSTOM, VISION];
+pub const METHODS: [&str; 6] = [CLAUDE, GEMINI, CHATGPT, GROK, LLM_CUSTOM, VISION];
 
 pub const MODE_TRANSLATE: &str = "translate";
 pub const MODE_EXPLAIN: &str = "explain";
@@ -23,6 +24,7 @@ pub const MODE_ANSWER: &str = "answer";
 pub const MODE_AUTO: &str = "auto";
 pub const MODE_CLASSIFY: &str = "classify";
 pub const MODES: [&str; 3] = [MODE_TRANSLATE, MODE_EXPLAIN, MODE_ANSWER];
+pub const TRANSLATE_KEY: &str = "tr_translate_method";
 pub const TASK_KEYS: [(&str, &str); 2] = [(MODE_EXPLAIN, "tr_explain_method"), (MODE_ANSWER, "tr_answer_method")];
 
 const RETRIES: usize = 2;
@@ -37,6 +39,7 @@ pub fn binary(method: &str) -> Option<&'static str> {
         CLAUDE => Some("claude"),
         GEMINI => Some("gemini"),
         CHATGPT => Some("codex"),
+        GROK => Some("grok"),
         VISION => Some("ollama"),
         _ => None,
     }
@@ -47,8 +50,31 @@ pub fn model_key(method: &str) -> Option<&'static str> {
         CLAUDE => Some("tr_llm_claude_model"),
         GEMINI => Some("tr_llm_gemini_model"),
         CHATGPT => Some("tr_llm_chatgpt_model"),
+        GROK => Some("tr_llm_grok_model"),
         VISION => Some("tr_llm_vision_model"),
+        LLM_CUSTOM => Some("tr_llm_custom_model"),
         _ => None,
+    }
+}
+
+/// Position des Modells in „ollama run <modell> …“ – wie _ollama_run_index in der App
+fn ollama_run_index(parts: &[String]) -> Option<usize> {
+    let is_ollama = parts.first().map(|p| Path::new(p).file_name().is_some_and(|n| n == "ollama")).unwrap_or(false);
+    (parts.len() >= 3 && is_ollama && parts[1] == "run").then_some(2)
+}
+
+/// Kann man beim eigenen Befehl ein Modell wählen? ({model} oder „ollama run …“)
+pub fn custom_has_model(cfg: &Cfg) -> bool {
+    let cmd = cfg.s("tr_llm_custom_cmd");
+    cmd.contains("{model}") || shlex::split(&cmd).is_some_and(|p| ollama_run_index(&p).is_some())
+}
+
+/// Modell, das im eigenen Befehl steht (nur bei „ollama run <modell>“)
+fn custom_cmd_model(cmd: &str) -> String {
+    let Some(parts) = shlex::split(cmd) else { return String::new() };
+    match ollama_run_index(&parts) {
+        Some(i) if !parts[i].contains('{') => parts[i].clone(),
+        _ => String::new(),
     }
 }
 
@@ -56,6 +82,12 @@ pub fn model_key(method: &str) -> Option<&'static str> {
 pub fn model_of(method: &str, cfg: &Cfg) -> String {
     let Some(key) = model_key(method) else { return String::new() };
     let m = cfg.s(key).trim().to_string();
+    if method == LLM_CUSTOM {
+        if !custom_has_model(cfg) {
+            return String::new();
+        }
+        return if m.is_empty() { custom_cmd_model(&cfg.s("tr_llm_custom_cmd")) } else { m };
+    }
     if !m.is_empty() {
         return m;
     }
@@ -68,6 +100,7 @@ pub fn find_binary(name: &str) -> Option<PathBuf> {
     let home = dirs::home_dir().unwrap_or_default();
     dirs.push(home.join(".local/bin"));
     dirs.push(home.join(".npm-global/bin"));
+    dirs.push(home.join(".grok/bin"));
     // nvm: ~/.nvm/versions/node/<Version>/bin (neueste zuerst)
     if let Ok(rd) = std::fs::read_dir(home.join(".nvm/versions/node")) {
         let mut v: Vec<PathBuf> = rd.flatten().map(|e| e.path().join("bin")).collect();
@@ -194,6 +227,13 @@ pub fn build_command(method: &str, cfg: &Cfg, prompt: &str, text: &str, source: 
             argv.extend([s("-p"), s(prompt), s("--output-format"), s("json")]);
             (argv, None)
         }
+        GROK => {
+            let mut argv = vec![s("grok"), s("-p"), s(prompt), s("--output-format"), s("plain"), s("--no-auto-update")];
+            if !model.is_empty() {
+                argv.extend([s("-m"), model]);
+            }
+            (argv, None)
+        }
         CHATGPT => {
             let mut argv: Vec<String> = ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", "-c", "model_reasoning_effort=low"]
                 .iter()
@@ -210,7 +250,13 @@ pub fn build_command(method: &str, cfg: &Cfg, prompt: &str, text: &str, source: 
             if cmd.is_empty() {
                 return Err("kein Befehl eingetragen".into());
             }
-            let parts = shlex::split(&cmd).ok_or("Befehl nicht lesbar")?;
+            let mut parts = shlex::split(&cmd).ok_or("Befehl nicht lesbar")?;
+            // „ollama run llama3.2 …“ ohne {model}: das gewählte Modell einsetzen
+            if let Some(i) = ollama_run_index(&parts) {
+                if !model.is_empty() && !cmd.contains("{model}") {
+                    parts[i] = "{model}".to_string();
+                }
+            }
             let src = if source.is_empty() { "auto" } else { source };
             let uses_input = parts.iter().any(|p| p.contains("{prompt}") || p.contains("{text}"));
             let argv = parts
@@ -264,6 +310,7 @@ fn retry_settings(method: &str, cfg: &Cfg) -> (bool, u64) {
         CLAUDE => ("tr_llm_claude_retry", "tr_llm_claude_retry_s"),
         GEMINI => ("tr_llm_gemini_retry", "tr_llm_gemini_retry_s"),
         CHATGPT => ("tr_llm_chatgpt_retry", "tr_llm_chatgpt_retry_s"),
+        GROK => ("tr_llm_grok_retry", "tr_llm_grok_retry_s"),
         _ => return (false, TIMEOUT),
     };
     (cfg.b(keys.0), (cfg.f(keys.1, 60.0) as u64).max(1))

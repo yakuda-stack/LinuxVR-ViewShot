@@ -320,7 +320,10 @@ class MainPage(TranslationMixin, HistoryMixin, InstallMixin, LiveMixin, QWidget)
                 codes = qr.find_codes(photo)
             except Exception:  # noqa: BLE001 – QR ist nur ein Extra
                 codes = []
-            self._qr_found.emit(str(photo), codes)
+            try:
+                self._qr_found.emit(str(photo), codes)
+            except RuntimeError:  # Fenster schon zu (Objekt gelöscht) → nichts mehr zu tun
+                pass
 
         threading.Thread(target=work, daemon=True).start()
 

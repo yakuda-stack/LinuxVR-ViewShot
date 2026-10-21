@@ -7,12 +7,16 @@ Vorlagen (das Programm muss installiert und einmal angemeldet sein):
     Gemini CLI    gemini -m flash -p "<prompt>" --output-format json   (Antwort in "response")
     ChatGPT       codex exec -m gpt-5.6-luna -c model_reasoning_effort=low -   (Prompt über stdin,
                   Antwort per --output-last-message in eine Datei; Codex CLI, ChatGPT-Login)
+    Grok          grok -p "<prompt>" -m grok-4.7 --output-format plain   (Grok CLI von xAI,
+                  Login per „grok login“ oder XAI_API_KEY)
 
 Dazu "Eigener Befehl" für alles andere (z. B. Ollama):
 
     ollama run llama3.2 {prompt}
 
 Platzhalter im eigenen Befehl: {prompt} {text} {source} {target} {model}.
+{model} = Modell aus dem Dropdown (Main-Seite / Optionen); bei „ollama run <modell>“
+wird das Modell auch ohne {model} ersetzt.
 Kommt {prompt}/{text} nicht vor, wird der Prompt über stdin übergeben.
 
 Alles BLOCKIERT (die KI braucht ein paar Sekunden) → nur im Hintergrund-Thread!
@@ -34,13 +38,14 @@ from core import vision
 METHOD_CLAUDE = "llm_claude"
 METHOD_GEMINI = "llm_gemini"
 METHOD_CHATGPT = "llm_chatgpt"
+METHOD_GROK = "llm_grok"       # Grok CLI (xAI)
 METHOD_LLM_CUSTOM = "llm_custom"
 METHOD_VISION = "llm_vision"   # 🖼 lokales Bild-LLM über Ollama (bekommt das Foto mit, core/vision.py)
 
-METHODS = [METHOD_CLAUDE, METHOD_GEMINI, METHOD_CHATGPT, METHOD_LLM_CUSTOM, METHOD_VISION]
+METHODS = [METHOD_CLAUDE, METHOD_GEMINI, METHOD_CHATGPT, METHOD_GROK, METHOD_LLM_CUSTOM, METHOD_VISION]
 
 # Programm, das installiert sein muss (None = eigener Befehl)
-BINARIES = {METHOD_CLAUDE: "claude", METHOD_GEMINI: "gemini", METHOD_CHATGPT: "codex",
+BINARIES = {METHOD_CLAUDE: "claude", METHOD_GEMINI: "gemini", METHOD_CHATGPT: "codex", METHOD_GROK: "grok",
             METHOD_VISION: "ollama"}
 
 # npm-Pakete für den Installier-Knopf (npm install -g --prefix ~/.local …)
@@ -49,7 +54,8 @@ NPM_PACKAGES = {METHOD_CLAUDE: "@anthropic-ai/claude-code",
                 METHOD_CHATGPT: "@openai/codex"}
 
 # Einmal im Terminal anmelden (danach läuft es ohne Nachfrage)
-LOGIN_COMMANDS = {METHOD_CLAUDE: "claude", METHOD_GEMINI: "gemini", METHOD_CHATGPT: "codex login"}
+LOGIN_COMMANDS = {METHOD_CLAUDE: "claude", METHOD_GEMINI: "gemini", METHOD_CHATGPT: "codex login",
+                  METHOD_GROK: "grok login"}
 
 # Dorthin installiert der Knopf – ohne sudo, liegt im Home-Ordner
 NPM_PREFIX = Path.home() / ".local"
@@ -61,12 +67,15 @@ MODELS = {
     METHOD_GEMINI: ["flash", "pro", "flash-lite", "gemini-2.5-flash", "gemini-3-flash-preview"],
     # luna = schnell (ideal für kurze Übersetzungen), terra = ausgewogen, sol = am stärksten
     METHOD_CHATGPT: ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.5"],
+    METHOD_GROK: ["grok-4.7", "grok-build-0.1"],
     METHOD_VISION: vision.SUGGESTED,  # + installierte Bild-Modelle (models_for)
 }
 
 # Einstellung in ui.json, in der das Modell steht
 MODEL_KEYS = {METHOD_CLAUDE: "tr_llm_claude_model", METHOD_GEMINI: "tr_llm_gemini_model",
-              METHOD_CHATGPT: "tr_llm_chatgpt_model", METHOD_VISION: "tr_llm_vision_model"}
+              METHOD_CHATGPT: "tr_llm_chatgpt_model", METHOD_GROK: "tr_llm_grok_model",
+              METHOD_VISION: "tr_llm_vision_model",
+              METHOD_LLM_CUSTOM: "tr_llm_custom_model"}
 
 CUSTOM_EXAMPLE = "ollama run llama3.2 {prompt}"
 
@@ -74,18 +83,28 @@ DEFAULTS = {
     "tr_llm_claude_model": "sonnet",
     "tr_llm_gemini_model": "flash",
     "tr_llm_chatgpt_model": "gpt-5.6-luna",
+    "tr_llm_grok_model": "grok-4.7",
     "tr_llm_custom_cmd": "",
+    # Modell für den eigenen Befehl: ersetzt {model} bzw. das Modell nach „ollama run“.
+    # "" = wie im Befehl eingetragen
+    "tr_llm_custom_model": "",
     "tr_llm_vision_model": vision.DEFAULT_MODEL,
     "tr_vision_url": "",           # "" = http://127.0.0.1:11434
     "tr_vision_keep_alive": "2m",  # Modell so lange im Grafikspeicher lassen (VR braucht ihn auch)
     # 🧩 Dienst je Aufgabe: Übersetzen = tr_method (Haupt-Dienst), Kontext / Frage eigene
     # (z. B. lokal übersetzen, Claude erklärt / löst Rätsel). "" = wie der Haupt-Dienst.
     # Modell = das bei diesem Dienst eingestellte
+    # 🌐 Übersetzen: eigener Dienst (jeder Übersetzer oder jede KI/Modell), "" = wie Main.
+    # Main bleibt die KI, die bei 🤖 Automatisch entscheidet
+    "tr_translate_method": "",
     "tr_explain_method": "",
     "tr_answer_method": "",
     # Modus: "auto" = Haupt-KI teilt jedes Foto zu (nur wenn der Haupt-Dienst eine KI ist),
     # "manual" = Aufgabe (tr_llm_mode) selbst wählen, bleibt fest
     "tr_route": "auto",
+    # 🤖 Automatisch – wer entscheidet Übersetzen / Quiz? "rules" = Regeln ohne KI (schnell,
+    # Standard), "ai" = die Main-KI fragen (genauer bei Witzen/Memes, kostet einen KI-Aufruf)
+    "tr_classify": "rules",
     # 🤖 Auto, aber einmal von Hand umgestellt: gilt fürs aktuelle + nächste Foto, dann wieder Auto
     "tr_auto_once": "",
     "tr_auto_once_photo": "",   # Foto, bei dem umgestellt wurde
@@ -96,12 +115,14 @@ DEFAULTS = {
     "tr_llm_gemini_retry": False, "tr_llm_gemini_retry_s": 60,
     "tr_llm_claude_retry": False, "tr_llm_claude_retry_s": 60,
     "tr_llm_chatgpt_retry": False, "tr_llm_chatgpt_retry_s": 60,
+    "tr_llm_grok_retry": False, "tr_llm_grok_retry_s": 60,
 }
 
 # Einstellungs-Namen für "Neu senden" je Vorlage
 RETRY_KEYS = {METHOD_CLAUDE: ("tr_llm_claude_retry", "tr_llm_claude_retry_s"),
               METHOD_GEMINI: ("tr_llm_gemini_retry", "tr_llm_gemini_retry_s"),
-              METHOD_CHATGPT: ("tr_llm_chatgpt_retry", "tr_llm_chatgpt_retry_s")}
+              METHOD_CHATGPT: ("tr_llm_chatgpt_retry", "tr_llm_chatgpt_retry_s"),
+              METHOD_GROK: ("tr_llm_grok_retry", "tr_llm_grok_retry_s")}
 RETRIES = 2       # so oft neu senden (also max. 3 Versuche), danach Lingva/Google
 
 # Obergrenze, wenn "Neu senden" aus ist – damit nichts ewig hängt
@@ -128,7 +149,8 @@ def find_binary(name: str) -> str | None:
     found = shutil.which(name)
     if found:
         return found
-    for folder in (NPM_PREFIX / "bin", Path.home() / ".npm-global" / "bin"):
+    # ~/.grok/bin: falls der Grok-Installer dorthin legt
+    for folder in (NPM_PREFIX / "bin", Path.home() / ".npm-global" / "bin", Path.home() / ".grok" / "bin"):
         path = folder / name
         if path.is_file() and os.access(path, os.X_OK):
             return str(path)
@@ -147,7 +169,8 @@ _LOGIN_FILES = {METHOD_CLAUDE: [".claude/.credentials.json"],
                 METHOD_CHATGPT: [".codex/auth.json"]}
 _LOGIN_ENV = {METHOD_CLAUDE: ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN"],
               METHOD_GEMINI: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-              METHOD_CHATGPT: ["OPENAI_API_KEY"]}
+              METHOD_CHATGPT: ["OPENAI_API_KEY"],
+              METHOD_GROK: ["XAI_API_KEY", "GROK_CODE_XAI_API_KEY"]}
 
 # Antworten, die keine Übersetzung sind, sondern "bitte anmelden"
 _LOGIN_HINTS = ("/login", "invalid api key", "not logged in", "please log in", "please login",
@@ -178,7 +201,8 @@ def logged_in(method: str) -> bool | None:
         return True
     if method == METHOD_GEMINI and _gemini_auth_chosen():
         return True
-    return None if method == METHOD_CHATGPT else False
+    # Codex/Grok: Speicherort der Anmeldung nicht sicher erkennbar → „unbekannt“
+    return None if method in (METHOD_CHATGPT, METHOD_GROK) else False
 
 
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
@@ -200,6 +224,8 @@ def login_argv(method: str) -> list[str] | None:
 # Die npm-Version lädt das eigentliche Programm erst in einem Extra-Schritt nach –
 # fehlt der, kommt "claude native binary not installed".
 CLAUDE_INSTALLER = "curl -fsSL https://claude.ai/install.sh | bash"
+# Grok CLI: nur offizielles Skript von xAI (kein npm-Paket)
+GROK_INSTALLER = "curl -fsSL https://x.ai/cli/install.sh | bash"
 
 
 def _npm_claude() -> bool:
@@ -232,11 +258,13 @@ def install_steps(method: str) -> list:
                                   str(NPM_PREFIX), NPM_PACKAGES[METHOD_CLAUDE]])
         steps.append(lambda: ["bash", "-c", CLAUDE_INSTALLER])
         return steps
+    if method == METHOD_GROK:
+        return [lambda: ["bash", "-c", GROK_INSTALLER] if shutil.which("curl") else None]
     return [lambda: npm_install_command(method)]
 
 
 def needs_npm(method: str) -> bool:
-    return not (method == METHOD_CLAUDE and shutil.which("curl"))
+    return not (method in (METHOD_CLAUDE, METHOD_GROK) and shutil.which("curl"))
 
 
 def npm_install_command(method: str) -> list[str] | None:
@@ -253,27 +281,40 @@ def npm_install_command(method: str) -> list[str] | None:
 def manual_install_command(method: str) -> str:
     if method == METHOD_CLAUDE:
         return CLAUDE_INSTALLER
+    if method == METHOD_GROK:
+        return GROK_INSTALLER
     return f"npm install -g --prefix ~/.local {NPM_PACKAGES[method]}"
 
 
 def models_for(method: str) -> list[str]:
-    """Modelle fürs Dropdown (Bild-LLM: installierte zuerst)."""
+    """Modelle fürs Dropdown (Bild-LLM: installierte zuerst; eigener Befehl: alle Ollama-Modelle)."""
     if method == METHOD_VISION:
         return vision.model_list()
+    if method == METHOD_LLM_CUSTOM:
+        return vision.all_models()
     return list(MODELS.get(method, []))
 
 
 TASK_KEYS = {"explain": "tr_explain_method", "answer": "tr_answer_method"}
+TRANSLATE_KEY = "tr_translate_method"  # 🌐 Übersetzen – darf auch Lingva/DeepL & Co. sein
 
 
 def task_method(cfg: dict, mode: str) -> str:
     """Welcher Dienst macht diese Aufgabe? Kontext/Frage: eigener Dienst (falls eingestellt),
     sonst der Haupt-Dienst. Kann der das nicht (z. B. LibreTranslate) → "" (= nur übersetzen)."""
     main = cfg.get("tr_method", "")
+    if mode == "translate":  # MODE_TRANSLATE (steht weiter unten)
+        return cfg.get(TRANSLATE_KEY) or main
     if mode not in TASK_KEYS:
         return main
     method = cfg.get(TASK_KEYS[mode]) or main
     return method if is_llm(method) else ""
+
+
+def planned_methods(cfg: dict) -> set[str]:
+    """Dienste, die laut Einstellung dran sein dürfen (alles andere = Ersatz wie Lingva)."""
+    return ({cfg.get("tr_method", ""), task_method(cfg, "translate")}
+            | {task_method(cfg, m) for m in TASK_KEYS})
 
 
 def has_tasks(cfg: dict) -> bool:
@@ -281,11 +322,43 @@ def has_tasks(cfg: dict) -> bool:
     return any(task_method(cfg, m) for m in TASK_KEYS)
 
 
+def _ollama_run_index(parts: list[str]) -> int:
+    """Position des Modells in „ollama run <modell> …“ (-1 = kein ollama run)."""
+    if len(parts) >= 3 and Path(parts[0]).name == "ollama" and parts[1] == "run":
+        return 2
+    return -1
+
+
+def custom_cmd_model(cmd: str) -> str:
+    """Modell, das im eigenen Befehl steht (nur bei „ollama run <modell>“)."""
+    try:
+        parts = shlex.split(cmd or "")
+    except ValueError:
+        return ""
+    i = _ollama_run_index(parts)
+    return "" if i < 0 or "{" in parts[i] else parts[i]
+
+
+def custom_has_model(cfg: dict) -> bool:
+    """Kann man beim eigenen Befehl ein Modell wählen? ({model} oder „ollama run …“)"""
+    cmd = cfg.get("tr_llm_custom_cmd") or ""
+    if "{model}" in cmd:
+        return True
+    try:
+        return _ollama_run_index(shlex.split(cmd)) >= 0
+    except ValueError:
+        return False
+
+
 def model_of(method: str, cfg: dict) -> str:
     """Eingestelltes Modell; leer (alte Einstellung) → Standard-Modell der Vorlage."""
     key = MODEL_KEYS.get(method)
     if not key:
         return ""
+    if method == METHOD_LLM_CUSTOM:
+        if not custom_has_model(cfg):
+            return ""
+        return (cfg.get(key) or "").strip() or custom_cmd_model(cfg.get("tr_llm_custom_cmd") or "")
     return (cfg.get(key) or "").strip() or DEFAULTS[key]
 
 
@@ -416,6 +489,12 @@ def build_command(method: str, cfg: dict, prompt: str, text: str, source: str,
         if stream:
             argv += ["--json"]  # Ereignisse als JSON-Zeilen
         return argv + ["-"], prompt  # "-" = Prompt kommt über stdin
+    if method == METHOD_GROK:
+        # plain = nur die Antwort (auch beim Streamen: Text kommt Stück für Stück)
+        argv = ["grok", "-p", prompt, "--output-format", "plain", "--no-auto-update"]
+        if model:
+            argv += ["-m", model]
+        return argv, None
     # eigener Befehl
     cmd = (cfg.get("tr_llm_custom_cmd") or "").strip()
     if not cmd:
@@ -424,6 +503,10 @@ def build_command(method: str, cfg: dict, prompt: str, text: str, source: str,
         parts = shlex.split(cmd)
     except ValueError as e:
         raise LLMError(f"Befehl nicht lesbar ({e})")
+    # „ollama run llama3.2 …“ ohne {model}: das im Dropdown gewählte Modell einsetzen
+    i = _ollama_run_index(parts)
+    if model and i >= 0 and "{model}" not in cmd:
+        parts[i] = "{model}"
     values = {"{prompt}": prompt, "{text}": text, "{source}": source or "auto",
               "{target}": target, "{model}": model}
     uses_input = any("{prompt}" in p or "{text}" in p for p in parts)
@@ -484,7 +567,7 @@ class _Stream:
              … bei Fehler {"type": "result", "status": "error", "error": {"message": …}}
     ChatGPT: {"type": "item.completed", "item": {"type": "agent_message", "text": …}}
              (Codex liefert die Antwort meist erst am Stück)
-    eigener Befehl: normaler Text (z. B. ollama run schreibt Wort für Wort)"""
+    Grok / eigener Befehl: normaler Text (z. B. ollama run schreibt Wort für Wort)"""
 
     EVERY = 0.15  # höchstens so oft an die UI melden (Sekunden)
 
@@ -499,7 +582,7 @@ class _Stream:
         self._last = 0.0
 
     def feed(self, chunk: str):
-        if self.method == METHOD_LLM_CUSTOM:
+        if self.method in (METHOD_LLM_CUSTOM, METHOD_GROK):
             self.text += chunk
             self._emit()
             return
@@ -698,7 +781,7 @@ def translate(method: str, cfg: dict, text: str, source: str, target: str,
         out = ""
         if last_msg is not None and last_msg.is_file():
             out = last_msg.read_text(encoding="utf-8", errors="replace")
-        if not out and stream is not None and (stream.saw_json or method == METHOD_LLM_CUSTOM):
+        if not out and stream is not None and (stream.saw_json or method in (METHOD_LLM_CUSTOM, METHOD_GROK)):
             out = streamed
         out = _clean(out or res.stdout or "").strip()
         if method == METHOD_GEMINI and not (stream is not None and stream.saw_json):

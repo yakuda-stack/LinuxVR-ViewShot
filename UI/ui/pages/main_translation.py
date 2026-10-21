@@ -173,10 +173,13 @@ class TranslationMixin:
         self.sync_model()
 
     def sync_model(self):
-        """Modell-Dropdown passend zum Dienst (nur bei Claude Code / Gemini / ChatGPT)."""
+        """Modell-Dropdown passend zum Dienst (alle KIs: Claude Code / Gemini / ChatGPT /
+        Bild-LLM / eigener Befehl mit {model} bzw. „ollama run …“)."""
         from ui.pages.options_page import fill_model_combo
         method = self.cfg["tr_method"]
         key = llm.MODEL_KEYS.get(method)
+        if method == llm.METHOD_LLM_CUSTOM and not llm.custom_has_model(self.cfg):
+            key = None  # Befehl ohne Modell → nichts zum Auswählen
         self.model_combo.setVisible(key is not None)
         tasks = llm.has_tasks(self.cfg)  # KI als Haupt-Dienst oder eigener Kontext-/Rätsel-Dienst
         self.mode_label.setVisible(tasks)
@@ -196,7 +199,7 @@ class TranslationMixin:
         self.mode_combo.setCurrentIndex(max(0, self.mode_combo.findData(current)))
         self.mode_combo.blockSignals(False)
         if key is not None:
-            fill_model_combo(self.model_combo, method, self.cfg.get(key, ""))
+            fill_model_combo(self.model_combo, method, llm.model_of(method, self.cfg))
 
     def set_last_ai(self, method: str, task: str = ""):
         """„Letzte KI: Claude Code · ❓ Frage beantworten“ – bleibt stehen bis zur nächsten Antwort."""
@@ -213,8 +216,7 @@ class TranslationMixin:
 
     def last_task(self, used: str) -> str:
         """Aufgabe der eben fertigen Antwort (🤖 Auto: wie entschieden; Ersatz-Dienst: übersetzen)."""
-        planned = {self.cfg["tr_method"]} | {llm.task_method(self.cfg, m) for m in llm.TASK_KEYS}
-        if used not in planned:
+        if used not in llm.planned_methods(self.cfg):
             return llm.MODE_TRANSLATE
         task = getattr(self, "auto_task", "") or translation.task_cfg(self.cfg)["tr_llm_mode"]
         return llm.MODE_TRANSLATE if task == llm.MODE_AUTO else task
@@ -245,7 +247,7 @@ class TranslationMixin:
 
     def model_changed(self, model: str):
         key = llm.MODEL_KEYS.get(self.cfg["tr_method"])
-        if key is None or model == self.cfg.get(key):
+        if key is None or not model or model == llm.model_of(self.cfg["tr_method"], self.cfg):
             return
         self.cfg[key] = model
         config.save(self.cfg)
@@ -540,8 +542,7 @@ class TranslationMixin:
         self.auto_task = ""
         # Ersatz-Dienst (z. B. Lingva) hat übernommen → nur Bescheid sagen. Der Dienst wird
         # NIE automatisch umgestellt – was du eingestellt hast, bleibt fest.
-        planned = {self.cfg["tr_method"]} | {llm.task_method(self.cfg, m) for m in llm.TASK_KEYS}
-        if used not in planned:
+        if used not in llm.planned_methods(self.cfg):
             self.tr_status.setText(tr("tr_fallback_once", failed=tr("tr_m_" + self.cfg["tr_method"]),
                                       used=tr("tr_m_" + used), error=error))
 

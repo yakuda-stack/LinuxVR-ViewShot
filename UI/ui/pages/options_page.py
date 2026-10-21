@@ -97,6 +97,8 @@ def model_combo(method: str, current: str, on_change) -> QComboBox:
             text, ok = QInputDialog.getText(combo, tr("tr_model"), tr("tr_model_other"))
             text = text.strip()
             model = text if ok and text else combo.property("llm_model")
+            if model == CUSTOM_MODEL:  # abgebrochen, vorher war noch nichts gewählt
+                model = ""
             fill_model_combo(combo, combo.property("llm_method"), model)
         combo.setProperty("llm_model", model)
         on_change(model)
@@ -809,26 +811,44 @@ class OptionsPage(QWidget):
         grid.addWidget(self.route_combo, 0, 1, 1, 2)
         self.route_hint = dim("")
         grid.addWidget(self.route_hint, 1, 1, 1, 2)
+        # 🤖 Automatisch: wer entscheidet? ⚡ Regeln (Standard, ohne KI) / 🧠 Main-KI
+        self.classify_combo = QComboBox()
+        self.classify_combo.addItem(tr("tr_classify_rules"), translation.CLASSIFY_RULES)
+        self.classify_combo.addItem(tr("tr_classify_ai"), translation.CLASSIFY_AI)
+        self.classify_combo.setCurrentIndex(
+            max(0, self.classify_combo.findData(translation.classify_mode(self.cfg))))
+        self.classify_combo.currentIndexChanged.connect(
+            lambda _i: self.set_cfg("tr_classify", self.classify_combo.currentData()))
+        self.classify_label = QLabel(tr("tr_classify"))
+        grid.addWidget(self.classify_label, 2, 0)
+        grid.addWidget(self.classify_combo, 2, 1, 1, 2)
+        self.classify_hint = dim(tr("tr_classify_hint"))
+        grid.addWidget(self.classify_hint, 3, 1, 1, 2)
 
         self.method = QComboBox()
         fill_methods(self.method, translation.METHODS)  # ── Übersetzung ── / ── KI-Übersetzung ──
         select_data(self.method, self.cfg["tr_method"])
-        grid.addWidget(QLabel(tr("tr_main")), 2, 0)
-        grid.addWidget(self.method, 2, 1, 1, 2)
+        grid.addWidget(QLabel(tr("tr_main")), 4, 0)
+        grid.addWidget(self.method, 4, 1)
+        # Main [Lokales Bild-LLM ▾] [qwen2.5vl:7b ▾] – Modell nur bei KIs (wie bei Kontext/Frage)
+        self.main_model = model_combo(L.METHOD_CLAUDE, "", lambda _m: None)
+        self.main_model.setToolTip(tr("tr_model"))
+        self.main_model.activated.connect(lambda _i: self.main_model_chosen())
+        grid.addWidget(self.main_model, 4, 2)
         self.task_updates = []  # Kontext-/Frage-Zeilen auffrischen, wenn sich Main ändert
-        self.add_task_rows(grid, 3)  # Zeilen 3–6
+        self.add_task_rows(grid, 5)  # Zeilen 5–10: Übersetzen / Kontext / Frage
 
         self.tr_source_combo = language_combo(with_auto=True)
         self.tr_source_combo.currentIndexChanged.connect(
             lambda _: self.set_cfg("tr_source", self.tr_source_combo.currentData()))
-        grid.addWidget(QLabel(tr("tr_source")), 7, 0)
-        grid.addWidget(self.tr_source_combo, 7, 1, 1, 2)
+        grid.addWidget(QLabel(tr("tr_source")), 11, 0)
+        grid.addWidget(self.tr_source_combo, 11, 1, 1, 2)
 
         self.tr_target_combo = language_combo(with_auto=False)
         self.tr_target_combo.currentIndexChanged.connect(
             lambda _: self.set_cfg("tr_target", self.tr_target_combo.currentData()))
-        grid.addWidget(QLabel(tr("tr_target")), 8, 0)
-        grid.addWidget(self.tr_target_combo, 8, 1, 1, 2)
+        grid.addWidget(QLabel(tr("tr_target")), 12, 0)
+        grid.addWidget(self.tr_target_combo, 12, 1, 1, 2)
         grid.setColumnStretch(1, 1)
         box.addLayout(grid)
         # ☁ / 🔒 Wohin geht der Text? (wechselt mit dem gewählten Dienst)
@@ -962,7 +982,7 @@ class OptionsPage(QWidget):
         self.login_timer.setInterval(2000)
         self.login_timer.timeout.connect(self.poll_login)
         self.login_polls = 0
-        for method in (L.METHOD_CLAUDE, L.METHOD_GEMINI, L.METHOD_CHATGPT):
+        for method in (L.METHOD_CLAUDE, L.METHOD_GEMINI, L.METHOD_CHATGPT, L.METHOD_GROK):
             b = block(method)
             b.addWidget(dim(tr("tr_llm_info")))
             row = QHBoxLayout()
@@ -1030,7 +1050,16 @@ class OptionsPage(QWidget):
         # KI: eigener Befehl
         b = block(L.METHOD_LLM_CUSTOM)
         b.addWidget(dim(tr("tr_llm_custom_info")))
-        b.addWidget(self.line_edit("tr_llm_custom_cmd", L.CUSTOM_EXAMPLE))
+        cmd_field = self.line_edit("tr_llm_custom_cmd", L.CUSTOM_EXAMPLE)
+        cmd_field.editingFinished.connect(self.sync_translation)  # Modell-Dropdowns auffrischen
+        b.addWidget(cmd_field)
+        # Modell: ersetzt {model} bzw. das Modell nach „ollama run“ (Ollama-Modelle in der Liste)
+        b.addWidget(QLabel(tr("tr_model")))
+        key = L.MODEL_KEYS[L.METHOD_LLM_CUSTOM]
+        combo = model_combo(L.METHOD_LLM_CUSTOM, L.model_of(L.METHOD_LLM_CUSTOM, self.cfg),
+                            lambda value, k=key: value != self.cfg.get(k) and self.set_cfg(k, value))
+        self.model_combos[L.METHOD_LLM_CUSTOM] = combo
+        b.addWidget(combo)
 
         # Test-Knopf für alle Dienste
         row = QHBoxLayout()
@@ -1121,14 +1150,19 @@ class OptionsPage(QWidget):
         lay.addWidget(card)
 
     def add_task_rows(self, grid: QGridLayout, row: int):
-        """Kontext erklären / Frage beantworten: [KI ▾] [Modell ▾] – je 2 Zeilen (+ Hinweis).
-        Das Modell gehört zur KI (dasselbe wie bei ihr eingestellt)."""
-        for i, mode in enumerate(L.TASK_KEYS):
-            key = L.TASK_KEYS[mode]
+        """Übersetzen / Kontext erklären / Frage beantworten: [Dienst ▾] [Modell ▾] – je 2 Zeilen
+        (+ Hinweis). Das Modell gehört zur KI (dasselbe wie bei ihr eingestellt).
+        Übersetzen darf jeder Dienst (auch Lingva/DeepL), Kontext/Frage nur KIs."""
+        tasks = {L.MODE_TRANSLATE: L.TRANSLATE_KEY, **L.TASK_KEYS}
+        for i, mode in enumerate(tasks):
+            key = tasks[mode]
             service = QComboBox()
             service.addItem("", "")  # Text: update() („wie Main“ / „aus“)
-            for m in L.METHODS:
-                service.addItem(tr("tr_m_" + m), m)
+            if mode == L.MODE_TRANSLATE:
+                fill_methods(service, translation.METHODS)  # ── Übersetzung ── / ── KI ──
+            else:
+                for m in L.METHODS:
+                    service.addItem(tr("tr_m_" + m), m)
             service.setCurrentIndex(max(0, service.findData(self.cfg.get(key) or "")))
             model = model_combo(service.currentData() or L.METHOD_CLAUDE, "", lambda _m: None)
             status = dim("")
@@ -1145,13 +1179,14 @@ class OptionsPage(QWidget):
 
             model.activated.connect(lambda _i, c=model: model_chosen(c))
 
-            def update(combo=service, model=model, status=status):
-                main_ai = L.is_llm(self.cfg["tr_method"])
+            def update(combo=service, model=model, status=status, mode=mode):
+                main_ai = L.is_llm(self.cfg["tr_method"]) or mode == L.MODE_TRANSLATE
                 combo.setItemText(0, tr("tr_tasks_same") if main_ai else tr("tr_tasks_off"))
                 m = combo.currentData()
-                model.setVisible(bool(m))
-                if m:
-                    fill_model_combo(model, m, self.cfg.get(L.MODEL_KEYS[m], ""))
+                has_model = bool(m) and self.has_model(m)
+                model.setVisible(has_model)
+                if has_model:
+                    fill_model_combo(model, m, L.model_of(m, self.cfg))
                 if m and not translation.is_configured(m, self.cfg):
                     text = "⚠  " + tr("tr_answer_not_ready")
                 else:
@@ -1160,12 +1195,35 @@ class OptionsPage(QWidget):
                 status.setVisible(bool(text))
 
             def changed(_i, key=key, combo=service, update=update):
+                if combo.currentData() is None:
+                    return  # Überschrift (── KI-Übersetzung ──)
                 self.set_cfg(key, combo.currentData())
                 update()
 
             service.currentIndexChanged.connect(changed)
             self.task_updates.append(update)
             update()
+
+    def main_model_chosen(self):
+        """Modell für Main gewählt → bei dieser KI speichern (gleiches wie im Block unten)."""
+        method = self.main_model.property("llm_method")
+        model = self.main_model.property("llm_model") or ""
+        key = L.MODEL_KEYS.get(method)
+        if key and model and model != L.model_of(method, self.cfg):
+            self.set_cfg(key, model)
+            self.sync_translation()
+
+    def has_model(self, method: str) -> bool:
+        """Gibt es bei diesem Dienst ein Modell zum Auswählen? (KIs; eigener Befehl nur mit Modell)"""
+        return method in L.MODEL_KEYS and (method != L.METHOD_LLM_CUSTOM or L.custom_has_model(self.cfg))
+
+    def update_main_model(self):
+        """Modell-Dropdown neben Main: nur bei KIs, die ein Modell haben."""
+        m = self.cfg["tr_method"]
+        has = self.has_model(m)
+        self.main_model.setVisible(has)
+        if has:
+            fill_model_combo(self.main_model, m, L.model_of(m, self.cfg))
 
     def route_changed(self, _i=None):
         translation.set_route(self.cfg, self.route_combo.currentData())
@@ -1181,6 +1239,12 @@ class OptionsPage(QWidget):
         self.route_combo.blockSignals(False)
         self.route_combo.setEnabled(main_ai)
         self.route_hint.setText(tr("tr_route_hint_" + mode) if main_ai else tr("tr_route_hint_noai"))
+        # „Entscheidung“ gibt es nur bei 🤖 Automatisch
+        if hasattr(self, "classify_combo"):
+            for widget in (self.classify_label, self.classify_combo, self.classify_hint):
+                widget.setVisible(mode == translation.ROUTE_AUTO)
+        if hasattr(self, "main_model"):
+            self.update_main_model()
         for update in getattr(self, "task_updates", []):
             update()
 
@@ -1430,7 +1494,7 @@ class OptionsPage(QWidget):
             select_data(combo, self.cfg[key])
             combo.blockSignals(False)
         for method, combo in self.model_combos.items():
-            fill_model_combo(combo, method, self.cfg.get(L.MODEL_KEYS[method], ""))
+            fill_model_combo(combo, method, L.model_of(method, self.cfg))
         # Main hat sich geändert → Einstellungen des neuen Main zeigen;
         # sonst bleibt der Dienst stehen, den man gerade unter „Einstellungen für“ einrichtet
         if self.cfg["tr_method"] != getattr(self, "_last_main", None) or not getattr(self, "shown_method", None):

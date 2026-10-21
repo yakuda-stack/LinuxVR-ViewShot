@@ -45,11 +45,13 @@ I18N_KEYS = [
 UI_KEYS = [
     "language", "gallery_main_subfolders", "gallery_folders", "history", "tr_method", "tr_source", "tr_target", "tr_auto", "tr_google_key",
     "tr_deepl_key", "tr_libre_url", "tr_libre_online_url", "tr_libre_online_key", "tr_libre_seen",
-    "tr_llm_claude_model", "tr_llm_gemini_model", "tr_llm_chatgpt_model", "tr_llm_custom_cmd",
-    "tr_llm_vision_model", "tr_vision_url", "tr_vision_keep_alive", "tr_explain_method",
-    "tr_answer_method", "tr_route", "tr_auto_once", "tr_auto_once_photo", "tr_auto_once_next",
+    "tr_llm_claude_model", "tr_llm_gemini_model", "tr_llm_chatgpt_model", "tr_llm_grok_model", "tr_llm_custom_cmd",
+    "tr_llm_custom_model",
+    "tr_llm_vision_model", "tr_vision_url", "tr_vision_keep_alive", "tr_translate_method", "tr_explain_method",
+    "tr_answer_method", "tr_route", "tr_classify", "tr_auto_once", "tr_auto_once_photo", "tr_auto_once_next",
     "tr_llm_mode", "tr_llm_gemini_retry", "tr_llm_gemini_retry_s", "tr_llm_claude_retry",
     "tr_llm_claude_retry_s", "tr_llm_chatgpt_retry", "tr_llm_chatgpt_retry_s",
+    "tr_llm_grok_retry", "tr_llm_grok_retry_s",
     "out_osc", "out_osc_host", "out_osc_port", "out_file", "out_file_path",
 ]
 LAYER_KEYS = ["live_interval_s", "overlay", "panel", "panel_edit", "panel_port", "panel_opacity",
@@ -61,7 +63,18 @@ KEY_CASES = [
     {},
     {"tr_method": "libre", "tr_source": "ja", "tr_target": "en"},
     {"tr_method": "llm_claude", "tr_llm_claude_model": "opus"},
+    {"tr_method": "llm_custom", "tr_llm_custom_cmd": "ollama run llama3.2 {prompt}"},
+    {"tr_method": "llm_custom", "tr_llm_custom_cmd": "ollama run llama3.2 {prompt}",
+     "tr_llm_custom_model": "qwen3:8b"},
     {"tr_method": "llm_claude", "tr_llm_mode": "explain"},
+    {"tr_method": "llm_vision", "tr_translate_method": "deepl"},
+    {"tr_method": "llm_vision", "tr_translate_method": "llm_claude", "tr_llm_claude_model": "haiku"},
+    {"tr_method": "llm_vision", "tr_llm_mode": "auto", "tr_translate_method": "llm_gemini",
+     "tr_answer_method": "llm_claude"},
+    {"tr_method": "llm_vision", "tr_llm_mode": "explain", "tr_translate_method": "deepl"},
+    {"tr_method": "llm_claude", "tr_translate_method": "llm_claude"},
+    {"tr_method": "llm_grok"},
+    {"tr_method": "llm_vision", "tr_translate_method": "llm_grok", "tr_llm_grok_model": "grok-build-0.1"},
     {"tr_method": "llm_chatgpt", "tr_llm_mode": "answer"},
     {"tr_method": "llm_vision", "tr_llm_mode": "answer"},
     {"tr_method": "llm_vision", "tr_llm_mode": "auto", "tr_answer_method": "llm_claude",
@@ -85,7 +98,7 @@ def build() -> dict:
     for m in translation.METHODS:
         strings["tr_m_" + m] = dict(i18n.TEXTS["tr_m_" + m])
     prompts = []
-    for method in (L.METHOD_CLAUDE, L.METHOD_GEMINI, L.METHOD_CHATGPT):
+    for method in (L.METHOD_CLAUDE, L.METHOD_GEMINI, L.METHOD_CHATGPT, L.METHOD_GROK):
         for mode in (L.MODE_TRANSLATE, L.MODE_EXPLAIN, L.MODE_ANSWER, L.MODE_CLASSIFY):
             for src in ("", "ja"):
                 prompts.append({"kind": "llm", "method": method, "mode": mode, "source": src,
