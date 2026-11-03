@@ -4,7 +4,8 @@
 # Verwendung:  bash scripts/build_appimage.sh   (egal von wo aus)
 #
 # Ergebnis:    build/LinuxVR-ViewShot-<version>-x86_64.AppImage (+ .zsync)
-#              build/ wird bei JEDEM Lauf komplett geleert.
+#              Die alte AppImage + .zsync bleiben liegen, bis die neue fertig ist –
+#              alles andere in build/ wird bei jedem Lauf geleert.
 #
 # Besonderheit gegenüber den anderen Projekten: der OpenXR-Layer (Rust, .so)
 # liegt FERTIG GEBAUT in der AppImage. Das Spiel kann ihn dort aber nicht
@@ -17,7 +18,6 @@
 #   VS_NO_OCR=1     ohne Texterkennung (RapidOCR/onnxruntime/OpenCV) → ~100 MB kleiner,
 #                   Übersetzung + QR-Codes gehen dann nur mit Paketen vom System
 #   VS_PYVERS="3.12 3.13"   andere Python-Versionen
-#   VS_NO_ZSYNC=1   ohne Delta-Update-Datei
 
 set -e
 
@@ -43,6 +43,8 @@ ARCH="x86_64"
 OUT_DIR="$(pwd)/build"
 BUILD_DIR="$OUT_DIR/AppDir"
 OUT="$OUT_DIR/${APP}-${VERSION}-${ARCH}.AppImage"
+NEW_DIR="$OUT_DIR/new"                    # erst nach allen Prüfungen nach build/ verschieben
+NEW="$NEW_DIR/$(basename "$OUT")"
 SHARE="$BUILD_DIR/usr/share/$ID"          # = PROJECT_DIR der App (UI/core/paths.py)
 
 echo "=== LinuxVR-ViewShot AppImage Builder ==="
@@ -64,8 +66,8 @@ command -v cargo >/dev/null || [ -x "$HOME/.cargo/bin/cargo" ] || {
 
 # 0. build/ frisch anlegen
 echo "[0/6] Leere build/ ..."
-rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
+find "$OUT_DIR" -mindepth 1 -maxdepth 1 ! -name '*.AppImage' ! -name '*.zsync' -exec rm -rf {} +
 
 # 1. appimagetool + statische Runtime (fuse2 UND fuse3) – wie bei DreamChatbox
 if [ -z "${APPIMAGETOOL:-}" ]; then
@@ -307,42 +309,43 @@ chmod +x "$BUILD_DIR/AppRun"
 #   gh-releases-zsync | Benutzer | Repo | latest | Dateimuster
 # BEIDE Dateien (AppImage + .zsync) gehören ins GitHub-Release.
 UPDATE_INFO="gh-releases-zsync|yakuda-stack|LinuxVR-ViewShot|latest|LinuxVR-ViewShot-*${ARCH}.AppImage.zsync"
-UPDATE_ARGS=()
-if [ -z "${VS_NO_ZSYNC:-}" ]; then
-    UPDATE_ARGS=(-u "$UPDATE_INFO")
-fi
+
+# Die App läuft auch für andere Nutzer: Alles muss lesbar sein, sonst bricht appimagetool ab
+# (Dateien aus dem Projektordner können z. B. nur für den Besitzer lesbar sein)
+chmod -R a+rX "$BUILD_DIR"
+
 echo "[5/6] Baue AppImage..."
-(cd "$OUT_DIR" && ARCH="$ARCH" "$APPIMAGETOOL" --runtime-file "$RUNTIME" \
-    "${UPDATE_ARGS[@]}" "$BUILD_DIR" "$OUT")
+mkdir -p "$NEW_DIR"
+(cd "$NEW_DIR" && ARCH="$ARCH" "$APPIMAGETOOL" --runtime-file "$RUNTIME" \
+    -u "$UPDATE_INFO" "$BUILD_DIR" "$NEW")
 
 # 7. Gegenproben
 echo ""
 echo "[6/6] Prüfe das Ergebnis..."
-if head -c 400000 "$OUT" | strings | grep -q "libfuse\.so\.2"; then
+if head -c 400000 "$NEW" | strings | grep -q "libfuse\.so\.2"; then
     echo "WARNUNG: Die AppImage verweist noch auf libfuse.so.2 — Runtime nicht statisch."
 else
     echo "✔ Runtime ist statisch (läuft mit fuse2 UND fuse3)"
 fi
-if [ -z "${VS_NO_ZSYNC:-}" ]; then
-    EMBEDDED="$(env -u APPIMAGE_EXTRACT_AND_RUN "$OUT" \
-        --appimage-updateinformation 2>/dev/null || true)"
-    if [ "$EMBEDDED" = "$UPDATE_INFO" ]; then
-        echo "✔ Update-Info eingebettet: $EMBEDDED"
-    else
-        echo "WARNUNG: Update-Info fehlt in der AppImage (gelesen: '$EMBEDDED')."
-    fi
-    if [ -s "$OUT.zsync" ]; then
-        echo "✔ Delta-Update-Datei: build/$(basename "$OUT").zsync"
-    else
-        echo "WARNUNG: keine .zsync erzeugt — Delta-Updates gehen so nicht."
-    fi
+EMBEDDED="$(env -u APPIMAGE_EXTRACT_AND_RUN "$NEW" \
+    --appimage-updateinformation 2>/dev/null || true)"
+if [ "$EMBEDDED" = "$UPDATE_INFO" ]; then
+    echo "✔ Update-Info eingebettet: $EMBEDDED"
+else
+    echo "WARNUNG: Update-Info fehlt in der AppImage (gelesen: '$EMBEDDED')."
 fi
+# Ohne .zsync gehen keine Delta-Updates: Dann nichts ersetzen, die alte Version bleibt liegen
+if [ ! -s "$NEW.zsync" ]; then
+    echo "FEHLER: keine .zsync erzeugt – die Dateien in build/ bleiben unverändert."
+    exit 1
+fi
+echo "✔ Delta-Update-Datei: build/$(basename "$OUT").zsync"
 
-rm -rf "$BUILD_DIR"
+find "$OUT_DIR" -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.zsync' \) -delete
+mv "$NEW" "$NEW.zsync" "$OUT_DIR/"
+rm -rf "$BUILD_DIR" "$NEW_DIR"
 
 echo "✔ Fertig: build/$(basename "$OUT")  ($(du -h "$OUT" | cut -f1))"
-if [ -s "$OUT.zsync" ]; then
-    echo "   Ins GitHub-Release: $(basename "$OUT") UND $(basename "$OUT").zsync"
-fi
+echo "   Ins GitHub-Release: $(basename "$OUT") UND $(basename "$OUT").zsync"
 echo "   Zum Starten: chmod +x \"$OUT\" && \"$OUT\""
 echo "   Ohne FUSE testen: APPIMAGE_EXTRACT_AND_RUN=1 \"$OUT\""

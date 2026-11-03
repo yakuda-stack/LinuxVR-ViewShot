@@ -1,5 +1,10 @@
 # Changelog
 
+
+## [v1.0.8] – 2026-11-03
+- ** Appimage Fix (permissions)
+
+
 ## [v1.0.7] – 2026-11-03
 Update: **AUR** `yay -Syu linuxvr-viewshot` or the **AppImage** – open the app once (or press ⬆ *Update layer*). From a clone: 🔧 *Rebuild & install*. Then restart the VR game. **Needs a layer + service rebuild.**
 
