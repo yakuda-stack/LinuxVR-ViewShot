@@ -1,5 +1,22 @@
 # Changelog
 
+## [v1.0.7] – 2026-11-03
+Update: **AUR** `yay -Syu linuxvr-viewshot` or the **AppImage** – open the app once (or press ⬆ *Update layer*). From a clone: 🔧 *Rebuild & install*. Then restart the VR game. **Needs a layer + service rebuild.**
+
+- **📷 Only picture/GIF (new task)** – on the main page and in the VR panel, *Task* now has **📷 Only picture/GIF**. It stays on until you pick another task yourself, also with 🤖 Automatic
+  - Nothing is read or translated: no OCR, no AI, no online service – new photos, the gallery and ↻ *Send again* included
+  - **🔁 Lens and 📌 Pin don't translate either:** a short press takes a normal photo, holding records a GIF. With 📌 Pin the GIF frame still stays fixed in the world
+  - A running Lens/Pin stops as soon as you pick it
+  - *Task* is now always shown, also without an AI as main service – for example with Lingva
+- **🖥 Desktop screenshot with a key (Options → Shot, KDE Plasma)** – optional, off by default. Works like a snipping tool while the app is open: press the key, mark an area with the mouse or the WayVR laser, confirm with a double click or Enter. Esc cancels
+  - KDE asks for permission when you turn it on. Default key: **Alt + Y**, change it with *Change shortcut*
+  - Pictures go to `desktop/` in the photo folder and show up in the gallery. They are not translated automatically
+  - Needs `python-jeepney` and `spectacle`. If one is missing, ticking the box opens `sudo pacman -S …` in a terminal on Arch, other systems get a message with the command
+- **⚠ Layer check at start** – the app compares the installed layer with its own version. If they don't match, a note above the button tells you to reinstall the layer. AppImage and AUR still update it on their own when the app opens
+- **⬆ Version on the main page** – top right shows the app version. An arrow appears next to it when a newer release exists on GitHub and opens the release page. The app asks GitHub once at start, only for the version number
+- **Fix: copying a GIF only copied the first frame** – in the VR panel and the gallery, GIFs now go to the clipboard as a file, so Discord should get the whole animation. Sharing to Discord uses the same way
+- Texts in DE / EN / FR, README updated
+
 ## [v1.0.6] – 2026-10-21
 Update: **AUR** `yay -Syu linuxvr-viewshot` or the **AppImage** – open the app once (or press ⬆ *Update layer*). From a clone: 🔧 *Rebuild & install*. Then restart the VR game. **Needs a service rebuild.**
 

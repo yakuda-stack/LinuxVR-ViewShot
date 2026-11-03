@@ -18,7 +18,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QMainWindow, QPushButton,
                              QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
-from core import config, i18n, paths, tags
+from core import app_update, config, desktop_shot, i18n, layer_config, paths, tags
 from core.i18n import tr
 from ui.pages.gallery_page import GalleryPage
 from ui.pages.main_page import MainPage
@@ -50,8 +50,19 @@ class MainWindow(QMainWindow):
         # Neuaufbau beim Sprachwechsel, darum hier und nicht in der Galerie
         self.tagger = tags.Tagger(self)
 
+        # 🖥 Desktop-Screenshot: überlebt den Neuaufbau beim Sprachwechsel
+        self.desktop_shot = desktop_shot.DesktopShot(self)
+        self.desktop_shot.taken.connect(self.on_desktop_shot)
+
+        # ⬆ Gibt es eine neue Version? Einmal beim Start nachsehen
+        self.updates = app_update.UpdateChecker(self)
+        self.updates.found.connect(lambda version: self.main_page.show_update(version))
+
         self.build_ui()
-        self.tagger.scan(paths.list_photos())
+        self.updates.start()
+        self.scan_tags()
+        if self.cfg.get("desktop_shot") and not desktop_shot.missing_packages():
+            self.desktop_shot.start()
         # 👋 erster Start: kurz erklären, installieren lassen, zu den Übersetzern führen
         from ui import welcome
         welcome.maybe_start(self)
@@ -86,10 +97,11 @@ class MainWindow(QMainWindow):
 
         # ===== Seiten (rechts daneben) =====
         self.main_page = MainPage(self.cfg, self.tagger)
+        self.main_page.show_update(self.updates.latest)
         self.gallery_page = GalleryPage(self.cfg, self.tagger)
         self.gallery_page.folders_changed.connect(self.watch_gallery_folders)
         self.watch_gallery_folders()
-        self.options_page = OptionsPage(self.cfg, options_tab)
+        self.options_page = OptionsPage(self.cfg, self.desktop_shot, options_tab)
         self.options_page.language_changed.connect(self.on_language_changed)
         self.options_page.translation_changed.connect(self.main_page.on_options_changed)
         self.main_page.settings_changed.connect(self.options_page.sync_translation)
@@ -180,7 +192,16 @@ class MainWindow(QMainWindow):
         self._waits = 0
         self.main_page.refresh()
         self.gallery_page.refresh()
-        self.tagger.scan(paths.list_photos())  # neue Fotos erkennen
+        self.scan_tags()
+
+    def scan_tags(self):
+        """Neue Fotos erkennen – bei 📷 Nur Foto/GIF nicht (spart die Texterkennung)."""
+        if not layer_config.photo_only():
+            self.tagger.scan(paths.list_photos())
+
+    def on_desktop_shot(self, _path: str):
+        self.watch_gallery_folders()  # desktop/ gibt es erst nach dem ersten Screenshot
+        self.gallery_page.refresh()
 
     def closeEvent(self, event):
         """Beim Beenden: QR-/Text-Fotos aufräumen, wenn in den Optionen an."""
@@ -193,6 +214,7 @@ class MainWindow(QMainWindow):
                 # zusätzlich als 🖼 Bild getaggt = behalten
                 if found & wanted and "image" not in found:
                     move_to_trash(photo)
+        self.desktop_shot.stop()
         super().closeEvent(event)
 
     def on_language_changed(self, lang: str):

@@ -14,8 +14,10 @@ def set_text(text: str):
 
 
 def set_image(path: Path):
-    """Bild als Bild UND als Datei (für Dolphin)."""
+    """Bild als Bild UND als Datei (für Dolphin). GIF nur als Datei: Als Bild käme nur das
+    erste Einzelbild an, und Discord würde dieses statt der Datei nehmen."""
     mime = QMimeData()
-    mime.setImageData(QImage(str(path)))
+    if path.suffix.lower() != ".gif":
+        mime.setImageData(QImage(str(path)))
     mime.setUrls([QUrl.fromLocalFile(str(path))])
     QApplication.clipboard().setMimeData(mime)

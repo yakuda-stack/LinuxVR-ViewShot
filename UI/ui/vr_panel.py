@@ -1173,7 +1173,7 @@ class VRPanel(QWidget):
         except OSError:
             pose = (0, button_cm())
         layer_keys = ("panel_opacity", "panel_edit", "panel_anchor", "detect_mode", "shutter", "mode_button",
-                      "panel_button", "panel_open_on_shot", "panel_button_color")
+                      "panel_button", "panel_open_on_shot", "panel_button_color", "photo_only")
         return (str(photo), mtime, pose, tuple(lcfg.get(k) for k in layer_keys), p.tr_result,
                 p.tr_status.text(), p.cfg.get("tr_method"),
                 p.cfg.get("tr_source"), p.cfg.get("tr_target"), p.cfg.get("tr_llm_mode"),
@@ -1202,7 +1202,6 @@ class VRPanel(QWidget):
         self.method_btn.setText(tr("tr_m_" + cfg["tr_method"]) + "  ▸")
         self.src_btn.setText(language_name(cfg.get("tr_source", ""), True) + "  ▸")
         self.dst_btn.setText(language_name(cfg["tr_target"], False) + "  ▸")
-        self.mode_btn.setVisible(llm.has_tasks(cfg))  # 🤖 Auto / Aufgabe wählen
         self.mode_btn.setText(p.mode_combo.currentText() + "  ▸")
         self.last_ai.setText(tr("tr_last_ai") + ":  " + p.last_ai_label.text())
         pix = photo_with_numbers(photo, lines, self.content_w(PAGE_MAIN))

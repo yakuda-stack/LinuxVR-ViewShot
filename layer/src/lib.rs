@@ -822,7 +822,8 @@ unsafe fn update_gesture(nx: &Next, session: xr::Session) {
     // 🔁 Lens gewählt? Dann startet Halten kein GIF, sondern Lens (wie ein Foto).
     // 📌 Pin gewählt: kurz drücken = Pin (übersetzen), halten = GIF mit festem Rahmen in der Welt
     let kind = icons::current(cfg.manual());
-    let lens = buttons.mode.is_some() && kind == icons::PhotoType::Lens;
+    // 📷 Nur Foto/GIF: kurz drücken = Foto, halten = GIF – auch bei 🔁 und 📌
+    let lens = buttons.mode.is_some() && kind == icons::PhotoType::Lens && !cfg.photo_only;
     let pin = buttons.mode.is_some() && kind == icons::PhotoType::Pin;
     let mut event = s.gesture.update(&inputs, Instant::now(), &buttons);
     if event == gesture::Event::GifStart && lens {
@@ -2042,6 +2043,10 @@ unsafe fn try_capture(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) 
         log!("Erster Frame auf Session {}", session.into_raw());
     }
     let cfg = config::get();
+    if cfg.photo_only && s.live.take().is_some() {
+        save::remove_live_png();
+        log!("Lens/Pin beendet (📷 Nur Foto/GIF)");
+    }
     // Live-Modus: ist das nächste Foto vom selben Ausschnitt fällig?
     let live_due = !s.capture_pending && s.live.is_some_and(|l| Instant::now() >= l.next);
     if !s.capture_pending && !live_due {
@@ -2146,7 +2151,7 @@ unsafe fn try_capture(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) 
             _ => 0.6,
         };
         let kind = icons::current(cfg.manual());
-        if cfg.buttons().mode.is_some() && kind.is_live() {
+        if cfg.buttons().mode.is_some() && kind.is_live() && !cfg.photo_only {
             // 🔁 Lens: KEIN Foto für die Galerie – ab jetzt denselben Ausschnitt
             // immer wieder fotografieren (das erste Mal gleich im nächsten Frame)
             if rect == img {

@@ -368,6 +368,7 @@ MODE_EXPLAIN = "explain"       # Kontext: worum geht es, was bedeutet das?
 MODE_ANSWER = "answer"         # steht eine Frage/Aufgabe drin → beantworten
 MODE_AUTO = "auto"             # 🤖 bei jedem Foto neu entscheiden (Haupt-KI teilt zu)
 MODES = [MODE_TRANSLATE, MODE_EXPLAIN, MODE_ANSWER]  # Aufgaben zum Auswählen
+MODE_PHOTO = "photo"           # 📷 Nur Foto/GIF: steht in layer.json (photo_only), keine KI-Aufgabe
 MODE_CLASSIFY = "classify"     # intern (🤖 Auto): nur „QUIZ / EXPLAIN / TEXT“ fragen
 # Bei geändertem Prompt hochzählen → alte gespeicherte Antworten werden neu erfragt
 PROMPT_VERSION = {MODE_EXPLAIN: 3, MODE_ANSWER: 4}  # 4: nummerierte Zeilen

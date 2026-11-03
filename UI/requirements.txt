@@ -1,4 +1,6 @@
 PyQt6
+# 🖥 Desktop-Screenshot per Tastenkürzel (GlobalShortcuts-Portal):
+jeepney
 # optional – Texterkennung für die Übersetzung (Main-Seite):
 rapidocr
 onnxruntime

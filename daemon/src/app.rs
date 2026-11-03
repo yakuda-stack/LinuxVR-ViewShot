@@ -358,6 +358,14 @@ impl State {
     }
 
     fn start_photo(&mut self, force: bool, translate: bool) {
+        if self.lcfg.b("photo_only") {
+            // 📷 Nur Foto/GIF: nichts lesen, nichts übersetzen (busy frei = alte Antwort verfällt)
+            self.busy = None;
+            self.result.clear();
+            self.lines.clear();
+            self.status = self.t("tr_photo_only_status", &[]);
+            return;
+        }
         let Some(path) = self.photo.clone() else { return };
         let cfg = self.photo_cfg(&path);
         self.next_id += 1;
@@ -393,10 +401,11 @@ impl State {
     fn check_live(&mut self) {
         let live = paths::live_file();
         let mtime = file_mtime(&live);
+        let photo_only = self.lcfg.b("photo_only"); // 📷 der Layer beendet Lens/Pin selbst
         if self.live_shown && !self.live_busy {
             let interval = self.lcfg.f("live_interval_s", 3.0).max(1.0);
             let age = mtime.and_then(|m| m.elapsed().ok()).map(|d| d.as_secs_f64()).unwrap_or(f64::MAX);
-            if mtime.is_none() || age > (3.0 * interval).max(STALE_MIN_S) {
+            if photo_only || mtime.is_none() || age > (3.0 * interval).max(STALE_MIN_S) {
                 // Lens beendet → wieder das normale Foto
                 self.live_shown = false;
                 self.live_note.clear();
@@ -410,6 +419,10 @@ impl State {
                 }
                 return;
             }
+        }
+        if photo_only {
+            self.live_mtime = mtime.max(self.live_mtime);
+            return;
         }
         if self.live_busy || self.busy.is_some() {
             return;
@@ -547,7 +560,7 @@ impl State {
             }
             Msg::Live { size, seq, roll, lines, text, res } => {
                 self.live_busy = false;
-                if !self.live_shown {
+                if !self.live_shown || self.lcfg.b("photo_only") {
                     return;
                 }
                 let now = chrono::Local::now().format("%H:%M:%S").to_string();
@@ -594,27 +607,37 @@ impl State {
 
     fn mode_items(&self) -> panel::Items {
         let auto = trn::route_mode(&self.cfg) == trn::ROUTE_AUTO;
+        let photo_only = self.lcfg.b("photo_only");
+        // KI als Haupt-Dienst oder eigener Kontext-/Rätsel-Dienst – sonst gibt es nur „Übersetzen“
+        let modes = if trn::has_tasks(&self.cfg) { &llm::MODES[..] } else { &llm::MODES[..1] };
         let mut items = Vec::new();
         if auto {
             let once = self.cfg.s("tr_auto_once");
-            items.push((String::new(), self.t("tr_mode_auto", &[]), once.is_empty()));
-            for m in llm::MODES {
-                items.push((m.to_string(), format!("{}  · 1×", self.t(&format!("tr_mode_{m}"), &[])), once == m));
+            items.push((String::new(), self.t("tr_mode_auto", &[]), !photo_only && once.is_empty()));
+            for m in modes {
+                items.push((m.to_string(), format!("{}  · 1×", self.t(&format!("tr_mode_{m}"), &[])), !photo_only && once == *m));
             }
         } else {
             let cur = trn::task_cfg(&self.cfg).s("tr_llm_mode");
-            for m in llm::MODES {
-                items.push((m.to_string(), self.t(&format!("tr_mode_{m}"), &[]), cur == m));
+            for m in modes {
+                items.push((m.to_string(), self.t(&format!("tr_mode_{m}"), &[]), !photo_only && cur == *m));
             }
         }
+        items.push((llm::MODE_PHOTO.to_string(), self.t("tr_mode_photo", &[]), photo_only));
         items
     }
 
     fn mode_label(&self) -> Option<String> {
-        if !trn::has_tasks(&self.cfg) {
-            return None;
+        let items = self.mode_items();
+        items.iter().find(|i| i.2).or(items.first()).map(|i| i.1.clone())
+    }
+
+    /// 📷 Nur Foto/GIF an/aus – der Layer liest es aus layer.json
+    fn set_photo_only(&mut self, on: bool) {
+        if let Err(e) = settings::update_file(&settings::layer_file(), &[("photo_only", Value::Bool(on))]) {
+            log::line(&format!("layer.json: {e}"));
         }
-        self.mode_items().into_iter().find(|i| i.2).map(|i| i.1)
+        self.reload(true);
     }
 
     /// Dienste fürs Menü: eingerichtete, bei ⭐ Favoriten nur diese (+ der gewählte)
@@ -1200,7 +1223,11 @@ impl State {
                 self.cfg.set("tr_target", value);
                 self.save_cfg(&["tr_target"]);
             }
+            Choice::Mode if value == llm::MODE_PHOTO => self.set_photo_only(true),
             Choice::Mode => {
+                if self.lcfg.b("photo_only") {
+                    self.set_photo_only(false);
+                }
                 if trn::route_mode(&self.cfg) == trn::ROUTE_AUTO {
                     let name = self.photo.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
                     self.cfg.set("tr_auto_once", value);

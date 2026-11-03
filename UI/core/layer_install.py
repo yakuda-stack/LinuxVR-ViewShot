@@ -51,8 +51,12 @@ def installed_version() -> str:
         return ""
 
 
+def outdated() -> bool:
+    """Layer in ~/.local installiert, aber von einer anderen Version als die App?"""
+    return paths.MANIFEST.is_file() and installed_version() != VERSION
+
+
 def needs_update() -> bool:
-    """AppImage/Paket + Layer in ~/.local installiert, aber von einer anderen
-    Version (z. B. nach einem AppImage- oder pacman-Update)?"""
-    return (paths.copies_layer() and paths.MANIFEST.is_file()
-            and installed_version() != VERSION)
+    """Wie outdated(), aber bei AppImage/Paket: Hier kann die App selbst aktualisieren
+    (z. B. nach einem AppImage- oder pacman-Update)."""
+    return paths.copies_layer() and outdated()

@@ -110,8 +110,17 @@ pub fn copy_text(text: &str) -> bool {
     copy(text.as_bytes(), "text/plain;charset=utf-8")
 }
 
-/// Bild kopieren (PNG; JPG wird umgewandelt – Discord & Co. wollen image/png)
+/// `file://`-Adresse für text/uri-list (Sonderzeichen in Prozent-Schreibweise)
+fn file_uri(path: &Path) -> String {
+    format!("file://{}", crate::tr::services::quote(&path.to_string_lossy(), "/"))
+}
+
+/// Bild kopieren (PNG; JPG wird umgewandelt – Discord & Co. wollen image/png).
+/// GIF als Datei: Über Bilddaten käme nur das erste Einzelbild an.
 pub fn copy_image(photo: &Path) -> bool {
+    if photo.extension().is_some_and(|e| e.eq_ignore_ascii_case("gif")) {
+        return copy(format!("{}\r\n", file_uri(photo)).as_bytes(), "text/uri-list");
+    }
     let is_png = photo.extension().is_some_and(|e| e.eq_ignore_ascii_case("png"));
     let data = if is_png {
         std::fs::read(photo).ok()
@@ -308,6 +317,11 @@ pub fn photo_tags(photo: &Path) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gif_uri_keeps_slashes_and_escapes_the_rest() {
+        assert_eq!(file_uri(Path::new("/home/a b/ViewShot_1ü.gif")), "file:///home/a%20b/ViewShot_1%C3%BC.gif");
+    }
 
     #[test]
     fn links_and_form_like_python() {

@@ -1119,3 +1119,184 @@ def test_classify_uses_rules_by_default(monkeypatch):
     assert translation.classify(dict(cfg, tr_classify="ai"), "Hallo") == L.MODE_EXPLAIN
     assert asked == ["Hallo"]
 
+
+
+# ------------------------------------------------------ 📷 Nur Foto/GIF
+def test_photo_only_stays_on_and_stops_translating(tmp_path, monkeypatch):
+    """Wählbar auch ohne KI · bleibt an, auch über neue Fotos · nichts wird übersetzt."""
+    import os
+    monkeypatch.setenv("VIEWSHOT_OUTPUT_DIR", str(tmp_path))
+    from PyQt6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])  # noqa: F841
+    from core import layer_config, translation
+    from core import llm_translator as llm
+    monkeypatch.setattr(layer_config, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(layer_config, "LAYER_FILE", tmp_path / "layer.json")
+    from ui.mainwindow import MainWindow
+    w = MainWindow()
+    page = w.main_page
+    page.cfg.update(tr_method="llm_vision", tr_route="auto", tr_auto_once="")
+    page.sync_model()
+    combo = page.mode_combo
+    combo.setCurrentIndex(combo.findData(llm.MODE_PHOTO))
+    assert layer_config.photo_only()
+    assert not page.translate_btn.isEnabled()
+    assert page.tr_status.text()
+    for name in ("a.png", "b.png", "c.png"):  # 🤖 Auto springt nicht zurück
+        translation.photo_task_cfg(page.cfg, name)
+        page.sync_model()
+        assert combo.currentData() == llm.MODE_PHOTO
+    calls = []
+    monkeypatch.setattr(translation, "translate_photo", lambda *a, **k: calls.append(a))
+    page.last_photo = tmp_path / "a.png"
+    page.start_translation(force=True)
+    assert page.translating is None and not calls
+    page.last_photo = None
+    combo.setCurrentIndex(combo.findData(""))  # 🤖 Auto – nur von Hand zurück
+    assert not layer_config.photo_only()
+    assert page.translate_btn.isEnabled()
+    page.cfg.update(tr_method="lingva")
+    page.sync_model()
+    assert [combo.itemData(i) for i in range(combo.count())] == [llm.MODE_TRANSLATE, llm.MODE_PHOTO]
+    os.environ.pop("VIEWSHOT_OUTPUT_DIR", None)
+
+
+# ------------------------------------------------- 🖥 Desktop-Screenshot
+def test_desktop_shot_saves_into_gallery_folder(tmp_path, monkeypatch):
+    from core import desktop_shot, paths
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "spectacle"
+    fake.write_text('#!/bin/sh\nwhile [ "$1" != "--output" ]; do shift; done\ntouch "$2"\n')
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir), prepend=":")
+    monkeypatch.setenv("VIEWSHOT_OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(paths, "photo_dir", lambda: tmp_path)
+    path = desktop_shot.shot_path()
+    assert desktop_shot.take(path)
+    assert path.is_file() and path.parent == tmp_path / "desktop"
+    assert (tmp_path / "desktop", False) in paths.gallery_folders({})
+    assert path not in paths.list_photos()  # kein „neuestes Foto“ → wird nicht übersetzt
+
+
+def test_desktop_shot_cancelled_selection_is_no_error(tmp_path, monkeypatch):
+    from core import desktop_shot
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "spectacle"
+    fake.write_text("#!/bin/sh\nexit 1\n")
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir), prepend=":")
+    assert not desktop_shot.take(tmp_path / "desktop" / "a.png")
+
+
+@pytest.mark.parametrize("arch, terminal_ok, opened, popup", [
+    (True, True, ["sudo", "pacman", "-S", "python-jeepney"], False),
+    (True, False, ["sudo", "pacman", "-S", "python-jeepney"], True),   # kein Terminal gefunden
+    (False, True, None, True),
+])
+def test_desktop_shot_box_helps_installing(tmp_path, monkeypatch, arch, terminal_ok, opened, popup):
+    from PyQt6.QtWidgets import QApplication, QMessageBox
+    app = QApplication.instance() or QApplication([])  # noqa: F841
+    from core import config, desktop_shot, layer_config, pkginstall, terminal
+    from ui.pages import options_page
+    monkeypatch.setattr(layer_config, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(layer_config, "LAYER_FILE", tmp_path / "layer.json")
+    monkeypatch.setattr(config, "CONFIG_FILE", tmp_path / "ui.json")
+    monkeypatch.setattr(config, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(desktop_shot, "missing_packages", lambda: ["python-jeepney"])
+    monkeypatch.setattr(pkginstall, "is_arch", lambda: arch)
+    calls, shown = [], []
+    monkeypatch.setattr(terminal, "run", lambda argv, _text="": calls.append(argv) or terminal_ok)
+    monkeypatch.setattr(QMessageBox, "exec", lambda box: shown.append(box.text()))
+    page = options_page.OptionsPage(config.load(), desktop_shot.DesktopShot())
+    assert page.desktop_shot_box.isEnabled() and not page.desktop_shot_box.isChecked()
+    page.desktop_shot_box.click()
+    assert not page.desktop_shot_box.isChecked() and not page.cfg["desktop_shot"]
+    assert (calls[0] if calls else None) == opened
+    assert bool(shown) == popup
+    if shown:
+        assert "python-jeepney" in shown[0]
+
+
+def test_desktop_shot_info_names_terminal_commands(monkeypatch, tmp_path):
+    from PyQt6.QtWidgets import QApplication, QMessageBox
+    app = QApplication.instance() or QApplication([])  # noqa: F841
+    from core import config, desktop_shot, layer_config
+    from ui.pages import options_page
+    monkeypatch.setattr(layer_config, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(layer_config, "LAYER_FILE", tmp_path / "layer.json")
+    shown = []
+    monkeypatch.setattr(QMessageBox, "exec", lambda box: shown.append(box.text()))
+    page = options_page.OptionsPage(config.load(), desktop_shot.DesktopShot())
+    page.desktop_shot_info_btn.click()
+    assert "python-jeepney" in shown[0] or "python3-jeepney" in shown[0]
+    assert "spectacle" in shown[0]
+
+
+def test_is_arch_and_package_names():
+    from core import pkginstall
+    assert pkginstall.is_arch('ID=cachyos\nID_LIKE="arch"')
+    assert not pkginstall.is_arch('ID=fedora')
+    assert pkginstall.manual_command("python-jeepney", "ID=arch") == "sudo pacman -S python-jeepney"
+    assert pkginstall.manual_command("python-jeepney", "ID=debian") == "sudo apt install python3-jeepney"
+    assert pkginstall.manual_command("spectacle", "ID=ubuntu") == "sudo apt install kde-spectacle"
+
+
+def test_desktop_shot_reads_trigger():
+    from core import desktop_shot
+    info = {"trigger_description": ("s", "Alt+Y")}
+    assert desktop_shot.trigger_of([(desktop_shot.SHORTCUT_ID, info)]) == "Alt+Y"
+    assert desktop_shot.trigger_of([("anderes", info)]) is None
+
+
+# ------------------------------------------------------ ⬆ Version & Layer
+def test_update_version_compare():
+    from core import app_update
+    assert app_update.is_newer("1.0.10", "1.0.9")
+    assert app_update.is_newer("1.1", "1.0.9")
+    assert not app_update.is_newer("1.0.7", "1.0.7")
+    assert not app_update.is_newer("1.0.6", "1.0.7")
+    assert not app_update.is_newer("", "1.0.7")
+
+
+def test_main_page_shows_version_update_and_layer_hint(tmp_path, monkeypatch):
+    import os
+    monkeypatch.setenv("VIEWSHOT_OUTPUT_DIR", str(tmp_path))
+    from PyQt6.QtWidgets import QApplication, QLabel
+    app = QApplication.instance() or QApplication([])  # noqa: F841
+    from core import layer_config, layer_install, paths
+    from core.version import VERSION
+    monkeypatch.setattr(layer_config, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(layer_config, "LAYER_FILE", tmp_path / "layer.json")
+    monkeypatch.setattr(layer_install, "outdated", lambda: True)
+    monkeypatch.setattr(layer_install, "installed_version", lambda: "0.0.1")
+    monkeypatch.setattr(paths, "copies_layer", lambda: False)
+    from ui.mainwindow import MainWindow
+    w = MainWindow()
+    page = w.main_page
+    page.refresh()
+    assert not page.layer_hint.isHidden() and "v0.0.1" in page.layer_hint.text()
+    assert any(label.text() == f"v{VERSION}" for label in page.findChildren(QLabel))
+    assert page.update_btn.isHidden()
+    w.updates.latest = "9.9.9"
+    w.updates.found.emit("9.9.9")
+    assert not page.update_btn.isHidden() and "9.9.9" in page.update_btn.toolTip()
+    os.environ.pop("VIEWSHOT_OUTPUT_DIR", None)
+
+
+def test_gif_goes_to_clipboard_as_file_only(tmp_path):
+    from PyQt6.QtGui import QImage
+    from PyQt6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])  # noqa: F841
+    from core import clipboard
+    gif = tmp_path / "a b.gif"
+    image = QImage(4, 4, QImage.Format.Format_RGB32)
+    assert image.save(str(gif.with_suffix(".png")))
+    gif.write_bytes(b"GIF89a")
+    clipboard.set_image(gif)
+    mime = QApplication.clipboard().mimeData()
+    assert not mime.hasImage()
+    assert [u.toLocalFile() for u in mime.urls()] == [str(gif)]
+    clipboard.set_image(gif.with_suffix(".png"))
+    assert QApplication.clipboard().mimeData().hasImage()

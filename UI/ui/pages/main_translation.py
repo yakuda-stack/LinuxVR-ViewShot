@@ -181,21 +181,23 @@ class TranslationMixin:
         if method == llm.METHOD_LLM_CUSTOM and not llm.custom_has_model(self.cfg):
             key = None  # Befehl ohne Modell → nichts zum Auswählen
         self.model_combo.setVisible(key is not None)
-        tasks = llm.has_tasks(self.cfg)  # KI als Haupt-Dienst oder eigener Kontext-/Rätsel-Dienst
-        self.mode_label.setVisible(tasks)
-        self.mode_combo.setVisible(tasks)
+        # KI als Haupt-Dienst oder eigener Kontext-/Rätsel-Dienst – sonst gibt es nur „Übersetzen“
+        modes = llm.MODES if llm.has_tasks(self.cfg) else [llm.MODE_TRANSLATE]
         self.mode_combo.blockSignals(True)
         self.mode_combo.clear()
         if translation.route_mode(self.cfg) == translation.ROUTE_AUTO:
             # 🤖 Auto – eine Aufgabe wählen gilt nur fürs aktuelle + nächste Foto (Haupt-KI irrt sich)
             self.mode_combo.addItem(tr("tr_mode_auto"), "")
-            for mode in llm.MODES:
+            for mode in modes:
                 self.mode_combo.addItem(tr("tr_mode_" + mode) + "  · 1×", mode)
             current = self.cfg.get("tr_auto_once") or ""
         else:
-            for mode in llm.MODES:
+            for mode in modes:
                 self.mode_combo.addItem(tr("tr_mode_" + mode), mode)
             current = self.cfg.get("tr_llm_mode") or llm.MODE_TRANSLATE
+        self.mode_combo.addItem(tr("tr_mode_photo"), llm.MODE_PHOTO)
+        if layer_config.photo_only():
+            current = llm.MODE_PHOTO
         self.mode_combo.setCurrentIndex(max(0, self.mode_combo.findData(current)))
         self.mode_combo.blockSignals(False)
         if key is not None:
@@ -232,8 +234,19 @@ class TranslationMixin:
 
     def mode_changed(self):
         """Aufgabe der KI geändert (Übersetzen / Kontext / Antworten) → neu fragen.
-        Manuell: bleibt so. 🤖 Auto: gilt fürs aktuelle + nächste Foto, dann wieder Auto."""
+        Manuell: bleibt so. 🤖 Auto: gilt fürs aktuelle + nächste Foto, dann wieder Auto.
+        📷 Nur Foto/GIF bleibt an, bis man hier selbst etwas anderes wählt."""
         mode = self.mode_combo.currentData()
+        if mode == llm.MODE_PHOTO:
+            layer_config.update("photo_only", True)
+            self.layer_changed.emit()
+            self.update_translation()
+            return
+        if layer_config.photo_only():
+            layer_config.update("photo_only", False)
+            self.layer_changed.emit()
+            self.translate_btn.setEnabled(True)
+            self.refresh_btn.setEnabled(True)
         if translation.route_mode(self.cfg) == translation.ROUTE_AUTO:
             self.cfg["tr_auto_once"] = mode or ""
             self.cfg["tr_auto_once_photo"] = self.last_photo.name if mode and self.last_photo else ""
@@ -434,6 +447,11 @@ class TranslationMixin:
         self.clear_translation()
         photo = self.last_photo
         self.translate_btn.setEnabled(photo is not None)
+        if layer_config.photo_only():
+            self.translate_btn.setEnabled(False)
+            self.refresh_btn.setEnabled(False)
+            self.tr_status.setText(tr("tr_photo_only_status"))
+            return
         if photo is None:
             return
         if not ocr.available():
@@ -453,7 +471,7 @@ class TranslationMixin:
 
     def start_translation(self, force: bool = False):
         photo = self.last_photo
-        if photo is None:
+        if photo is None or layer_config.photo_only():
             return
         self.history_entry = None  # zurück vom Verlauf zum aktuellen Foto
         if self.translating is not None:
@@ -476,14 +494,20 @@ class TranslationMixin:
         self.translating_key = translation._key(cfg)  # mit welchen Einstellungen?
         errors = []
 
+        def done(*result):
+            try:
+                self._translated.emit(*result)
+            except RuntimeError:
+                pass  # Fenster wurde inzwischen geschlossen
+
         def work():  # Hintergrund – KEINE Widgets anfassen!
             try:
                 original, translated, used = translation.translate_photo(
                     photo, cfg, log=errors.append, force=force,
                     progress=lambda step, arg="": self._progress.emit(str(photo), step, arg))
-                self._translated.emit(str(photo), original, translated, "; ".join(errors), used)
+                done(str(photo), original, translated, "; ".join(errors), used)
             except Exception as e:  # noqa: BLE001
-                self._translated.emit(str(photo), "", "", "; ".join(errors) or str(e), "")
+                done(str(photo), "", "", "; ".join(errors) or str(e), "")
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -516,6 +540,9 @@ class TranslationMixin:
         self.translating = None
         self.translate_btn.setEnabled(True)
         self.refresh_btn.setEnabled(True)
+        if layer_config.photo_only():  # während des Übersetzens umgestellt → verwerfen
+            self.update_translation()
+            return
         if Path(photo) != self.last_photo:
             self.update_translation()  # inzwischen kam ein neueres Foto
             return

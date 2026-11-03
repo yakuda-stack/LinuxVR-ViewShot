@@ -55,6 +55,11 @@ class LiveMixin:
 
     def check_live(self):
         mtime = self.live_file_mtime()
+        if layer_config.photo_only():  # 📷 der Layer beendet Lens/Pin selbst
+            self.live_mtime = max(self.live_mtime, mtime)
+            if self.live_shown and not self.live_busy:
+                self.stop_live_view()
+            return
         if self.live_shown and not self.live_busy:
             interval = float(layer_config.load().get("live_interval_s") or 3)
             gone = mtime == 0.0                                        # Layer hat Lens beendet
@@ -119,7 +124,7 @@ class LiveMixin:
 
     def on_live_done(self, text: str, translated: str, error: str, used: str):
         self.live_busy = False
-        if not self.live_shown:
+        if not self.live_shown or layer_config.photo_only():
             return
         now = datetime.now().strftime("%H:%M:%S")
         if error:

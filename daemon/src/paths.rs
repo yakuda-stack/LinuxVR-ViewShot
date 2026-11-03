@@ -128,6 +128,10 @@ pub fn gallery_folders(cfg: &crate::settings::Cfg) -> Vec<(PathBuf, bool)> {
             }
         }
     }
+    let desktop = photo_dir().join("desktop"); // 🖥 Desktop-Screenshots (macht die App)
+    if desktop.is_dir() && !found.iter().any(|(f, _)| *f == desktop) {
+        found.push((desktop, false));
+    }
     found
 }
 

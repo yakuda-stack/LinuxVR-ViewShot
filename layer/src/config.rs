@@ -18,6 +18,7 @@
 //!   "gif_fps": 10,                Bilder pro Sekunde im GIF (5–15)
 //!   "icon_position": "bottom_left" Symbol-Position (manual): "bottom_left" / "bottom_right" / "top_left" / "top_right"
 //!   "live_interval_s": 3,         🔁 Lens: alle so viele Sekunden neu fotografieren (→ live/live.png)
+//!   "photo_only": false,          📷 Nur Foto/GIF: 🔁 Lens / 📌 Pin übersetzen nicht, Auslöser macht Foto/GIF
 //!   "overlay": false,             🥽 🔁 Lens: Übersetzung über dem Original (overlay/overlay.png, malt die UI)
 //!   "panel": true,                🪟 Übersetzungs-Panel (panel/panel.png, malt die UI)
 //!   "panel_anchor": "left",       hängt an: "left" / "right" (Hand), "head", "world"
@@ -118,6 +119,8 @@ pub struct LayerConfig {
     pub gif_max_s: f32,
     pub gif_fps: f32,
     pub live_interval_s: f32,
+    /// 📷 Nur Foto/GIF: kein Live-Bild für die Übersetzung, Auslöser macht immer Foto/GIF
+    pub photo_only: bool,
     pub overlay: bool,
     pub panel: bool,
     pub panel_anchor: crate::panel::Anchor,
@@ -150,6 +153,7 @@ impl Default for LayerConfig {
             gif_max_s: 15.0,
             gif_fps: 10.0,
             live_interval_s: 3.0,
+            photo_only: false,
             overlay: false,
             panel: true,
             panel_anchor: crate::panel::Anchor::Left,
@@ -309,6 +313,13 @@ mod tests {
         assert_eq!(c.excluded_apps, vec!["wayvr".to_string()]);
         assert_eq!(c.detect_mode, DetectMode::Auto);
         assert_eq!(c.icon_position, IconPosition::BottomLeft);
+    }
+
+    #[test]
+    fn photo_only_is_off_by_default() {
+        assert!(!LayerConfig::default().photo_only);
+        let c: LayerConfig = serde_json::from_str(r#"{"photo_only": true}"#).unwrap();
+        assert!(c.photo_only);
     }
 
     #[test]

@@ -21,8 +21,9 @@ from PyQt6.QtGui import QDesktopServices, QFontDatabase
 from PyQt6.QtWidgets import (QComboBox, QFileDialog, QFrame, QHBoxLayout,
                              QLabel, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget)
 
-from core import clipboard, layer_config, layer_install, paths, qr
+from core import app_update, clipboard, layer_config, layer_install, paths, qr
 from core.i18n import tr
+from core.version import VERSION
 from ui.pages.main_history import HistoryMixin
 from ui.pages.main_install import InstallMixin
 from ui.pages.main_live import LiveMixin
@@ -72,7 +73,23 @@ class MainPage(TranslationMixin, HistoryMixin, InstallMixin, LiveMixin, QWidget)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(16)
-        layout.addWidget(page_title(tr("nav_main")))
+        # Oben rechts: Version der App, davor ⬆ bei einer neuen Version
+        head = QHBoxLayout()
+        head.addWidget(page_title(tr("nav_main")))
+        head.addStretch()
+        self.update_btn = QPushButton("⬆")
+        self.update_btn.setObjectName("linkbtn")
+        self.update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.update_btn.setFixedSize(36, 30)
+        self.update_btn.setStyleSheet("padding: 0; font-size: 15px;")
+        self.update_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(app_update.RELEASE_URL)))
+        self.update_btn.hide()
+        head.addWidget(self.update_btn)
+        version = QLabel(f"v{VERSION}")
+        version.setObjectName("dim")
+        head.addWidget(version)
+        layout.addLayout(head)
 
         # --- Status: EINE kompakte Zeile -------------------------------
         #   ✔ Layer ist installiert · Fotos: 50      [📁] [🔧 Neu bauen] [🗑 Entfernen]
@@ -81,6 +98,13 @@ class MainPage(TranslationMixin, HistoryMixin, InstallMixin, LiveMixin, QWidget)
         box = QVBoxLayout(card)
         box.setContentsMargins(18, 10, 18, 10)
         box.setSpacing(8)
+        # Hinweis über dem Knopf: Layer passt nicht zur App, man muss ihn selbst neu installieren
+        self.layer_hint = QLabel()
+        self.layer_hint.setObjectName("bad")
+        self.layer_hint.setWordWrap(True)
+        self.layer_hint.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.layer_hint.hide()
+        box.addWidget(self.layer_hint)
         row = QHBoxLayout()
         row.setSpacing(10)
         self.layer_label = QLabel()
@@ -229,6 +253,20 @@ class MainPage(TranslationMixin, HistoryMixin, InstallMixin, LiveMixin, QWidget)
             from ui.pages.main_install import start_daemon_setup
             start_daemon_setup()
 
+    def update_layer_hint(self):
+        """Installierter Layer ≠ App? Dann muss man ihn neu installieren."""
+        outdated = layer_install.outdated()
+        if outdated:
+            key = "layer_update" if paths.copies_layer() else "reinstall"
+            self.layer_hint.setText(tr("layer_outdated", old=layer_install.installed_version() or "?",
+                                       new=VERSION, button=tr(key)))
+        self.layer_hint.setVisible(outdated)
+
+    def show_update(self, version: str):
+        """⬆ neben der Versionsnummer zeigen (version = neueste Version oder "")."""
+        self.update_btn.setVisible(bool(version))
+        self.update_btn.setToolTip(tr("app_update_tip", v=version))
+
     def refresh(self):
         """Alles neu einlesen – wird auch aufgerufen, wenn ein neues Foto kommt."""
         installed = paths.layer_installed()
@@ -266,6 +304,7 @@ class MainPage(TranslationMixin, HistoryMixin, InstallMixin, LiveMixin, QWidget)
             self.install_btn.setVisible(can_install)
             self.install_btn.setEnabled(can_install)
             self.uninstall_btn.setVisible(installed)
+            self.update_layer_hint()
         photos = paths.list_photos()
         self.count_label.setText(tr("photo_count", n=len(photos)))
         # in VR ein Foto aus der Galerie gewählt, dann ein neues gemacht? → wieder das neueste

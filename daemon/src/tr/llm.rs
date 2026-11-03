@@ -22,6 +22,8 @@ pub const MODE_TRANSLATE: &str = "translate";
 pub const MODE_EXPLAIN: &str = "explain";
 pub const MODE_ANSWER: &str = "answer";
 pub const MODE_AUTO: &str = "auto";
+/// 📷 Nur Foto/GIF: steht in layer.json (photo_only), keine KI-Aufgabe
+pub const MODE_PHOTO: &str = "photo";
 pub const MODE_CLASSIFY: &str = "classify";
 pub const MODES: [&str; 3] = [MODE_TRANSLATE, MODE_EXPLAIN, MODE_ANSWER];
 pub const TRANSLATE_KEY: &str = "tr_translate_method";

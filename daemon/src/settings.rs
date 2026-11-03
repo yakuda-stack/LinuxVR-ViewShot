@@ -58,6 +58,7 @@ pub const UI_DEFAULTS: &str = r#"{
 /// layer.json – nur, was der Dienst braucht (Rest: layer/src/config.rs)
 pub const LAYER_DEFAULTS: &str = r##"{
   "live_interval_s": 3,
+  "photo_only": false,
   "overlay": false,
   "panel": true,
   "panel_edit": false,

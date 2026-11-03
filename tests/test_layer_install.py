@@ -90,3 +90,16 @@ def test_remove_then_install_again(fake):
     assert not paths.layer_installed() and not paths.USER_LIB.exists()
     layer_install.install_bundled()                        # geht danach wieder
     assert paths.layer_installed()
+
+
+def test_outdated_also_without_bundled_layer(fake, monkeypatch):
+    """Aus dem Quellcode kann die App nicht selbst kopieren – der Hinweis gilt trotzdem."""
+    from core import layer_install
+    paths, _so = fake
+    layer_install.install_bundled()
+    assert not layer_install.outdated()
+    paths.LAYER_VERSION_FILE.write_text("0.0.1\n")
+    monkeypatch.setattr(paths, "copies_layer", lambda: False)
+    assert layer_install.outdated() and not layer_install.needs_update()
+    paths.LAYER_VERSION_FILE.unlink()   # sehr alte Installation ohne VERSION-Datei
+    assert layer_install.outdated()

@@ -20,10 +20,11 @@ import threading
 from PyQt6.QtCore import QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QGridLayout, QHBoxLayout, QLabel,
-                             QLineEdit, QListWidget, QPlainTextEdit, QPushButton, QRadioButton, QSlider,
+                             QLineEdit, QListWidget, QMessageBox, QPlainTextEdit, QPushButton, QRadioButton, QSlider,
                              QSpinBox, QVBoxLayout, QWidget)
 
-from core import config, i18n, layer_config, ocr, output, overlay, paths, translation
+from core import config, desktop_shot, i18n, layer_config, ocr, output, overlay, paths, translation
+from core import pkginstall, terminal
 from core import llm_translator as L
 from core import vision
 from core import translators as T
@@ -111,6 +112,10 @@ def open_url(url: str):
     return lambda: QDesktopServices.openUrl(QUrl(url))
 
 
+def desktop_shot_commands(packages: list[str]) -> str:
+    return "\n".join(pkginstall.manual_command(p) for p in packages)
+
+
 class OptionsPage(QWidget):
     # Signal an das Hauptfenster: "Sprache wurde geändert" (mit "de"/"en")
     language_changed = pyqtSignal(str)
@@ -123,9 +128,10 @@ class OptionsPage(QWidget):
     # Ergebnis der LibreTranslate-Suche (Adresse oder "")
     _libre_found = pyqtSignal(str)
 
-    def __init__(self, cfg: dict, tab: int = 0):
+    def __init__(self, cfg: dict, shot_service: desktop_shot.DesktopShot, tab: int = 0):
         super().__init__()
         self.cfg = cfg
+        self.shot_service = shot_service
         self.layer = layer_config.load()
 
         layout = QVBoxLayout(self)
@@ -285,6 +291,9 @@ class OptionsPage(QWidget):
         # --- 🎞 GIF ---
         self.add_gif_card(lay)
 
+        # --- 🖥 Desktop-Screenshot ---
+        self.add_desktop_shot_card(lay)
+
         # --- Erkennung & Tasten ---
         self.add_buttons_card(lay)
 
@@ -423,6 +432,90 @@ class OptionsPage(QWidget):
     def layer_set(self, key: str, value):
         """Einen Wert in layer.json ändern (frisch geladen → überschreibt nichts anderes)."""
         self.layer[key] = layer_config.update(key, value)[key]
+
+    def add_desktop_shot_card(self, lay: QVBoxLayout):
+        """🖥 Bereich des Desktops per Tastenkürzel fotografieren – KDE fragt beim Einschalten."""
+        card, box = make_card("🖥  " + tr("desktop_shot_card"))
+        box.addWidget(dim(tr("desktop_shot_hint")))
+        self.desktop_shot_box = QCheckBox(tr("desktop_shot_on"))
+        self.desktop_shot_box.setChecked(bool(self.cfg.get("desktop_shot"))
+                                         and not desktop_shot.missing_packages())
+        self.desktop_shot_box.toggled.connect(self.desktop_shot_toggled)
+        row = QHBoxLayout()
+        row.addWidget(self.desktop_shot_box)
+        self.desktop_shot_info_btn = button("ⓘ", self.show_desktop_shot_info)
+        self.desktop_shot_info_btn.setToolTip(tr("info"))
+        row.addWidget(self.desktop_shot_info_btn)
+        row.addStretch()
+        box.addLayout(row)
+
+        row = QHBoxLayout()
+        self.desktop_shot_key = QLabel()
+        row.addWidget(self.desktop_shot_key, 1)
+        self.desktop_shot_change = button(tr("desktop_shot_change"), self.shot_service.configure)
+        row.addWidget(self.desktop_shot_change)
+        box.addLayout(row)
+
+        self.desktop_shot_status = dim("")
+        box.addWidget(self.desktop_shot_status)
+        self.shot_service.bound.connect(self.sync_desktop_shot)
+        self.shot_service.failed.connect(self.desktop_shot_failed)
+        self.shot_service.taken.connect(self.desktop_shot_taken)
+        self.sync_desktop_shot()
+        lay.addWidget(card)
+
+    def desktop_shot_toggled(self, on: bool):
+        self.desktop_shot_status.clear()
+        missing = desktop_shot.missing_packages() if on else []
+        if missing:
+            self.desktop_shot_box.blockSignals(True)
+            self.desktop_shot_box.setChecked(False)
+            self.desktop_shot_box.blockSignals(False)
+            self.install_desktop_shot_packages(missing)
+            return
+        self.set_cfg("desktop_shot", on)
+        if on:
+            self.shot_service.start()
+        else:
+            self.shot_service.stop()
+        self.sync_desktop_shot()
+
+    def install_desktop_shot_packages(self, packages: list[str]):
+        """Arch: pacman im Terminal. Sonst (oder ohne Terminal): Anleitung im Fenster."""
+        if (pkginstall.is_arch()
+                and terminal.run(["sudo", "pacman", "-S", *packages], tr("tr_press_enter"))):
+            self.desktop_shot_status.setText(tr("desktop_shot_install_again"))
+            return
+        self.desktop_shot_message(tr("desktop_shot_install_text", packages=", ".join(packages),
+                                     commands=desktop_shot_commands(packages)))
+
+    def show_desktop_shot_info(self):
+        """ⓘ Was die Funktion macht und was im Terminal läuft."""
+        self.desktop_shot_message(tr("desktop_shot_info",
+                                     commands=desktop_shot_commands(desktop_shot.PACKAGES)))
+
+    def desktop_shot_message(self, text: str):
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("desktop_shot_card"))
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setText(text)
+        box.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        box.exec()
+
+    def desktop_shot_failed(self, message: str):
+        self.desktop_shot_status.setText(message)
+        if not self.shot_service.active and self.desktop_shot_box.isChecked():
+            self.desktop_shot_box.setChecked(False)  # KDE-Dialog abgelehnt oder kein Portal
+            self.desktop_shot_status.setText(message)
+
+    def desktop_shot_taken(self, path: str):
+        self.desktop_shot_status.setText(tr("desktop_shot_saved", path=path))
+
+    def sync_desktop_shot(self, _trigger: str = ""):
+        service = self.shot_service
+        key = service.trigger or desktop_shot.DEFAULT_TRIGGER_TEXT
+        self.desktop_shot_key.setText(tr("desktop_shot_key", shortcut=key))
+        self.desktop_shot_change.setEnabled(bool(service.trigger))
 
     def add_icon_position_card(self, lay: QVBoxLayout):
         """Ecke für das Typ-Symbol (🪄 / 🖼 / 📝 / 🔳 / 🔁)."""
@@ -1309,7 +1402,6 @@ class OptionsPage(QWidget):
 
     # --- KI-Programm installieren (Knopf statt Befehl abtippen) ----------
     def update_llm_status(self, method: str, error: str = ""):
-        from core import pkginstall
         status, btn = self.llm_status[method]
         cmd = L.BINARIES[method]
         found = L.installed(method)
@@ -1348,7 +1440,6 @@ class OptionsPage(QWidget):
 
     def login_llm(self, method: str):
         """Terminal mit claude / gemini / codex login öffnen – dort im Browser anmelden."""
-        from core import terminal
         status, _btn = self.llm_status[method]
         argv = L.login_argv(method)
         if argv is None or not terminal.run(argv, tr("tr_press_enter")):
@@ -1370,7 +1461,6 @@ class OptionsPage(QWidget):
     def install_llm(self, method: str):
         """Schritt 1 (nur wenn npm fehlt): npm per pkexec. Schritt 2: npm install … nach ~/.local."""
         from PyQt6.QtCore import QProcess
-        from core import pkginstall
         if self.llm_process is not None:
             return
         steps = []
@@ -1468,7 +1558,6 @@ class OptionsPage(QWidget):
 
     def install_ollama(self):
         """📦 Terminal: Ollama passend zu Distro + Grafikkarte installieren und starten."""
-        from core import terminal
         script = vision.install_script()
         ok = terminal.run(["bash", "-c", script])
         self.vision_status.setObjectName("dim" if ok else "bad")
@@ -1477,7 +1566,6 @@ class OptionsPage(QWidget):
 
     def pull_vision_model(self):
         """📥 Terminal mit „ollama pull <Modell>“ (zeigt den Download-Fortschritt)."""
-        from core import terminal
         model = L.model_of(L.METHOD_VISION, self.cfg)
         exe = L.find_binary("ollama")
         if exe is None or not terminal.run([exe, "pull", model]):

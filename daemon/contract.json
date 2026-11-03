@@ -51,6 +51,16 @@
    "en": "❓ Answer question (else translate)",
    "fr": "❓ Répondre à la question (sinon traduire)"
   },
+  "tr_mode_photo": {
+   "de": "📷 Nur Foto/GIF",
+   "en": "📷 Only picture/GIF",
+   "fr": "📷 Photo/GIF uniquement"
+  },
+  "tr_photo_only_status": {
+   "de": "📷 Nur Foto/GIF – Übersetzung ist aus, auch bei Lens und Pin",
+   "en": "📷 Only picture/GIF – translation is off, also for Lens and Pin",
+   "fr": "📷 Photo/GIF uniquement – traduction désactivée, aussi pour Lens et Pin"
+  },
   "tr_step_ocr": {
    "de": "Liest Text im Foto …",
    "en": "Reading text in the photo …",
@@ -629,6 +639,7 @@
   },
   "layer": {
    "live_interval_s": 3,
+   "photo_only": false,
    "overlay": false,
    "panel": true,
    "panel_edit": false,

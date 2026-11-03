@@ -50,6 +50,12 @@ TEXTS = {
                         "en": "✔ Layer removed – restart the game and ViewShot is off in VR"},
     "uninstall_failed": {"de": "✘ Entfernen fehlgeschlagen", "en": "✘ Removing failed"},
     # AppImage: Layer liegt fertig bei und wird nur kopiert
+    "layer_outdated":  {"de": "⚠ Der Layer ist veraltet (v{old}, App v{new}) – bitte „{button}“ drücken "
+                              "und das Spiel neu starten.",
+                        "en": "⚠ The layer is out of date (v{old}, app v{new}) – please press “{button}” "
+                              "and restart the game."},
+    "app_update_tip":  {"de": "Neue Version v{v} verfügbar – zur Release-Seite",
+                        "en": "New version v{v} available – open the release page"},
     "layer_update":    {"de": "Layer aktualisieren", "en": "Update layer"},
     "layer_reinstall": {"de": "Layer neu installieren", "en": "Reinstall layer"},
     "layer_updated":   {"de": "✔ Layer auf v{v} aktualisiert – Spiel neu starten",
@@ -284,6 +290,9 @@ TEXTS = {
     "tr_step_classify": {"de": "{name} schaut, was es ist …", "en": "{name} checks what it is …"},
     "tr_mode_translate": {"de": "🌐 Übersetzen", "en": "🌐 Translate"},
     "tr_mode_explain": {"de": "💡 Kontext erklären", "en": "💡 Explain context"},
+    "tr_mode_photo":   {"de": "📷 Nur Foto/GIF", "en": "📷 Only picture/GIF"},
+    "tr_photo_only_status": {"de": "📷 Nur Foto/GIF – Übersetzung ist aus, auch bei Lens und Pin",
+                             "en": "📷 Only picture/GIF – translation is off, also for Lens and Pin"},
     "tr_mode_answer":  {"de": "❓ Frage beantworten (sonst übersetzen)",
                         "en": "❓ Answer question (else translate)"},
     "tr_model":        {"de": "Modell",          "en": "Model"},
@@ -397,6 +406,44 @@ TEXTS = {
                               "frame, the shutter again or at the max. length."},
     "gif_on":          {"de": "Auslöser halten = GIF aufnehmen", "en": "Hold shutter = record GIF"},
     "gif_max":         {"de": "Höchstens",        "en": "At most"},
+    "desktop_shot_card": {"de": "Desktop-Screenshot per Taste", "en": "Desktop screenshot with a key"},
+    "desktop_shot_hint": {"de": "Bereich des Desktops markieren, wie mit einem Snipping Tool (KDE Plasma).",
+                          "en": "Mark an area of the desktop, like a snipping tool (KDE Plasma)."},
+    "desktop_shot_info": {"de": "Tastenkürzel drücken, Bereich mit Maus oder WayVR-Laser markieren und mit Doppelklick "
+                                "oder Enter bestätigen. Esc bricht ab. Das geht, solange die App offen ist. Beim "
+                                "Einschalten fragt KDE nach der Erlaubnis. Die Bilder liegen im Foto-Ordner unter "
+                                "desktop/ und werden nicht automatisch übersetzt.\n\n"
+                                "Im Terminal: Fehlt ein Paket, öffnet der Haken unter Arch ein Terminal und installiert "
+                                "es mit pacman. sudo fragt dort nach deinem Passwort. Auf anderen Systemen zeigt die "
+                                "App nur den Befehl an.\n\nDie Befehle für dein System:\n{commands}",
+                          "en": "Press the shortcut, mark an area with the mouse or the WayVR laser and confirm with a "
+                                "double click or Enter. Esc cancels. This works while the app is open. KDE asks for "
+                                "permission when you turn it on. Pictures go to desktop/ in the photo folder and are "
+                                "not translated automatically.\n\n"
+                                "In the terminal: If a package is missing, on Arch the box opens a terminal and installs "
+                                "it with pacman. sudo asks for your password there. Other systems only get the "
+                                "command shown.\n\nThe commands for your system:\n{commands}"},
+    "desktop_shot_on":   {"de": "Bereich des Desktops per Tastenkürzel fotografieren",
+                          "en": "Capture a desktop area with a shortcut"},
+    "desktop_shot_key":  {"de": "Tastenkürzel: {shortcut}", "en": "Shortcut: {shortcut}"},
+    "desktop_shot_change": {"de": "Tastenkürzel ändern", "en": "Change shortcut"},
+    "desktop_shot_desc": {"de": "Desktop-Screenshot", "en": "Desktop screenshot"},
+    "desktop_shot_saved": {"de": "✔ Gespeichert: {path}", "en": "✔ Saved: {path}"},
+    "desktop_shot_cancelled": {"de": "KDE hat das Tastenkürzel nicht freigegeben.",
+                               "en": "KDE did not allow the shortcut."},
+    "desktop_shot_no_portal": {"de": "Das Tastenkürzel-Portal von KDE antwortet nicht (xdg-desktop-portal-kde).",
+                               "en": "KDE's shortcut portal is not responding (xdg-desktop-portal-kde)."},
+    "desktop_shot_old_portal": {"de": "Dein Plasma kann das hier noch nicht – ändere es in den "
+                                      "Systemeinstellungen unter Kurzbefehle.",
+                                "en": "Your Plasma can't do this from here yet – change it in System Settings "
+                                      "under Shortcuts."},
+    "desktop_shot_failed": {"de": "Screenshot fehlgeschlagen – siehe Log.", "en": "Screenshot failed – see the log."},
+    "desktop_shot_install_again": {"de": "Nach der Installation den Haken nochmal setzen.",
+                                   "en": "After the installation, tick the box again."},
+    "desktop_shot_install_text": {"de": "Dafür fehlt noch: {packages}\n\nInstallieren mit:\n{commands}\n\n"
+                                        "Danach den Haken nochmal setzen.",
+                                  "en": "This still needs: {packages}\n\nInstall it with:\n{commands}\n\n"
+                                        "Then tick the box again."},
     "gif_note":        {"de": "Ist das an, wird ein Foto erst beim Loslassen gemacht (sonst sofort beim "
                               "Drücken). GIFs landen in der Galerie, werden aber nicht übersetzt.",
                         "en": "When on, a photo is taken when you let go (otherwise right when you press). "

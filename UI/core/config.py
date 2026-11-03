@@ -22,6 +22,7 @@ DEFAULTS = {
     "ocr_expanded": False,
     "gallery_main_subfolders": False,  # 🖼 Galerie: Unterordner des Foto-Ordners mit anzeigen
     "gallery_folders": [],  # 🖼 Galerie: weitere Ordner [{"path": …, "subfolders": bool}]
+    "desktop_shot": False,  # 🖥 Desktop-Screenshot per Tastenkürzel (core/desktop_shot.py)
     "history": False,       # Main: Verlauf der Übersetzungen (Standard aus – spart Arbeit)
     **TRANSLATION_DEFAULTS,  # tr_… Einstellungen (Optionen → Übersetzung)
     **OUTPUT_DEFAULTS,       # out_… 📡 OSC / 📄 Textdatei (Optionen → Übersetzung → Ausgabe)

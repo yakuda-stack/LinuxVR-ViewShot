@@ -29,6 +29,7 @@ DEFAULTS = {
     "gif_max_s": 15,              # 🎞 längste GIF-Aufnahme in Sekunden (1–15)
     "gif_fps": 10,                # 🎞 Bilder pro Sekunde im GIF (5–15)
     "live_interval_s": 3,         # 🔁 Lens: alle so viele Sekunden neu fotografieren + übersetzen
+    "photo_only": False,          # 📷 Nur Foto/GIF: nichts übersetzen, auch nicht bei 🔁 Lens / 📌 Pin
     "overlay": False,             # 🥽 Übersetzung in VR über dem Original (overlay/overlay.png)
     "panel": True,                # 🪟 Übersetzungs-Panel in VR (panel/panel.png, ui/vr_panel.py)
     "panel_anchor": "left",       # hängt an: "left" / "right" (Hand), "head", "world"
@@ -49,6 +50,11 @@ DAEMON_MODES = ("off", "all", "selected")
 COMBOS = ("left", "right", "both")
 ICON_POSITIONS = ("bottom_left", "bottom_right", "top_left", "top_right")
 ASPECTS = ("free", "1:1", "16:9")
+
+
+def photo_only() -> bool:
+    """📷 Nur Foto/GIF gewählt? Bleibt an, bis man selbst eine andere Aufgabe wählt."""
+    return bool(load().get("photo_only"))
 
 
 def update(key: str, value) -> dict:

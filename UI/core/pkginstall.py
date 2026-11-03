@@ -20,7 +20,11 @@ MANAGERS = [
 ]
 
 # Paketnamen, falls sie je Distro anders heißen (wl-clipboard heißt überall gleich)
-NAMES = {("dnf", "npm"): "nodejs-npm"}
+NAMES = {("dnf", "npm"): "nodejs-npm",
+         ("dnf", "python-jeepney"): "python3-jeepney",
+         ("apt-get", "python-jeepney"): "python3-jeepney",
+         ("zypper", "python-jeepney"): "python3-jeepney",
+         ("apt-get", "spectacle"): "kde-spectacle"}
 
 
 def distro_ids(os_release: str | None = None) -> list[str]:
@@ -48,6 +52,12 @@ def _manager(os_release: str | None = None):
         if shutil.which(binary):
             return binary, cmd
     return None
+
+
+def is_arch(os_release: str | None = None) -> bool:
+    """Arch oder ein Ableger davon (CachyOS, EndeavourOS, Manjaro …)?"""
+    found = _manager(os_release)
+    return found is not None and found[0] == "pacman"
 
 
 def manual_command(package: str, os_release: str | None = None) -> str:

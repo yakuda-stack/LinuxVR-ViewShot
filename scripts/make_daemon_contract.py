@@ -25,7 +25,8 @@ OUT = ROOT / "daemon" / "contract.json"
 # Texte, die der Dienst braucht (VR-Panel, Statuszeile)
 I18N_KEYS = [
     "back", "tr_service", "tr_source", "tr_target", "tr_task", "tr_last_ai",
-    "tr_mode_auto", "tr_mode_translate", "tr_mode_explain", "tr_mode_answer",
+    "tr_mode_auto", "tr_mode_translate", "tr_mode_explain", "tr_mode_answer", "tr_mode_photo",
+    "tr_photo_only_status",
     "tr_step_ocr", "tr_step_service", "tr_step_classify", "tr_fallback_once",
     "translating", "no_text", "tr_failed", "live_title", "live_status",
     "panel_opacity", "panel_edit_help", "panel_settings", "panel_size", "panel_size_later",
@@ -54,7 +55,7 @@ UI_KEYS = [
     "tr_llm_grok_retry", "tr_llm_grok_retry_s",
     "out_osc", "out_osc_host", "out_osc_port", "out_file", "out_file_path",
 ]
-LAYER_KEYS = ["live_interval_s", "overlay", "panel", "panel_edit", "panel_port", "panel_opacity",
+LAYER_KEYS = ["live_interval_s", "photo_only", "overlay", "panel", "panel_edit", "panel_port", "panel_opacity",
               "panel_anchor", "detect_mode", "shutter", "mode_button", "panel_button", "panel_button_color",
               "panel_open_on_shot"]
 

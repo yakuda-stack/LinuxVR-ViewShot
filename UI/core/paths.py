@@ -97,6 +97,9 @@ def gallery_folders(cfg: dict) -> list[tuple[Path, bool]]:
             folder = Path(os.path.expanduser(str(entry["path"])))
             if all(folder != f for f, _ in found):
                 found.append((folder, bool(entry.get("subfolders"))))
+    desktop = photo_dir() / "desktop"  # 🖥 Desktop-Screenshots
+    if desktop.is_dir() and all(desktop != f for f, _ in found):
+        found.append((desktop, False))
     return found
 
 

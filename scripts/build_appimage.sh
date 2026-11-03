@@ -150,7 +150,7 @@ cp "$BUILD_DIR/usr/share/applications/$ID.desktop" "$BUILD_DIR/$ID.desktop"
 # 5. Python-Abhängigkeiten für mehrere Python-Versionen (wie DreamChatbox)
 echo "[4/6] Bundele Python-Abhängigkeiten..."
 PYVERS="${VS_PYVERS:-3.12 3.13 3.14}"
-DEPS=(PyQt6 setproctitle)
+DEPS=(PyQt6 setproctitle jeepney)
 # Texterkennung + QR-Codes. rapidocr selbst ohne seine Abhängigkeiten: es
 # will opencv-python (mit eigenem Qt5 → beißt sich mit PyQt6), wir nehmen
 # opencv-python-headless.
