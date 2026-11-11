@@ -131,18 +131,9 @@ pub fn world_rect(
     fov: &xr::Fovf,
     img: Rect,
 ) -> Option<Rect> {
-    let (l, r) = (fov0.angle_left.tan(), fov0.angle_right.tan());
-    let (up, dn) = (fov0.angle_up.tan(), fov0.angle_down.tan());
-    let ex = |px: i32| (l + (px - img0.x) as f32 / img0.w as f32 * (r - l)) * depth;
-    let ey = |py: i32| (up - (py - img0.y) as f32 / img0.h as f32 * (up - dn)) * depth;
-    let (x0, x1) = (ex(rect.x), ex(rect.x + rect.w));
-    let (y0, y1) = (ey(rect.y), ey(rect.y + rect.h));
+    let quad = world_quad(eye0, fov0, img0, rect, depth, eye, fov, img)?;
     let (mut u0, mut v0, mut u1, mut v1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
-    for (x, y) in [(x0, y0), (x1, y0), (x0, y1), (x1, y1)] {
-        let off = rotate(eye0.orientation, [x, y, -depth]);
-        let p = xr::Vector3f { x: eye0.position.x + off[0], y: eye0.position.y + off[1], z: eye0.position.z + off[2] };
-        let pr = project(eye, fov, p)?;
-        let (px, py) = (img.x as f32 + pr.u * img.w as f32, img.y as f32 + pr.v * img.h as f32);
+    for [px, py] in quad {
         (u0, v0, u1, v1) = (u0.min(px), v0.min(py), u1.max(px), v1.max(py));
     }
     let full = (u1 - u0) * (v1 - v0);
@@ -160,6 +151,57 @@ pub fn world_rect(
         h: (cy1.ceil() - cy0.floor()) as i32,
     };
     (out.w >= 32 && out.h >= 32).then_some(out)
+}
+
+/// Die 4 Ecken des fest in der Welt stehenden Rahmens im aktuellen Bild (Pixel):
+/// oben links, oben rechts, unten rechts, unten links. Schräg/gedreht, wie man sie gerade sieht –
+/// der GIF-/Video-Thread entzerrt damit jedes Bild (kein Schwanken, kein Zoomen beim Kopfdrehen).
+/// None = eine Ecke liegt hinter dem Kopf.
+#[allow(clippy::too_many_arguments)]
+pub fn world_quad(
+    eye0: &xr::Posef,
+    fov0: &xr::Fovf,
+    img0: Rect,
+    rect: Rect,
+    depth: f32,
+    eye: &xr::Posef,
+    fov: &xr::Fovf,
+    img: Rect,
+) -> Option<[[f32; 2]; 4]> {
+    let (l, r) = (fov0.angle_left.tan(), fov0.angle_right.tan());
+    let (up, dn) = (fov0.angle_up.tan(), fov0.angle_down.tan());
+    let ex = |px: i32| (l + (px - img0.x) as f32 / img0.w as f32 * (r - l)) * depth;
+    let ey = |py: i32| (up - (py - img0.y) as f32 / img0.h as f32 * (up - dn)) * depth;
+    let (x0, x1) = (ex(rect.x), ex(rect.x + rect.w));
+    let (y0, y1) = (ey(rect.y), ey(rect.y + rect.h));
+    let mut out = [[0.0; 2]; 4];
+    for (k, (x, y)) in [(x0, y0), (x1, y0), (x1, y1), (x0, y1)].into_iter().enumerate() {
+        let off = rotate(eye0.orientation, [x, y, -depth]);
+        let p = xr::Vector3f { x: eye0.position.x + off[0], y: eye0.position.y + off[1], z: eye0.position.z + off[2] };
+        let pr = project(eye, fov, p)?;
+        out[k] = [img.x as f32 + pr.u * img.w as f32, img.y as f32 + pr.v * img.h as f32];
+    }
+    Some(out)
+}
+
+/// 🎞 Stabilisator „Glätten“: Pose ein Stück (t = 0…1) von `from` Richtung `to` –
+/// die gedachte Kamera folgt dem Kopf weich statt jedes Zittern mitzumachen.
+pub fn smooth_pose(from: &xr::Posef, to: &xr::Posef, t: f32) -> xr::Posef {
+    let l = |a: f32, b: f32| a + (b - a) * t;
+    let (a, mut b) = (from.orientation, to.orientation);
+    if a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w < 0.0 {
+        b = xr::Quaternionf { x: -b.x, y: -b.y, z: -b.z, w: -b.w }; // kürzerer Weg
+    }
+    let q = [l(a.x, b.x), l(a.y, b.y), l(a.z, b.z), l(a.w, b.w)];
+    let n = (q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]).sqrt().max(1e-6);
+    xr::Posef {
+        orientation: xr::Quaternionf { x: q[0] / n, y: q[1] / n, z: q[2] / n, w: q[3] / n },
+        position: xr::Vector3f {
+            x: l(from.position.x, to.position.x),
+            y: l(from.position.y, to.position.y),
+            z: l(from.position.z, to.position.z),
+        },
+    }
 }
 
 /// Wie schräg ist der Kopf (Rollen um die Blickrichtung)? Radiant, + = Welt-Oben liegt im
@@ -527,6 +569,33 @@ mod tests {
         let left = xr::Posef { orientation: xr::Quaternionf { x: 0.0, y: (a / 2.0).sin(), z: 0.0, w: (a / 2.0).cos() }, ..eye };
         let r2 = world_rect(&eye, &fov, img, rect, 0.6, &left, &fov, img).unwrap();
         assert!(r2.x > r.x, "{r2:?}");
+    }
+
+    #[test]
+    fn world_quad_corners_and_smoothing() {
+        let eye = xr::Posef {
+            orientation: xr::Quaternionf { x: 0.0, y: 0.0, z: 0.0, w: 1.0 },
+            position: xr::Vector3f { x: 0.0, y: 1.6, z: 0.0 },
+        };
+        let fov = xr::Fovf { angle_left: -0.8, angle_right: 0.8, angle_up: 0.8, angle_down: -0.8 };
+        let img = Rect { x: 0, y: 0, w: 1000, h: 1000 };
+        let rect = Rect { x: 300, y: 400, w: 200, h: 100 };
+        let q = world_quad(&eye, &fov, img, rect, 0.6, &eye, &fov, img).unwrap();
+        let want = [[300.0, 400.0], [500.0, 400.0], [500.0, 500.0], [300.0, 500.0]];
+        for (a, b) in q.iter().zip(want) {
+            assert!((a[0] - b[0]).abs() < 1.0 && (a[1] - b[1]).abs() < 1.0, "{q:?}");
+        }
+        // Kopf geneigt → Rahmen im Bild schräg (obere Ecken nicht mehr auf gleicher Höhe)
+        let a = 0.2f32;
+        let tilt = xr::Posef { orientation: xr::Quaternionf { x: 0.0, y: 0.0, z: (a / 2.0).sin(), w: (a / 2.0).cos() }, ..eye };
+        let q2 = world_quad(&eye, &fov, img, rect, 0.6, &tilt, &fov, img).unwrap();
+        assert!((q2[0][1] - q2[1][1]).abs() > 5.0, "{q2:?}");
+        // Glätten: halber Weg, Quaternion bleibt normiert
+        let m = smooth_pose(&eye, &tilt, 0.5);
+        let o = m.orientation;
+        assert!(((o.x * o.x + o.y * o.y + o.z * o.z + o.w * o.w) - 1.0).abs() < 1e-4);
+        assert!(o.z > 0.0 && o.z < tilt.orientation.z);
+        assert_eq!(smooth_pose(&eye, &tilt, 1.0).orientation.z, tilt.orientation.z);
     }
 
     #[test]

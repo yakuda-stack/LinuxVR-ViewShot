@@ -274,6 +274,10 @@ struct State {
     gal_confirm: bool,
     /// Galerie-Bilder aus allen Ordnern, neueste zuerst – Klicks beziehen sich darauf
     gal_list: Vec<paths::GalleryPhoto>,
+    /// Galerie-Filter: "" = alle, "text" / "qr" / "image" / "gif_vid"
+    gal_filter: String,
+    /// 🟠 Hinweis „Layer veraltet“ aufgeklappt?
+    old_open: bool,
     /// wann die Ordner zuletzt durchsucht wurden (höchstens alle 2 s)
     gal_scan: Option<Instant>,
     /// Raster-Seiten (Monats-Trenner + Zeilen), passend zu gal_list
@@ -708,6 +712,10 @@ impl State {
             mode_label: self.mode_label(),
             last_ai: if self.last_ai.is_empty() { "–".into() } else { self.last_ai.clone() },
             edit: self.lcfg.b("panel_edit"),
+            rec_video: self.lcfg.b("rec_video"),
+            layer_old: paths::layer_outdated()
+                .map(|old| self.t("layer_old_vr", &[("old", &old), ("new", env!("CARGO_PKG_VERSION"))])),
+            old_open: self.old_open,
             opacity: self.lcfg.f("panel_opacity", 100.0).round() as i32,
             photo_mtime: photo.as_ref().and_then(|p| file_mtime(p)),
             photo,
@@ -750,7 +758,7 @@ impl State {
             return;
         }
         self.gal_scan = Some(Instant::now());
-        self.gal_list = paths::gallery_photos(&self.cfg);
+        self.gal_list = actions::filter_gallery(paths::gallery_photos(&self.cfg), &self.gal_filter);
         let months: Vec<(i32, u32)> = self.gal_list.iter().map(|p| p.month).collect();
         let lang = self.lang();
         let titles = |y: i32, m: u32| format!("{y} {}", tr(&lang, &format!("month_{m}"), &[]));
@@ -799,7 +807,7 @@ impl State {
                 sub: self.gal_sub.clone(),
             })
         });
-        GalleryView { total, page, pages, rows, tiles, open }
+        GalleryView { total, page, pages, rows, tiles, open, filter: self.gal_filter.clone() }
     }
 
     /// ⓘ Info-Zeilen: Ordner, Datum, Größe, Typ, Link
@@ -1029,6 +1037,7 @@ impl State {
                 self.toggle_sheet();
                 return;
             }
+            Action::OldNote => self.old_open = !self.old_open,
             Action::Move => layer(&[("panel_edit", Value::Bool(!self.lcfg.b("panel_edit")))]),
             Action::Reset => {
                 // Knopf zurück an den Standard-Platz, Panel wieder darüber (legt der Layer neu an)
@@ -1086,6 +1095,11 @@ impl State {
                 self.result_page = (self.result_page as i64 + step as i64).clamp(0, self.pages.saturating_sub(1) as i64) as usize;
             }
             Action::Nav(step) => self.switch_page(self.page.step(step)),
+            Action::GalFilter(key) => {
+                self.gal_filter = key;
+                self.gal_page = 0;
+                self.scan_gallery(true);
+            }
             Action::GalPage(step) => {
                 let pages = self.gal_pages.len().max(1) as i64;
                 self.gal_page = (self.gal_page as i64 + step as i64).clamp(0, pages - 1) as usize;
@@ -1293,6 +1307,8 @@ pub fn run(stay: bool) {
         gal_open: None,
         gal_confirm: false,
         gal_list: Vec::new(),
+        gal_filter: String::new(),
+        old_open: false,
         gal_scan: None,
         gal_pages: Vec::new(),
         gal_toast: String::new(),

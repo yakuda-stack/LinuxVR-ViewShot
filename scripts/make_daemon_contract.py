@@ -36,7 +36,7 @@ I18N_KEYS = [
     "combo_short_both", "tr_route_auto", "tr_route_manual",
     "nav_gallery", "no_photo", "delete", "translate_btn", "vr_delete_sure",
     "tr_group_plain", "tr_group_ai", "vr_page_translate", "copy", "copy_link", "uploading",
-    "upload_copy_link", "share", "info", "share_failed", "delete_failed", "tag_text", "tag_qr", "tag_image",
+    "upload_copy_link", "share", "info", "share_failed", "delete_failed", "tag_text", "tag_qr", "tag_image", "tag_gif_vid", "filter_all", "layer_old_vr",
     "vr_copied_image", "vr_link_copied", "vr_uploading", "vr_upload_failed", "vr_shared_paste", "vr_shared",
     "panel_button", "panel_button_short", "panel_open_on_shot_short", "panel_button_size",
     "vr_share_none", "vr_info_folder", "vr_info_date", "vr_info_size", "vr_info_type", "vr_info_link",

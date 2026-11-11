@@ -31,6 +31,17 @@ class TranslationMixin:
         title = QLabel("🌐  " + tr("translation"))
         title.setObjectName("cardtitle")
         head.addWidget(title)
+        # 🎞 GIF / 🎬 VID: was beim Halten des Auslösers aufgenommen wird
+        self.rec_btn = QPushButton()
+        self.rec_btn.setObjectName("linkbtn")
+        self.rec_btn.setToolTip(tr("rec_mode_tip"))
+        self.rec_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.rec_btn.setFixedHeight(36)
+        self.rec_btn.setMinimumWidth(88)
+        self.rec_btn.clicked.connect(self.toggle_rec)
+        head.addWidget(self.rec_btn)
+        self.layer_changed.connect(self.sync_rec_btn)
+        self.sync_rec_btn()
         head.addStretch()
         # ⧉ Übersetzung in eigenes Fenster (in VR: eigenes Panel, frei platzierbar)
         self.popout_btn = QPushButton("⧉")
@@ -282,6 +293,15 @@ class TranslationMixin:
         # direkt neu übersetzen (Cache wird benutzt, falls schon mal gemacht)
         self.clear_translation()
         self.start_translation()
+
+    def toggle_rec(self):
+        """🎞 GIF ↔ 🎬 VID – gilt sofort in VR (Layer liest layer.json neu)."""
+        layer_config.toggle_rec_video()
+        self.sync_rec_btn()
+        self.layer_changed.emit()
+
+    def sync_rec_btn(self):
+        self.rec_btn.setText(layer_config.rec_label(layer_config.rec_video()))
 
     def on_options_changed(self):
         """Optionen → Übersetzung wurde geändert."""

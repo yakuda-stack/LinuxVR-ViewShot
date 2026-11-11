@@ -16,6 +16,10 @@
 //!   "gif_hold": true,             🎞 Auslöser gedrückt halten = GIF aufnehmen (max. gif_max_s)
 //!   "gif_max_s": 15,              längste GIF-Aufnahme in Sekunden (1–15)
 //!   "gif_fps": 10,                Bilder pro Sekunde im GIF (5–15)
+//!   "rec_video": false,           🎬 Aufnahme als Video (MP4) statt GIF – Knopf GIF/VID
+//!   "video_fps": 24,              Bilder pro Sekunde im Video (10–30)
+//!   "pin_lock": true,             🎯 📌 Pin-GIF/-Video entzerren (fest wie beim Start) – aus = alter Ausschnitt
+//!   "gif_stabilize": "off",       🎯 GIF/Video ruhig halten: "off" / "smooth" (Kopf weich folgen) / "lock" (Startposition)
 //!   "icon_position": "bottom_left" Symbol-Position (manual): "bottom_left" / "bottom_right" / "top_left" / "top_right"
 //!   "live_interval_s": 3,         🔁 Lens: alle so viele Sekunden neu fotografieren (→ live/live.png)
 //!   "photo_only": false,          📷 Nur Foto/GIF: 🔁 Lens / 📌 Pin übersetzen nicht, Auslöser macht Foto/GIF
@@ -60,6 +64,19 @@ pub enum DaemonMode {
     Off,
     All,
     Selected,
+}
+
+/// 🎯 Stabilisator für GIF/Video (📌 Pin ist immer fest in der Welt)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Stabilize {
+    /// Ausschnitt am Kopf fest (wie bisher)
+    #[default]
+    Off,
+    /// Ausschnitt folgt dem Kopf weich – kein Zittern, Schwenks bleiben
+    Smooth,
+    /// Ausschnitt bleibt dort, wo die Aufnahme begann (Kopfbewegung wird herausgerechnet)
+    Lock,
 }
 
 /// 📐 Seitenverhältnis des Fotos – wie bei einer echten Kamera
@@ -118,6 +135,13 @@ pub struct LayerConfig {
     pub gif_hold: bool,
     pub gif_max_s: f32,
     pub gif_fps: f32,
+    /// 🎬 Aufnahme als MP4-Video statt GIF
+    pub rec_video: bool,
+    pub video_fps: f32,
+    /// 🎯 Stabilisator (GIF und Video)
+    pub gif_stabilize: Stabilize,
+    /// 🎯 📌 Pin: jedes Bild auf die Startansicht entzerren (Standard an)
+    pub pin_lock: bool,
     pub live_interval_s: f32,
     /// 📷 Nur Foto/GIF: kein Live-Bild für die Übersetzung, Auslöser macht immer Foto/GIF
     pub photo_only: bool,
@@ -152,6 +176,10 @@ impl Default for LayerConfig {
             gif_hold: true,
             gif_max_s: 15.0,
             gif_fps: 10.0,
+            rec_video: false,
+            video_fps: 24.0,
+            gif_stabilize: Stabilize::Off,
+            pin_lock: true,
             live_interval_s: 3.0,
             photo_only: false,
             overlay: false,
@@ -198,6 +226,16 @@ impl LayerConfig {
     /// Abstand zwischen zwei GIF-Bildern (5–15 Bilder pro Sekunde)
     pub fn gif_interval(&self) -> Duration {
         Duration::from_secs_f32(1.0 / self.gif_fps.clamp(5.0, 15.0))
+    }
+
+    /// Abstand zwischen zwei Video-Bildern (10–30 Bilder pro Sekunde)
+    pub fn video_interval(&self) -> Duration {
+        Duration::from_secs_f32(1.0 / self.video_fps.clamp(10.0, 30.0))
+    }
+
+    /// Takt der laufenden Aufnahme: Video oder GIF
+    pub fn rec_interval(&self) -> Duration {
+        if self.rec_video { self.video_interval() } else { self.gif_interval() }
     }
 
     /// Abstand zwischen zwei Live-Fotos (1–30 s)
@@ -344,6 +382,13 @@ mod tests {
         assert_eq!(c.gif_max(), Duration::from_secs(15));
         assert!(c.gif_interval() >= Duration::from_millis(66));
         assert!(LayerConfig::default().gif_hold);
+        let v: LayerConfig = serde_json::from_str(r#"{"rec_video": true, "video_fps": 99}"#).unwrap();
+        assert!(v.rec_video && v.rec_interval() >= Duration::from_millis(33));
+        assert!(!LayerConfig::default().rec_video);
+        let s: LayerConfig = serde_json::from_str(r#"{"gif_stabilize": "lock"}"#).unwrap();
+        assert_eq!(s.gif_stabilize, Stabilize::Lock);
+        assert_eq!(LayerConfig::default().gif_stabilize, Stabilize::Off);
+        assert!(LayerConfig::default().pin_lock);
     }
 
     #[test]

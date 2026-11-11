@@ -29,6 +29,13 @@ pub fn lib_dir() -> PathBuf {
     home().join(".local/lib/linuxvr-viewshot")
 }
 
+/// 🟠 Installierter Layer ≠ Version dieses Dienstes? → Some(installierte Version)
+/// (wie layer_install.outdated in der App: ~/.local/lib/linuxvr-viewshot/VERSION)
+pub fn layer_outdated() -> Option<String> {
+    let installed = std::fs::read_to_string(lib_dir().join("VERSION")).ok()?.trim().to_string();
+    (!installed.is_empty() && installed != env!("CARGO_PKG_VERSION")).then_some(installed)
+}
+
 static PHOTO_DIR: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
 
 /// Foto-Ordner, den der Layer meldet („hello“) – gilt vor allem anderen
@@ -89,19 +96,46 @@ pub fn photo_ready(path: &std::path::Path) -> bool {
     f.seek(SeekFrom::End(-12)).is_ok() && f.read_exact(&mut tail).is_ok() && &tail[4..8] == b"IEND"
 }
 
-/// Neuestes Foto im Foto-Ordner (nur *.png direkt darin – nicht live/ panel/ overlay/)
+/// 🗂 Unterordner im Foto-Ordner (seit v1.0.9, wie paths.sorted_dirs): Fotos, GIFs/Videos, Converter
+pub fn sorted_dirs() -> [PathBuf; 3] {
+    let gif_vid = photo_dir().join("gif_vid");
+    [photo_dir().join("picture"), gif_vid.join("convert"), gif_vid]
+}
+
+/// Neuestes Foto: *.png in picture/ oder (ältere Layer) direkt im Foto-Ordner – nicht live/ panel/ overlay/
 pub fn newest_photo() -> Option<PathBuf> {
-    let rd = std::fs::read_dir(photo_dir()).ok()?;
-    rd.flatten()
+    [photo_dir().join("picture"), photo_dir()]
+        .iter()
+        .filter_map(|d| std::fs::read_dir(d).ok())
+        .flat_map(|rd| rd.flatten())
+        .filter(|e| !e.file_name().to_string_lossy().starts_with('.'))
         .filter(|e| e.path().extension().is_some_and(|x| x.eq_ignore_ascii_case("png")))
         .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
         .max_by_key(|(t, _)| *t)
         .map(|(_, p)| p)
 }
 
-/// Hilfsordner im Foto-Ordner – nie in der Galerie (wie HELPER_DIRS in paths.py)
-const HELPER_DIRS: [&str; 4] = ["panel", "overlay", "live", "backup"]; // backup = 🗜 Original vor dem Komprimieren
-const IMAGE_EXTS: [&str; 4] = ["png", "jpg", "jpeg", "gif"]; // gif = 🎞 GIF-Aufnahmen
+/// Hilfsordner im Foto-Ordner – nie in der Galerie (wie HELPER_DIRS in paths.py, backup = 🗜 Original) –
+/// beim Durchsuchen des Foto-Ordners mit Unterordnern überspringen: Hilfsordner + 🗂 sortierte Ordner
+/// (die stehen schon einzeln in gallery_folders – sonst doppelt), wie SKIP_IN_MAIN in paths.py
+const SKIP_IN_MAIN: [&str; 7] = ["panel", "overlay", "live", "backup", "picture", "gif_vid", "desktop"];
+const IMAGE_EXTS: [&str; 5] = ["png", "jpg", "jpeg", "gif", "mp4"]; // gif = 🎞 GIF-, mp4 = 🎬 Video-Aufnahmen
+
+/// 🎬 Video (.mp4)?
+pub fn is_video(path: &std::path::Path) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case("mp4"))
+}
+
+/// Was man als Bild anzeigt: beim 🎬 Video das versteckte Vorschaubild
+/// („.ViewShot_….mp4.png“, schreibt der Layer), sonst die Datei selbst (wie paths.preview_of)
+pub fn preview_of(path: &std::path::Path) -> PathBuf {
+    if is_video(path) {
+        if let Some(name) = path.file_name() {
+            return path.with_file_name(format!(".{}.png", name.to_string_lossy()));
+        }
+    }
+    path.to_path_buf()
+}
 /// so tief in Unterordner (VRChat: VRChat/2026-10/…)
 const MAX_DEPTH: usize = 4;
 
@@ -116,6 +150,8 @@ pub struct GalleryPhoto {
 /// Ordner der Galerie: Foto-Ordner zuerst, dann ui.json "gallery_folders" (wie gallery_folders in paths.py)
 pub fn gallery_folders(cfg: &crate::settings::Cfg) -> Vec<(PathBuf, bool)> {
     let mut found = vec![(photo_dir(), cfg.b("gallery_main_subfolders"))];
+    // 🗂 picture/ · gif_vid/ · gif_vid/convert/ immer (auch ohne „Unterordner“)
+    found.extend(sorted_dirs().into_iter().map(|d| (d, false)));
     if let Some(list) = cfg.0.get("gallery_folders").and_then(|v| v.as_array()) {
         for e in list {
             let Some(p) = e["path"].as_str().filter(|p| !p.is_empty()) else { continue };
@@ -147,7 +183,7 @@ fn scan_folder(folder: &std::path::Path, subfolders: bool, out: &mut Vec<(PathBu
             }
             let Ok(ft) = e.file_type() else { continue };
             if ft.is_dir() {
-                if subfolders && depth < MAX_DEPTH && !(main && depth == 0 && HELPER_DIRS.contains(&name.as_str())) {
+                if subfolders && depth < MAX_DEPTH && !(main && depth == 0 && SKIP_IN_MAIN.contains(&name.as_str())) {
                     todo.push((e.path(), depth + 1));
                 }
             } else if ft.is_file() {
@@ -183,6 +219,9 @@ pub fn gallery_photos(cfg: &crate::settings::Cfg) -> Vec<GalleryPhoto> {
 /// In den Papierkorb (freedesktop.org-Papierkorb im Home, wie jeder Dateimanager).
 /// Klappt das nicht (z. B. anderes Laufwerk), versucht es `gio trash`.
 pub fn trash(path: &std::path::Path) -> bool {
+    if is_video(path) {
+        let _ = std::fs::remove_file(preview_of(path)); // 🖼 Vorschaubild braucht keiner mehr
+    }
     let base = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .filter(|p| p.is_absolute())
@@ -243,10 +282,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn video_preview_is_hidden_png() {
+        let v = std::path::Path::new("/x/ViewShot_1.mp4");
+        assert!(is_video(v) && !is_video(std::path::Path::new("/x/a.gif")));
+        assert_eq!(preview_of(v), PathBuf::from("/x/.ViewShot_1.mp4.png"));
+        assert_eq!(preview_of(std::path::Path::new("/x/a.png")), PathBuf::from("/x/a.png"));
+    }
+
+    #[test]
     fn gallery_folders_and_subfolders() {
         let dir = std::env::temp_dir().join(format!("viewshot-gal-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        for f in ["p/a.png", "p/panel/panel.png", "p/sub/b.jpg", "x/c.png", "x/d/e.PNG", "x/.hidden/f.png", "x/n.txt"] {
+        for f in ["p/a.png", "p/panel/panel.png", "p/sub/b.jpg", "x/c.png", "x/d/e.PNG", "x/.hidden/f.png", "x/n.txt",
+                  "p/picture/g.png", "p/gif_vid/h.gif", "p/gif_vid/convert/i.gif"] {
             let path = dir.join(f);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(&path, b"x").unwrap();
@@ -260,10 +308,14 @@ mod tests {
             n.sort();
             n
         };
-        assert_eq!(names(&cfg), ["a.png", "c.png"]);
+        // 🗂 picture/ · gif_vid/ · gif_vid/convert/ immer dabei
+        assert_eq!(names(&cfg), ["a.png", "c.png", "g.png", "h.gif", "i.gif"]);
         cfg.0.insert("gallery_main_subfolders".into(), serde_json::json!(true));
         cfg.0.insert("gallery_folders".into(), serde_json::json!([{"path": x, "subfolders": true}]));
-        assert_eq!(names(&cfg), ["a.png", "b.jpg", "c.png", "e.PNG"]);
+        // mit Unterordnern: nichts doppelt
+        assert_eq!(names(&cfg), ["a.png", "b.jpg", "c.png", "e.PNG", "g.png", "h.gif", "i.gif"]);
+        std::fs::write(dir.join("p/picture/new.png"), b"x").unwrap();
+        assert_eq!(newest_photo().unwrap().file_name().unwrap(), "new.png");
         *PHOTO_DIR.lock().unwrap() = None;
         let _ = std::fs::remove_dir_all(&dir);
     }

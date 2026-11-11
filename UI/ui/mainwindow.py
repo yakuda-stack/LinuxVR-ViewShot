@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QMainWindow, QPushButt
 
 from core import app_update, config, desktop_shot, i18n, layer_config, paths, tags
 from core.i18n import tr
+from ui.pages.converter_page import ConverterPage
 from ui.pages.gallery_page import GalleryPage
 from ui.pages.main_page import MainPage
 from core.version import VERSION
@@ -44,6 +45,7 @@ class MainWindow(QMainWindow):
         self._waits = 0  # wie oft auf ein halb geschriebenes Foto gewartet wurde
         folder = paths.photo_dir()
         folder.mkdir(parents=True, exist_ok=True)
+        paths.make_sorted_dirs()  # 🗂 picture/ · gif_vid/ · gif_vid/convert/
         self.watcher.addPath(str(folder))
 
         # Bild-Erkennung (Text / QR / Bild) im Hintergrund – überlebt den
@@ -64,7 +66,11 @@ class MainWindow(QMainWindow):
         if self.cfg.get("desktop_shot") and not desktop_shot.missing_packages():
             self.desktop_shot.start()
         # 👋 erster Start: kurz erklären, installieren lassen, zu den Übersetzern führen
-        from ui import welcome
+        from ui import sort_dialog, welcome
+        if self.cfg.get("welcome_done"):
+            sort_dialog.maybe_ask(self)  # 🗂 einmalig: alten Foto-Ordner einsortieren
+        else:
+            self.cfg["folder_sort_asked"] = True  # ganz neu: nichts Altes zu sortieren
         welcome.maybe_start(self)
 
     # ------------------------------------------------------------------
@@ -101,6 +107,7 @@ class MainWindow(QMainWindow):
         self.gallery_page = GalleryPage(self.cfg, self.tagger)
         self.gallery_page.folders_changed.connect(self.watch_gallery_folders)
         self.watch_gallery_folders()
+        self.converter_page = ConverterPage(self.cfg)
         self.options_page = OptionsPage(self.cfg, self.desktop_shot, options_tab)
         self.options_page.language_changed.connect(self.on_language_changed)
         self.options_page.translation_changed.connect(self.main_page.on_options_changed)
@@ -112,9 +119,11 @@ class MainWindow(QMainWindow):
         PAGES = [
             ("nav_main", self.main_page),
             ("nav_gallery", self.gallery_page),
+            ("nav_convert", self.converter_page),
             ("nav_options", self.options_page),
         ]
 
+        self.page_order = [page for _, page in PAGES]  # welcome.py springt per Seite, nicht per Nummer
         self.pages = QStackedWidget()
         self.nav_buttons = []
         for i, (key, page) in enumerate(PAGES):

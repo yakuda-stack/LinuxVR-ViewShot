@@ -28,7 +28,7 @@ from ui.pages.main_history import HistoryMixin
 from ui.pages.main_install import InstallMixin
 from ui.pages.main_live import LiveMixin
 from ui.pages.main_translation import TranslationMixin
-from ui.widgets import make_card, page_title
+from ui.widgets import WARN_COLOR, make_card, page_title
 
 
 class MainPage(TranslationMixin, HistoryMixin, InstallMixin, LiveMixin, QWidget):
@@ -100,7 +100,7 @@ class MainPage(TranslationMixin, HistoryMixin, InstallMixin, LiveMixin, QWidget)
         box.setSpacing(8)
         # Hinweis über dem Knopf: Layer passt nicht zur App, man muss ihn selbst neu installieren
         self.layer_hint = QLabel()
-        self.layer_hint.setObjectName("bad")
+        self.layer_hint.setStyleSheet(f"color: {WARN_COLOR};")
         self.layer_hint.setWordWrap(True)
         self.layer_hint.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.layer_hint.hide()
@@ -109,6 +109,15 @@ class MainPage(TranslationMixin, HistoryMixin, InstallMixin, LiveMixin, QWidget)
         row.setSpacing(10)
         self.layer_label = QLabel()
         row.addWidget(self.layer_label)
+        # ❗ Layer passt nicht zur App-Version → oranges Ausrufezeichen (Klick = Erklärung)
+        self.layer_warn = QPushButton("!")
+        self.layer_warn.setFixedSize(26, 26)
+        self.layer_warn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.layer_warn.setStyleSheet(f"background: {WARN_COLOR}; color: #161a22; border: none; "
+                                      "border-radius: 13px; font-weight: bold; font-size: 16px; padding: 0;")
+        self.layer_warn.clicked.connect(self.explain_outdated)
+        self.layer_warn.hide()
+        row.addWidget(self.layer_warn)
         dot = QLabel("·")
         dot.setObjectName("dim")
         row.addWidget(dot)
@@ -261,6 +270,17 @@ class MainPage(TranslationMixin, HistoryMixin, InstallMixin, LiveMixin, QWidget)
             self.layer_hint.setText(tr("layer_outdated", old=layer_install.installed_version() or "?",
                                        new=VERSION, button=tr(key)))
         self.layer_hint.setVisible(outdated)
+        self.layer_warn.setVisible(outdated)
+        if outdated:
+            self.layer_warn.setToolTip(tr("layer_old_short", old=layer_install.installed_version() or "?", new=VERSION))
+
+    def explain_outdated(self):
+        """❗ angeklickt: was los ist und was man tun muss."""
+        from PyQt6.QtWidgets import QMessageBox
+        key = "layer_update" if paths.copies_layer() else "reinstall"
+        QMessageBox.warning(self, tr("layer_old_title"),
+                            tr("layer_old_short", old=layer_install.installed_version() or "?", new=VERSION)
+                            + "\n\n" + tr("layer_old_steps", button=tr(key).replace("&&", "&")))
 
     def show_update(self, version: str):
         """⬆ neben der Versionsnummer zeigen (version = neueste Version oder "")."""

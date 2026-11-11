@@ -46,6 +46,35 @@ def photo_dir() -> Path:
     return Path(pictures or HOME / "Pictures") / "LinuxVR-ViewShot"
 
 
+# 🗂 Ordnung im Foto-Ordner (seit v1.0.9): Fotos → picture/, GIFs/Videos → gif_vid/,
+# Converter-Ergebnisse → gif_vid/convert/. Ältere Layer schreiben noch direkt in den
+# Foto-Ordner – darum wird der weiter mit angesehen.
+PICTURE_DIR = "picture"
+GIF_VID_DIR = "gif_vid"
+CONVERT_DIR = "convert"  # in gif_vid/
+
+
+def picture_dir() -> Path:
+    return photo_dir() / PICTURE_DIR
+
+
+def gif_vid_dir() -> Path:
+    return photo_dir() / GIF_VID_DIR
+
+
+def convert_dir() -> Path:
+    return gif_vid_dir() / CONVERT_DIR
+
+
+def sorted_dirs() -> list[Path]:
+    return [picture_dir(), gif_vid_dir(), convert_dir()]
+
+
+def make_sorted_dirs() -> None:
+    for folder in sorted_dirs():
+        folder.mkdir(parents=True, exist_ok=True)
+
+
 def photo_ready(path: Path) -> bool:
     """Ist das PNG vollständig geschrieben? Ein fertiges PNG endet immer mit
     dem IEND-Block. Schnell (liest nur die letzten 12 Bytes) und ohne Qt –
@@ -64,11 +93,11 @@ def photo_ready(path: Path) -> bool:
 
 
 def list_photos() -> list[Path]:
-    """Alle Fotos, neueste zuerst."""
-    folder = photo_dir()
-    if not folder.is_dir():
-        return []
-    photos = [p for p in folder.iterdir() if p.suffix.lower() == ".png"]
+    """Alle VR-Fotos (picture/ + alte direkt im Foto-Ordner), neueste zuerst."""
+    photos = []
+    for folder in (picture_dir(), photo_dir()):
+        if folder.is_dir():
+            photos += [p for p in folder.iterdir() if p.suffix.lower() == ".png" and not p.name.startswith(".")]
     photos.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return photos
 
@@ -80,9 +109,26 @@ def list_photos() -> list[Path]:
 #   "gallery_folders": [{"path": "/home/…/Bilder/VRChat", "subfolders": true}]
 # Der ⚙ Dienst (daemon/src/paths.rs) liest dieselben Einträge.
 # ----------------------------------------------------------------------
-IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif"}  # .gif = 🎞 GIF-Aufnahmen
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".mp4"}  # .gif = 🎞 GIF-, .mp4 = 🎬 Video-Aufnahmen
+VIDEO_EXTS = {".mp4"}
+
+
+def is_video(path) -> bool:
+    return Path(path).suffix.lower() in VIDEO_EXTS
+
+
+def preview_of(path) -> Path:
+    """Was man als Bild anzeigt: beim 🎬 Video das versteckte Vorschaubild
+    („.ViewShot_….mp4.png“, schreibt der Layer), sonst die Datei selbst."""
+    path = Path(path)
+    if is_video(path):
+        return path.with_name("." + path.name + ".png")
+    return path
 # Hilfsordner im Foto-Ordner – nie in der Galerie
 HELPER_DIRS = {"panel", "overlay", "live", "backup"}  # backup = 🗜 Original vor dem Komprimieren
+# beim Durchsuchen des Foto-Ordners mit Unterordnern überspringen: Hilfsordner + die
+# 🗂 sortierten Ordner (die stehen schon einzeln in gallery_folders – sonst doppelt)
+SKIP_IN_MAIN = HELPER_DIRS | {"picture", "gif_vid", "desktop"}
 MAX_DEPTH = 4            # so tief in Unterordner (VRChat: VRChat/2026-10/…)
 SCAN_SECONDS = 2.0       # Liste so lange merken (das VR-Panel fragt oft)
 _scan_cache: dict = {}
@@ -92,6 +138,8 @@ _mtimes: dict[str, float] = {}
 def gallery_folders(cfg: dict) -> list[tuple[Path, bool]]:
     """[(Ordner, Unterordner?)] – der Foto-Ordner immer zuerst, doppelte fallen weg."""
     found = [(photo_dir(), bool(cfg.get("gallery_main_subfolders")))]
+    # 🗂 picture/ · gif_vid/ · gif_vid/convert/ immer (auch ohne „Unterordner“)
+    found += [(f, False) for f in sorted_dirs()]
     for entry in cfg.get("gallery_folders") or []:
         if isinstance(entry, dict) and entry.get("path"):
             folder = Path(os.path.expanduser(str(entry["path"])))
@@ -119,7 +167,7 @@ def scan_folder(folder: Path, subfolders: bool) -> list[tuple[float, Path]]:
                 continue
             try:
                 if e.is_dir(follow_symlinks=False):
-                    if subfolders and depth < MAX_DEPTH and not (main and depth == 0 and e.name in HELPER_DIRS):
+                    if subfolders and depth < MAX_DEPTH and not (main and depth == 0 and e.name in SKIP_IN_MAIN):
                         todo.append((Path(e.path), depth + 1))
                 elif os.path.splitext(e.name)[1].lower() in IMAGE_EXTS:
                     out.append((e.stat().st_mtime, Path(e.path)))

@@ -22,6 +22,10 @@ const MY: f32 = 16.0;
 const GAP: f32 = 10.0;
 const BTN_H: f32 = 48.0;
 const TIP_W: f32 = 64.0;
+/// 🟠 Layer veraltet (wie WARN_COLOR in widgets.py)
+const WARN: u32 = 0xe8a33d;
+/// 🎞 GIF / 🎬 VID-Knopf oben
+const REC_W: f32 = 120.0;
 const ITEM_H: f32 = 54.0;
 const BAR_H: f32 = 48.0;
 const BAR_PAD: f32 = 20.0;
@@ -73,6 +77,8 @@ pub enum Bar {
 pub enum Action {
     /// ⚙ Einstellungen auf-/zuklappen
     Sheet,
+    /// 🟠 i: Hinweis „Layer veraltet“ auf-/zuklappen
+    OldNote,
     Reset,
     Choose(Choice),
     Redo,
@@ -93,6 +99,8 @@ pub enum Action {
     Nav(i32),
     /// Galerie: Raster-Seite blättern
     GalPage(i32),
+    /// Galerie-Filter: "" = alle, "text" / "qr" / "image" / "gif_vid"
+    GalFilter(String),
     /// Galerie: Foto (Nummer in der Liste) groß zeigen
     GalOpen(usize),
     GalBack,
@@ -209,6 +217,8 @@ pub struct GalleryView {
     /// Kacheln dieser Seite (Reihenfolge wie in `rows`) – passend zu `Pics::thumbs`
     pub tiles: Vec<Tile>,
     pub open: Option<OpenPhoto>,
+    /// Filter: "" = alle, "text" / "qr" / "image" / "gif_vid"
+    pub filter: String,
 }
 
 /// Fertig verkleinerte Bilder fürs Zeichnen (Foto mit Nummern, Kacheln, großes Foto)
@@ -254,6 +264,11 @@ pub struct View {
     pub mode_label: Option<String>,
     pub last_ai: String,
     pub edit: bool,
+    /// 🎬 Aufnahme-Knopf steht auf VID (sonst 🎞 GIF)
+    pub rec_video: bool,
+    /// 🟠 Layer veraltet: Hinweistext (None = alles passt) + aufgeklappt?
+    pub layer_old: Option<String>,
+    pub old_open: bool,
     pub opacity: i32,
     pub photo: Option<PathBuf>,
     pub photo_mtime: Option<std::time::SystemTime>,
@@ -536,11 +551,32 @@ fn translate_content(l: &mut Layout, v: &View, photo: Option<&image::RgbaImage>)
     let mut y = MY;
     let title = Style::new(24.0, true, TEXT);
 
-    // Kopf: 🌐 ViewShot  [⚙]
+    // Kopf: 🌐 ViewShot  [🎞 GIF / 🎬 VID] [⚙]
     l.button("⚙", mx + inner - TIP_W, y, TIP_W, false, Action::Sheet);
+    let rec = if v.rec_video { "🎬 VID" } else { "🎞 GIF" };
+    let rec_w = REC_W;
+    let rec_x = mx + inner - TIP_W - 8.0 - rec_w;
+    l.button(rec, rec_x, y, rec_w, false, Action::Toggle("rec_video"));
+    // 🟠 i: Layer passt nicht zum Dienst → antippen klappt den Hinweis auf
+    let mut used = TIP_W + rec_w + 16.0;
+    if v.layer_old.is_some() {
+        let d = BTN_H;
+        let x = rec_x - 8.0 - d;
+        if let Some(c) = l.c.as_deref_mut() {
+            c.circle(x + d / 2.0, y + d / 2.0, d / 2.0, rgba(WARN, 255));
+            let st = Style::new(24.0, true, BG);
+            let (tw, th) = measure(l.f, "i", None, st);
+            c.text(l.f, "i", x + (d - tw) / 2.0, y + (d - th) / 2.0, None, st);
+        }
+        l.hits.push(([x, y, d, d], Action::OldNote));
+        used += d + 8.0;
+    }
     let th = measure(l.f, "🌐  ViewShot", None, title).1;
-    l.label("🌐  ViewShot", mx, y + (BTN_H - th) / 2.0, inner - TIP_W - 8.0, title);
+    l.label("🌐  ViewShot", mx, y + (BTN_H - th) / 2.0, inner - used, title);
     y += BTN_H + GAP;
+    if let (Some(note), true) = (&v.layer_old, v.old_open) {
+        y += l.label(note, mx, y, inner, Style::new(19.0, false, WARN)) + GAP;
+    }
 
     // [Dienst ▸] [↻]
     let rw = l.btn_width("↻");
@@ -666,6 +702,14 @@ fn gallery_content(l: &mut Layout, v: &View, pics: &Pics) -> f32 {
         } else {
             l.dead_button("▼", down_x, y, TIP_W);
         }
+    }
+    y += BTN_H + GAP;
+    // Filter: Alle · 📝 · 🔳 · 🖼 · 🎞 GIF/VID (wie in der Desktop-Galerie)
+    let gif_vid = format!("🎞 {}", tr(lang, "tag_gif_vid", &[]));
+    let filters = [("", tr(lang, "filter_all", &[])), ("text", "📝".into()), ("qr", "🔳".into()), ("image", "🖼".into()), ("gif_vid", gif_vid)];
+    let fw = (inner - 6.0 * (filters.len() as f32 - 1.0)) / filters.len() as f32;
+    for (k, (key, text)) in filters.iter().enumerate() {
+        l.button(text, MX + k as f32 * (fw + 6.0), y, fw, g.filter == *key, Action::GalFilter(key.to_string()));
     }
     y += BTN_H + GAP;
     if g.total == 0 {
@@ -813,10 +857,10 @@ pub fn tile_size() -> (u32, u32) {
     (w as u32, (w * THUMB_RATIO).round() as u32)
 }
 
-/// Platz für das Raster: Panel-Höhe minus Rand, Kopf und ◀ ▶-Zeile (wie VRPanel.grid_height)
+/// Platz für das Raster: Panel-Höhe minus Rand, Kopf, Filter-Zeile und ◀ ▶-Zeile (wie VRPanel.grid_height)
 pub fn grid_room(fixed_height: Option<f32>) -> f32 {
     let ch = tile_size().1 as f32;
-    (fixed_height.unwrap_or(GALLERY_H) - 2.0 * MY - (BTN_H + GAP) - (NAV_H + GAP)).max(MONTH_H + ch)
+    (fixed_height.unwrap_or(GALLERY_H) - 2.0 * MY - 2.0 * (BTN_H + GAP) - (NAV_H + GAP)).max(MONTH_H + ch)
 }
 
 /// Fotos (Monat je Foto, neueste zuerst) → Raster-Seiten wie VRPanel.gallery_pages:
@@ -865,13 +909,37 @@ pub fn single_size() -> (u32, u32) {
 
 /// Vorschaubild w × h: Mitte ausgeschnitten, damit alle Kacheln gleich groß sind
 pub fn thumb(path: &std::path::Path, w: u32, h: u32) -> Option<image::RgbaImage> {
-    let img = image::open(path).ok()?;
-    Some(img.resize_to_fill(w, h, image::imageops::FilterType::Triangle).to_rgba8())
+    let img = image::open(crate::paths::preview_of(path)).ok()?;
+    let mut out = img.resize_to_fill(w, h, image::imageops::FilterType::Triangle).to_rgba8();
+    if crate::paths::is_video(path) {
+        play_badge(&mut out);
+    }
+    Some(out)
+}
+
+/// 🎬 Video: weißes ▶ in einem dunklen Kreis in der Mitte (wie draw_play_badge in widgets.py)
+pub fn play_badge(img: &mut image::RgbaImage) {
+    let (w, h) = (img.width() as f32, img.height() as f32);
+    let r = (w.min(h) / 6.0).max(12.0);
+    let (cx, cy) = (w / 2.0, h / 2.0);
+    let s = r * 0.55;
+    for (x, y, px) in img.enumerate_pixels_mut() {
+        let (dx, dy) = (x as f32 + 0.5 - cx, y as f32 + 0.5 - cy);
+        if dx * dx + dy * dy > r * r {
+            continue;
+        }
+        // Dreieck: links senkrechte Kante bei -0.6 s, Spitze bei +s
+        let inside = dx >= -s * 0.6 && dx <= s && dy.abs() <= s * (s - dx) / (1.6 * s);
+        let (c, a) = if inside { ([255u8, 255, 255], 1.0) } else { ([0u8, 0, 0], 150.0 / 255.0) };
+        for k in 0..3 {
+            px[k] = (px[k] as f32 * (1.0 - a) + c[k] as f32 * a).round() as u8;
+        }
+    }
 }
 
 /// Foto so verkleinert/vergrößert, dass es in w × h passt (Seitenverhältnis bleibt)
 pub fn fit_photo(path: &std::path::Path, w: u32, h: u32) -> Option<image::RgbaImage> {
-    Some(fit_image(image::open(path).ok()?, w, h))
+    Some(fit_image(image::open(crate::paths::preview_of(path)).ok()?, w, h))
 }
 
 /// Bild so verkleinert/vergrößert, dass es in w × h passt (🎞 GIF: jedes Einzelbild)
@@ -1153,6 +1221,17 @@ mod tests {
         assert_eq!(hit(&hits, size, 0.2, y).map(|h| h.0), Some(Action::Choose(Choice::Method)));
         let y = (MY + BTN_H / 2.0) / size.1 as f32;
         assert_eq!(hit(&hits, size, 0.95, y).map(|h| h.0), Some(Action::Sheet));
+        let x = (WIDTH - MX - TIP_W - 8.0 - REC_W / 2.0) / size.0 as f32;
+        assert_eq!(hit(&hits, size, x, y).map(|h| h.0), Some(Action::Toggle("rec_video")));
+        // 🟠 Layer veraltet: i-Knopf oben, angetippt erscheint der Hinweis darunter
+        assert!(!hits.iter().any(|h| h.1 == Action::OldNote));
+        let old = View { layer_old: Some("⚠ Layer veraltet".into()), ..view() };
+        let (_, hits_old, _) = render(&mut f, &old, &Pics::default()).unwrap();
+        let (r, _) = hits_old.iter().find(|h| h.1 == Action::OldNote).unwrap();
+        assert!(r[1] < MY + 1.0);
+        let method_y = |h: &Hits| h.iter().find(|x| x.1 == Action::Choose(Choice::Method)).unwrap().0[1];
+        let (_, hits_open, _) = render(&mut f, &View { old_open: true, ..old }, &Pics::default()).unwrap();
+        assert!(method_y(&hits_open) > method_y(&hits_old), "Hinweis schiebt den Rest nach unten");
         assert!(hits.iter().any(|h| h.1 == Action::Page(1)) && !hits.iter().any(|h| h.1 == Action::Page(-1)));
         assert!(hits.iter().any(|h| h.1 == Action::Nav(-1)) && hits.iter().any(|h| h.1 == Action::Nav(1)));
         if let Some(out) = std::env::var_os("PANEL_OUT") {
@@ -1192,8 +1271,8 @@ mod tests {
         assert_eq!(Page::Gallery.step(-1), Page::Translate);
         assert_eq!(Page::from_key("gallery"), Page::Gallery);
         assert_eq!(Page::from_key("?"), Page::Translate);
-        // gleicher Platz fürs Raster wie in vr_panel.py (GALLERY_H − Rand − Kopf − ◀ ▶)
-        assert_eq!(grid_room(None), 608.0);
+        // gleicher Platz fürs Raster wie in vr_panel.py (GALLERY_H − Rand − Kopf − Filter − ◀ ▶)
+        assert_eq!(grid_room(None), 550.0);
     }
 
     fn sample_months() -> Vec<(i32, u32)> {
@@ -1202,9 +1281,9 @@ mod tests {
 
     #[test]
     fn gallery_pages_like_the_app() {
-        // 6 Fotos Oktober + 15 Fotos Juni → wie VRPanel.gallery_pages: [6 Zeilen, 3 Zeilen]
+        // 6 Fotos Oktober + 15 Fotos Juni → wie VRPanel.gallery_pages: [5 Zeilen, 4 Zeilen]
         let pages = gallery_pages(&sample_months(), |y, m| format!("{y}-{m}"), grid_room(None));
-        assert_eq!(pages.iter().map(Vec::len).collect::<Vec<_>>(), [6, 3]);
+        assert_eq!(pages.iter().map(Vec::len).collect::<Vec<_>>(), [5, 4]);
         assert_eq!(pages[0][0], GRow::Month("2026-10".into()));
         assert_eq!(pages[0][1], GRow::Tiles(vec![0, 1, 2, 3]));
         assert_eq!(pages[0][2], GRow::Tiles(vec![4, 5]));
@@ -1221,7 +1300,7 @@ mod tests {
         let tile_of = |i: usize| Tile { index: i, path: PathBuf::from(format!("/x/ViewShot_{i}.png")), mtime: None };
         let tiles: Vec<Tile> =
             pages[0].iter().flat_map(|r| if let GRow::Tiles(t) = r { t.clone() } else { vec![] }).map(tile_of).collect();
-        let g = GalleryView { total: 21, page: 0, pages: 2, rows: pages[0].clone(), tiles: tiles.clone(), open: None };
+        let g = GalleryView { total: 21, page: 0, pages: 2, rows: pages[0].clone(), tiles: tiles.clone(), open: None, filter: String::new() };
         let (tw, th) = tile_size();
         let thumb_img = image::RgbaImage::from_pixel(tw - 4, th - 4, image::Rgba([200, 80, 160, 255]));
         let pics = Pics { thumbs: vec![Some(&thumb_img); tiles.len()], ..Pics::default() };
@@ -1229,13 +1308,14 @@ mod tests {
         let (c, hits, _) = render(&mut f, &v, &pics).unwrap();
         let size = (c.pix.width(), c.pix.height());
         assert_eq!(size.1 as f32, GALLERY_H, "Galerie nutzt die ganze Fläche");
-        // ◀ ▶ ganz unten, ⚙ oben, 14 Kacheln (6 Okt + 8 Juni), nur ▼ (erste Seite)
+        // ◀ ▶ ganz unten, ⚙ oben, Filter-Zeile, 10 Kacheln (6 Okt + 4 Juni), nur ▼ (erste Seite)
         let (r, _) = hits.iter().find(|h| h.1 == Action::Nav(-1)).unwrap();
         assert!(r[1] + r[3] > size.1 as f32 - MY - 1.0 && r[0] < WIDTH / 2.0);
         let (r, _) = hits.iter().find(|h| h.1 == Action::Nav(1)).unwrap();
         assert!(r[0] > WIDTH / 2.0);
         assert!(hits.iter().any(|h| h.1 == Action::Sheet));
-        assert_eq!(hits.iter().filter(|h| matches!(h.1, Action::GalOpen(_))).count(), 14);
+        assert_eq!(hits.iter().filter(|h| matches!(h.1, Action::GalOpen(_))).count(), 10);
+        assert!(hits.iter().any(|h| h.1 == Action::GalFilter("gif_vid".into())));
         assert!(hits.iter().any(|h| h.1 == Action::GalPage(1)) && !hits.iter().any(|h| h.1 == Action::GalPage(-1)));
         let (r, _) = hits.iter().find(|h| h.1 == Action::GalOpen(4)).unwrap();
         let (u, w) = ((r[0] + r[2] / 2.0) / size.0 as f32, (r[1] + r[3] / 2.0) / size.1 as f32);

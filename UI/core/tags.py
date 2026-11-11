@@ -34,7 +34,10 @@ from core.paths import CONFIG_DIR
 
 TAGS_FILE = CONFIG_DIR / "tags.json"
 ALL = ("text", "qr", "image")
-ICONS = {"text": "📝", "qr": "🔳", "image": "🖼"}
+GIF_VID = "gif_vid"  # 🎞 GIF/Video – kommt von der Dateiendung, wird nicht gespeichert
+FILTERS = ALL + (GIF_VID,)
+ICONS = {"text": "📝", "qr": "🔳", "image": "🖼", GIF_VID: "🎞"}
+MOTION_EXTS = (".gif", ".mp4")
 
 _lock = threading.Lock()
 
@@ -58,6 +61,29 @@ def get(photo: Path) -> dict | None:
     """{"tags": [...], "manual": bool} oder None (noch nicht erkannt)."""
     with _lock:
         return _load().get(photo.name)
+
+
+def is_gif_vid(photo: Path) -> bool:
+    return Path(photo).suffix.lower() in MOTION_EXTS
+
+
+def tags_of(photo: Path, entry: dict | None = None) -> list[str]:
+    """Gespeicherte Tags + 🎞 gif_vid für GIFs/Videos (immer, auch ohne Erkennung)."""
+    found = list((entry or {}).get("tags", []))
+    if is_gif_vid(photo) and GIF_VID not in found:
+        found.append(GIF_VID)
+    return found
+
+
+def filter_photos(photos: list[Path], key: str | None) -> list[Path]:
+    """Galerie-Filter: None = alle, sonst "text" / "qr" / "image" / "gif_vid"."""
+    if not key:
+        return photos
+    if key == GIF_VID:
+        return [p for p in photos if is_gif_vid(p)]
+    with _lock:
+        data = _load()  # nur einmal lesen – auch bei tausenden Fotos schnell
+    return [p for p in photos if key in (data.get(p.name) or {}).get("tags", [])]
 
 
 def set_tags(photo: Path, tags: list[str], manual: bool) -> None:

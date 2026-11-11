@@ -38,10 +38,12 @@ from PyQt6.QtNetwork import QHostAddress, QUdpSocket
 from PyQt6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton,
                              QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
 
-from core import clipboard, config, layer_config, overlay, paths, share, tags, translation, uploader
+from core import clipboard, config, layer_config, layer_install, overlay, paths, share, tags, translation, uploader
+from core.version import VERSION
 from core import llm_translator as llm
 from core.i18n import month_title, tr
 from ui.style import STYLE
+from ui.widgets import WARN_COLOR, draw_play_badge
 
 WIDTH = 720              # Pixel-Breite des Panel-Bilds (Höhe ergibt sich aus dem Inhalt)
 PHOTO_MAX_H = 360        # so hoch darf das Foto im Panel höchstens werden
@@ -376,7 +378,9 @@ class VRPanel(QWidget):
         self.slide_timer = QTimer(self)
         self.slide_timer.timeout.connect(self.next_slide)
         self.mode = current_page()  # Hauptseite: "translate" / "gallery" (wie zuletzt)
+        self.old_open = False    # 🟠 Hinweis „Layer veraltet“ aufgeklappt?
         self.gal_page = 0        # Galerie: Seite im Raster
+        self.gal_filter = ""     # Galerie-Filter: "" = alle, "text" / "qr" / "image" / "gif_vid"
         self.gal_open = None     # Galerie: Foto in der Einzelansicht (Path) oder None
         self.gal_confirm = False  # 🗑 einmal angetippt → „Wirklich löschen?“
         self.gal_toast = ""      # Rückmeldung in der Einzelansicht („✔ Link kopiert“)
@@ -423,8 +427,22 @@ class VRPanel(QWidget):
         title = QLabel("🌐  ViewShot")
         title.setObjectName("vrtitle")
         head.addWidget(title, 1)
+        # 🟠 i: Layer passt nicht zur App → antippen klappt den Hinweis auf
+        self.old_btn = self.button("i", self.toggle_old_note)
+        self.old_btn.setFixedWidth(48)
+        self.old_btn.setStyleSheet(f"background: {WARN_COLOR}; color: #161a22; border: none; "
+                                   "border-radius: 24px; font-weight: bold; font-size: 24px; padding: 0;")
+        head.addWidget(self.old_btn)
+        # 🎞 GIF / 🎬 VID umschalten (wie auf der Main-Seite)
+        self.rec_btn = self.button("", self.toggle_rec)
+        self.rec_btn.setMinimumWidth(120)
+        head.addWidget(self.rec_btn)
         head.addWidget(self.button("⚙", self.toggle_sheet, tip=True))
         col.addLayout(head)
+        self.old_note = QLabel()
+        self.old_note.setWordWrap(True)
+        self.old_note.setStyleSheet(f"color: {WARN_COLOR}; font-size: 19px;")
+        col.addWidget(self.old_note)
 
         row = QHBoxLayout()
         self.method_btn = self.button("", lambda: self.choose("tr_method"))
@@ -649,6 +667,12 @@ class VRPanel(QWidget):
         self.gal_label.setMinimumWidth(70)
         self.gal_down = self.button("▼", lambda: self.gal_turn(1), tip=True)
         col.addLayout(self.head(QLabel("🖼  " + tr("nav_gallery")), (self.gal_up, self.gal_label, self.gal_down)))
+        # Filter: Alle · 📝 · 🔳 · 🖼 · 🎞 GIF/VID (wie in der Desktop-Galerie)
+        self.gal_filter_row, self.gal_filter_btns = self.choice_row(
+            [("", tr("filter_all"))] + [(k, tags.ICONS[k]) for k in tags.ALL]
+            + [(tags.GIF_VID, f"{tags.ICONS[tags.GIF_VID]} {tr('tag_gif_vid')}")],
+            self.set_gal_filter)
+        col.addWidget(self.gal_filter_row)
         self.gal_host = QWidget()
         self.gal_grid = QGridLayout(self.gal_host)
         self.gal_grid.setContentsMargins(0, 0, 0, 0)
@@ -745,14 +769,14 @@ class VRPanel(QWidget):
 
     def gallery_photos(self) -> list[Path]:
         """Alle Galerie-Bilder (Foto-Ordner + weitere Ordner), neueste zuerst."""
-        return paths.gallery_photos(self.page.cfg)
+        return tags.filter_photos(paths.gallery_photos(self.page.cfg), self.gal_filter)
 
     def thumb(self, photo: Path, w: int, h: int) -> QPixmap:
         """Vorschaubild w × h (Mitte ausgeschnitten, gleich große Kacheln) – gemerkt."""
         key = (str(photo), paths.photo_mtime(photo), w)
         pix = self.thumbs.get(key)
         if pix is None:
-            reader = QImageReader(str(photo))
+            reader = QImageReader(str(paths.preview_of(photo)))
             size = reader.size()
             if size.isValid():  # gleich beim Laden verkleinern – viel schneller
                 reader.setScaledSize(size.scaled(w, h, Qt.AspectRatioMode.KeepAspectRatioByExpanding))
@@ -762,6 +786,8 @@ class VRPanel(QWidget):
             if not img.isNull():
                 painter = QPainter(pix)
                 painter.drawImage((w - img.width()) // 2, (h - img.height()) // 2, img)
+                if paths.is_video(photo):
+                    draw_play_badge(painter, w, h)
                 painter.end()
             if len(self.thumbs) > 200:
                 self.thumbs.clear()
@@ -774,9 +800,9 @@ class VRPanel(QWidget):
         return cw, round(cw * THUMB_RATIO)
 
     def grid_height(self) -> int:
-        """So viel Platz hat das Raster: ganze Panel-Höhe minus Rand, Kopf und ◀ ▶-Zeile."""
+        """So viel Platz hat das Raster: ganze Panel-Höhe minus Rand, Kopf, Filter-Zeile und ◀ ▶-Zeile."""
         total = fixed_height_px() or GALLERY_H
-        return max(MONTH_H + self.tile_size()[1], total - 32 - (48 + 10) - (NAV_H + 10))
+        return max(MONTH_H + self.tile_size()[1], total - 32 - 2 * (48 + 10) - (NAV_H + 10))
 
     def gallery_pages(self, photos: list[Path]) -> list[list[tuple]]:
         """Fotos → Raster-Seiten. Jede Seite: Zeilen ("month", Text) / ("row", [Fotos]),
@@ -832,6 +858,7 @@ class VRPanel(QWidget):
         return box
 
     def fill_gallery(self):
+        self.mark(self.gal_filter_btns, self.gal_filter)
         photos = self.gallery_photos()
         pages = self.gallery_pages(photos)
         self.gal_pages_cache = pages
@@ -890,7 +917,7 @@ class VRPanel(QWidget):
         pix = self.gif_pixmap(photo) if photo.suffix.lower() == ".gif" else None
         if pix is None:
             self.stop_gif()
-            pix = QPixmap(str(photo))
+            pix = QPixmap(str(paths.preview_of(photo)))
         if not pix.isNull():
             pix = pix.scaled(self.content_w(), SINGLE_MAX_H, Qt.AspectRatioMode.KeepAspectRatio,
                              Qt.TransformationMode.SmoothTransformation)
@@ -1064,7 +1091,7 @@ class VRPanel(QWidget):
             if w is not None:
                 w.setParent(None)
                 w.deleteLater()
-        reader = QImageReader(str(photo))
+        reader = QImageReader(str(paths.preview_of(photo)))
         size = reader.size()
         try:
             mb = photo.stat().st_size / 1024 / 1024
@@ -1139,6 +1166,9 @@ class VRPanel(QWidget):
                 btn.setObjectName(name)
                 btn.style().polish(btn)
 
+    def set_gal_filter(self, key: str):
+        self.gal_filter, self.gal_page = key, 0
+
     def bind_udp(self, tries: int = 0):
         """Port für Klicks aus VR. Hatte ihn gerade noch der ⚙ Hintergrund-Dienst
         (er gibt ihn ab, sobald die App offen ist) → kurz danach nochmal."""
@@ -1173,8 +1203,9 @@ class VRPanel(QWidget):
         except OSError:
             pose = (0, button_cm())
         layer_keys = ("panel_opacity", "panel_edit", "panel_anchor", "detect_mode", "shutter", "mode_button",
-                      "panel_button", "panel_open_on_shot", "panel_button_color", "photo_only")
-        return (str(photo), mtime, pose, tuple(lcfg.get(k) for k in layer_keys), p.tr_result,
+                      "panel_button", "panel_open_on_shot", "panel_button_color", "photo_only", "rec_video")
+        old = (layer_install.outdated(), self.old_open)
+        return (str(photo), mtime, pose, old, tuple(lcfg.get(k) for k in layer_keys), p.tr_result,
                 p.tr_status.text(), p.cfg.get("tr_method"),
                 p.cfg.get("tr_source"), p.cfg.get("tr_target"), p.cfg.get("tr_llm_mode"),
                 p.cfg.get("tr_explain_method"), p.cfg.get("tr_answer_method"),
@@ -1198,7 +1229,14 @@ class VRPanel(QWidget):
         live = getattr(p, "live_shown", False)
         photo = live_photo() if live else p.last_photo
         lines = getattr(p, "live_lines", []) if live else (translation.cached_lines(photo) if photo else [])
-        self.edit_help.setVisible(bool(layer_config.load().get("panel_edit")))
+        lcfg = layer_config.load()
+        self.edit_help.setVisible(bool(lcfg.get("panel_edit")))
+        self.rec_btn.setText(layer_config.rec_label(bool(lcfg.get("rec_video"))))
+        outdated = layer_install.outdated()
+        self.old_btn.setVisible(outdated)
+        self.old_note.setVisible(outdated and self.old_open)
+        if outdated:
+            self.old_note.setText(tr("layer_old_vr", old=layer_install.installed_version() or "?", new=VERSION))
         self.method_btn.setText(tr("tr_m_" + cfg["tr_method"]) + "  ▸")
         self.src_btn.setText(language_name(cfg.get("tr_source", ""), True) + "  ▸")
         self.dst_btn.setText(language_name(cfg["tr_target"], False) + "  ▸")
@@ -1428,6 +1466,14 @@ class VRPanel(QWidget):
     def toggle_layer(self, key: str):
         """An/aus-Schalter in layer.json (🔘 Knopf, Nach Foto öffnen) – Standard an."""
         layer_config.update(key, not bool(layer_config.load().get(key, True)))
+        self.page.layer_changed.emit()
+
+    def toggle_old_note(self):
+        self.old_open = not self.old_open
+
+    def toggle_rec(self):
+        """🎞 GIF ↔ 🎬 VID aus VR."""
+        layer_config.toggle_rec_video()
         self.page.layer_changed.emit()
 
     def opacity_changed(self, value: int):

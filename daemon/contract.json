@@ -311,6 +311,21 @@
    "en": "Image",
    "fr": "Image"
   },
+  "tag_gif_vid": {
+   "de": "GIF/VID",
+   "en": "GIF/VID",
+   "fr": "GIF/VID"
+  },
+  "filter_all": {
+   "de": "Alle",
+   "en": "All",
+   "fr": "Tout"
+  },
+  "layer_old_vr": {
+   "de": "⚠ Layer veraltet (v{old}, App v{new}) – bitte am PC neu bauen und installieren, dann das Spiel neu starten.",
+   "en": "⚠ Layer out of date (v{old}, app v{new}) – please rebuild and install on the PC, then restart the game.",
+   "fr": "⚠ Couche obsolète (v{old}, appli v{new}) – recompile et réinstalle sur le PC, puis relance le jeu."
+  },
   "vr_copied_image": {
    "de": "✔ Bild kopiert",
    "en": "✔ Image copied",

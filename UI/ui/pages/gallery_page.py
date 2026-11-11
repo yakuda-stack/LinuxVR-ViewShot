@@ -28,7 +28,7 @@ from PyQt6.QtWidgets import (QCheckBox, QDialog, QFileDialog, QFrame, QGridLayou
 
 from core import clipboard, config, gifshrink, paths, share, tags, uploader
 from core.i18n import month_title, tr
-from ui.widgets import open_path, page_title
+from ui.widgets import draw_play_badge, open_path, page_title
 
 THUMB_MIN, THUMB_MAX = 120, 400  # Bereich des Größen-Sliders (Pixel)
 TILE_BG = "#14161c"  # Hintergrund der Kachel (gleiche Farbe wie #photo)
@@ -37,7 +37,7 @@ TILE_BG = "#14161c"  # Hintergrund der Kachel (gleiche Farbe wie #photo)
 def thumbnail_image(path, thumb: int) -> QImage:
     """Foto verkleinert, MITTIG in einem festen Quadrat (thumb × thumb) – alle Kacheln
     gleich groß, egal ob hoch oder breit. Nur QImage → geht auch im Hintergrund-Thread."""
-    reader = QImageReader(str(path))
+    reader = QImageReader(str(paths.preview_of(path)))
     size = reader.size()
     if size.isValid():
         # gleich beim Laden verkleinern – viel schneller als erst groß laden
@@ -47,6 +47,8 @@ def thumbnail_image(path, thumb: int) -> QImage:
     tile.fill(QColor(TILE_BG))
     painter = QPainter(tile)
     painter.drawImage((thumb - image.width()) // 2, (thumb - image.height()) // 2, image)
+    if paths.is_video(path):
+        draw_play_badge(painter, thumb, thumb)
     painter.end()
     return tile
 
@@ -242,7 +244,7 @@ class PhotoView(QLabel):
             self._movie.start()
             self._full = self._movie.currentPixmap()
         else:
-            self._full = QPixmap(str(path)) if path else QPixmap()
+            self._full = QPixmap(str(paths.preview_of(path))) if path else QPixmap()
         self._rescale()
 
     def _gif_frame(self, _number: int):
@@ -265,7 +267,13 @@ class PhotoView(QLabel):
 
 
 def move_to_trash(path: Path) -> bool:
-    """In den Papierkorb. Erst Qt, sonst gio (GNOME) bzw. kioclient (KDE)."""
+    """In den Papierkorb. Erst Qt, sonst gio (GNOME) bzw. kioclient (KDE).
+    🎬 Video: das versteckte Vorschaubild kommt einfach weg."""
+    if paths.is_video(path):
+        try:
+            paths.preview_of(path).unlink(missing_ok=True)
+        except OSError:
+            pass
     ok, _trash_path = QFile.moveToTrash(str(path))  # PyQt6 gibt (bool, Pfad) zurück!
     if ok:
         return True
@@ -311,7 +319,7 @@ class InfoDialog(QDialog):
         layout.setContentsMargins(22, 20, 22, 18)
         layout.setSpacing(12)
 
-        size = QImageReader(str(photo)).size()
+        size = QImageReader(str(paths.preview_of(photo))).size()
         mb = photo.stat().st_size / 1024 / 1024
         taken = photo_taken(photo).strftime("%d.%m.%Y  %H:%M:%S")
         info = QLabel(
@@ -404,7 +412,7 @@ class GalleryPage(QWidget):
         # Bild-Erkennung im Hintergrund (gehört dem Hauptfenster, siehe core/tags.py)
         self.tagger = tagger
         self.info_dialog = None  # offenes Info-Fenster (für Live-Update der Tags)
-        self.tag_filter = None   # None = alle, sonst "text" / "qr" / "image"
+        self.tag_filter = None   # None = alle, sonst "text" / "qr" / "image" / "gif_vid"
         self.selecting = False   # Auswahl-Modus für Mehrfach-Löschen
         self.checked = set()     # angehakte Fotos (Pfade)
         if tagger is not None:
@@ -523,7 +531,8 @@ class GalleryPage(QWidget):
         for key, text in ((None, tr("filter_all")),
                           ("text", f"{tags.ICONS['text']}  {tr('tag_text')}"),
                           ("qr", f"{tags.ICONS['qr']}  {tr('tag_qr')}"),
-                          ("image", f"{tags.ICONS['image']}  {tr('tag_image')}")):
+                          ("image", f"{tags.ICONS['image']}  {tr('tag_image')}"),
+                          (tags.GIF_VID, f"{tags.ICONS[tags.GIF_VID]}  {tr('tag_gif_vid')}")):
             btn = QPushButton(text)
             btn.setObjectName("tabbtn")
             btn.setCheckable(True)
@@ -845,10 +854,7 @@ class GalleryPage(QWidget):
         if not self.selecting:
             self.checked.clear()
         self.photos = paths.gallery_photos(self.cfg, fresh=True)
-        if self.tag_filter is not None:
-            wanted = self.tag_filter
-            self.photos = [p for p in self.photos
-                           if wanted in (tags.get(p) or {}).get("tags", [])]
+        self.photos = tags.filter_photos(self.photos, self.tag_filter)
         self.rebuild_grid()
         # große Ansicht offen, aber Foto weg (gelöscht)? → zurück zum Raster
         if self.stack.currentIndex() == 1:
@@ -1091,10 +1097,10 @@ class GalleryPage(QWidget):
     def tile_text(photo: Path) -> str:
         """Name unter der Kachel, davor die Tag-Symbole (📝 🔳 🖼)."""
         name = photo.stem.removeprefix("ViewShot_")
-        entry = tags.get(photo)
-        if not entry:
+        found = tags.tags_of(photo, tags.get(photo))
+        if not found:
             return name
-        return " ".join(tags.ICONS[t] for t in entry["tags"]) + "  " + name
+        return " ".join(tags.ICONS[t] for t in found) + "  " + name
 
     def update_tile(self, photo: Path):
         item = self.items.get(photo)

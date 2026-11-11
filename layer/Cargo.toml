@@ -1,6 +1,6 @@
 [package]
 name = "linuxvr-viewshot-layer"
-version = "1.0.8"
+version = "1.0.9"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "OpenXR API layer: take photos in VR with a hand-frame gesture"
@@ -14,6 +14,9 @@ openxr-sys = "0.14"
 ash = "0.38"
 png = "0.18"
 gif = "0.13"
+openh264 = "0.9"
+mp4 = "0.14"
+bytes = "1"
 dirs = "7"
 chrono = "0.4"
 serde = { version = "1.0.229", features = ["derive"] }

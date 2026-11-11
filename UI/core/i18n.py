@@ -11,6 +11,7 @@ TEXTS = {
     "nav_main":        {"de": "Main",            "en": "Main"},
     "nav_gallery":     {"de": "Galerie",         "en": "Gallery"},
     "nav_options":     {"de": "Optionen",        "en": "Options"},
+    "nav_convert":     {"de": "Converter",       "en": "Converter"},
 
     # Main
     "status":          {"de": "Status",          "en": "Status"},
@@ -54,6 +55,17 @@ TEXTS = {
                               "und das Spiel neu starten.",
                         "en": "⚠ The layer is out of date (v{old}, app v{new}) – please press “{button}” "
                               "and restart the game."},
+    "layer_old_title": {"de": "Layer veraltet", "en": "Layer out of date"},
+    "layer_old_short": {"de": "Veraltet – bitte neu bauen und installieren (Layer v{old}, App v{new})",
+                        "en": "Out of date – please rebuild and install (layer v{old}, app v{new})"},
+    "layer_old_steps": {"de": "Die App ist neuer als der installierte Layer. Neue Funktionen (z. B. Video, "
+                              "Stabilisator) gehen erst, wenn du „{button}“ drückst und danach das VR-Spiel neu startest.",
+                        "en": "The app is newer than the installed layer. New features (e.g. video, stabilizer) "
+                              "only work after you press “{button}” and then restart the VR game."},
+    "layer_old_vr":    {"de": "⚠ Layer veraltet (v{old}, App v{new}) – bitte am PC neu bauen und installieren, "
+                              "dann das Spiel neu starten.",
+                        "en": "⚠ Layer out of date (v{old}, app v{new}) – please rebuild and install on the PC, "
+                              "then restart the game."},
     "app_update_tip":  {"de": "Neue Version v{v} verfügbar – zur Release-Seite",
                         "en": "New version v{v} available – open the release page"},
     "layer_update":    {"de": "Layer aktualisieren", "en": "Update layer"},
@@ -139,6 +151,7 @@ TEXTS = {
     "tag_text":        {"de": "Text",            "en": "Text"},
     "tag_qr":          {"de": "QR-Code",         "en": "QR code"},
     "tag_image":       {"de": "Bild",            "en": "Image"},
+    "tag_gif_vid":     {"de": "GIF/VID",         "en": "GIF/VID"},
     "tags_pending":    {"de": "Wird noch erkannt …", "en": "Still detecting …"},
     "tags_auto":       {"de": "Automatisch erkannt", "en": "Detected automatically"},
     "tags_manual":     {"de": "Von Hand geändert", "en": "Changed by hand"},
@@ -285,6 +298,8 @@ TEXTS = {
     "tr_m_llm_custom": {"de": "KI: eigener Befehl (z. B. Ollama)",
                         "en": "AI: custom command (e.g. Ollama)"},
     "tr_task":         {"de": "Aufgabe",         "en": "Task"},
+    "rec_mode_tip":    {"de": "Auslöser halten nimmt auf: 🎞 GIF oder 🎬 Video (MP4) – klicken zum Umschalten",
+                        "en": "Holding the trigger records: 🎞 GIF or 🎬 video (MP4) – click to switch"},
     "tr_last_ai":      {"de": "Letzte KI", "en": "Last AI"},
     "tr_mode_auto":    {"de": "🤖 Auto (Main-KI entscheidet)", "en": "🤖 Auto (main AI decides)"},
     "tr_step_classify": {"de": "{name} schaut, was es ist …", "en": "{name} checks what it is …"},
@@ -396,6 +411,18 @@ TEXTS = {
                               "centred."},
     "aspect_free":     {"de": "Frei",             "en": "Free"},
     "gif_card":        {"de": "GIF-Aufnahme",     "en": "GIF recording"},
+    "gif_stab":        {"de": "Stabilisator", "en": "Stabilizer"},
+    "gif_stab_off":    {"de": "Aus", "en": "Off"},
+    "gif_stab_smooth": {"de": "Glätten (folgt dem Kopf weich)", "en": "Smooth (follows your head gently)"},
+    "gif_stab_lock":   {"de": "Fest (Startposition)", "en": "Locked (start position)"},
+    "gif_pin_lock":    {"de": "Pin-Aufnahmen fest halten (Kopfdrehen/-neigen wird herausgerechnet)",
+                        "en": "Keep Pin recordings locked (turning/tilting your head is cancelled out)"},
+    "gif_stab_hint":   {"de": "Gegen Wackeln bei GIF und Video: Glätten nimmt das Zittern raus, Schwenks bleiben. "
+                               "Fest rechnet die Kopfbewegung heraus – das Bild bleibt, wo die Aufnahme begann. "
+                               "Läuft direkt bei der Aufnahme, kostet kaum Leistung.",
+                        "en": "Against shaking in GIFs and videos: Smooth removes the jitter but keeps pans. "
+                              "Locked cancels your head movement – the picture stays where the recording started. "
+                              "Runs while recording and costs hardly any performance."},
     "gif_hint":        {"de": "Auslöser im Rahmen gedrückt halten → GIF. Der Rahmen blinkt rot/weiß, "
                               "solange aufgenommen wird; loslassen beendet die Aufnahme. Kurz drücken bleibt "
                               "ein normales Foto. Mit 📌 Pin: der Rahmen bleibt fest in der Welt stehen, "
@@ -827,6 +854,56 @@ TEXTS = {
     "log_file":        {"de": "Layer-Log",       "en": "Layer log"},
     "open":            {"de": "Öffnen",          "en": "Open"},
     "about":           {"de": "Über",            "en": "About"},
+    # 🔄 Converter / Compression (ui/pages/converter_page.py)
+    "conv_title": {"de": "🔄  Converter / Compression", "en": "🔄  Converter / Compression"},
+    "conv_video_card": {"de": "🎬  Video → GIF", "en": "🎬  Video → GIF"},
+    "conv_pick_video": {"de": "📁  Video wählen …", "en": "📁  Choose video …"},
+    "conv_none": {"de": "Noch kein Video gewählt", "en": "No video chosen yet"},
+    "conv_fps": {"de": "Bilder/s", "en": "Frames/s"},
+    "conv_side": {"de": "Größe (längste Seite)", "en": "Size (longest side)"},
+    "conv_max": {"de": "Höchstens (ab Anfang)", "en": "At most (from the start)"},
+    "conv_shrink": {"de": "Danach komprimieren auf (Discord ohne Nitro: 10 MB):", "en": "Then compress to (Discord without Nitro: 10 MB):"},
+    "conv_start": {"de": "🔄  In GIF umwandeln", "en": "🔄  Convert to GIF"},
+    "conv_busy": {"de": "⏳  Wandle um …", "en": "⏳  Converting …"},
+    "conv_done": {"de": '✔ Fertig: {name} ({mb} MB) – liegt in der Galerie', "en": "✔ Done: {name} ({mb} MB) – it's in the gallery"},
+    "conv_failed": {"de": "Umwandeln fehlgeschlagen", "en": "Converting failed"},
+    "conv_no_ffmpeg": {"de": "ffmpeg fehlt – installieren mit:  sudo pacman -S ffmpeg", "en": "ffmpeg is missing – install it with:  sudo pacman -S ffmpeg"},
+    "conv_video_files": {"de": "Videos", "en": "Videos"},
+    "conv_gif_card": {"de": "🗜  GIF komprimieren", "en": "🗜  Compress GIF"},
+    "conv_pick_gifs": {"de": "📁  GIFs wählen …", "en": "📁  Choose GIFs …"},
+    "conv_no_gifs": {"de": "Noch keine GIFs gewählt", "en": "No GIFs chosen yet"},
+    "conv_gifs_chosen": {"de": "{n} GIF(s) gewählt", "en": "{n} GIF(s) chosen"},
+    "conv_target": {"de": "Zielgröße", "en": "Target size"},
+    "conv_backup": {"de": "Original vorher nach backup/ kopieren", "en": "Copy the original to backup/ first"},
+    "conv_compress_start": {"de": "🗜  Komprimieren", "en": "🗜  Compress"},
+    "conv_compress_busy": {"de": "⏳  Komprimiere {i}/{n} …", "en": "⏳  Compressing {i}/{n} …"},
+    "conv_compress_done": {"de": "✔ {n} GIF(s) fertig: {old} → {new} MB", "en": "✔ {n} GIF(s) done: {old} → {new} MB"},
+    "conv_already_small": {"de": "{n} war(en) schon klein genug", "en": "{n} already small enough"},
+    "conv_hint": {"de": "Fertige GIFs landen in gif_vid/convert/ und erscheinen gleich in der Galerie.", "en": "Finished GIFs go to gif_vid/convert/ and show up in the gallery right away."},
+    # 🗂 Foto-Ordner sortieren (ui/sort_dialog.py)
+    "sort_title": {"de": "🗂  Foto-Ordner sortieren", "en": "🗂  Sort photo folder"},
+    "sort_question": {"de": "Neu in dieser Version: Der Ordner LinuxVR-ViewShot bekommt Unterordner.\n\n"
+                            "📷  Fotos → picture/\n🎞  GIFs und Videos → gif_vid/\n🔄  Converter → gif_vid/convert/\n\n"
+                            "Gerade liegen {n} Dateien lose im Ordner. Soll ich sie einsortieren? Die Galerie zeigt "
+                            "alles wie gewohnt, Tags und Übersetzungen bleiben erhalten.\n\n"
+                            "Später geht es auch unter Optionen → Allgemein → Ordner & Dateien.",
+                      "en": "New in this version: the LinuxVR-ViewShot folder gets subfolders.\n\n"
+                            "📷  Photos → picture/\n🎞  GIFs and videos → gif_vid/\n🔄  Converter → gif_vid/convert/\n\n"
+                            "Right now {n} files are lying loose in the folder. Should I sort them? The gallery shows "
+                            "everything as usual, tags and translations are kept.\n\n"
+                            "You can also do it later in Options → General → Folders & files."},
+    "sort_now": {"de": "🗂  Jetzt sortieren", "en": "🗂  Sort now"},
+    "sort_later": {"de": "Später", "en": "Later"},
+    "sort_done": {"de": "✔ Sortiert: {p} Fotos → picture/, {g} GIFs/Videos → gif_vid/",
+                  "en": "✔ Sorted: {p} photos → picture/, {g} GIFs/videos → gif_vid/"},
+    "sort_skipped": {"de": "{n} Datei(en) blieben liegen (gleicher Name schon im Unterordner).",
+                     "en": "{n} file(s) stayed where they were (same name already in the subfolder)."},
+    "sort_nothing": {"de": "Nichts zu sortieren – alles liegt schon in picture/ und gif_vid/.",
+                     "en": "Nothing to sort – everything is already in picture/ and gif_vid/."},
+    "sort_btn": {"de": "🗂  Bilder sortieren", "en": "🗂  Sort pictures"},
+    "sort_hint": {"de": "Lose Dateien im Foto-Ordner einsortieren: Fotos → picture/, GIFs/Videos → gif_vid/.",
+                  "en": "Sort loose files in the photo folder: photos → picture/, GIFs/videos → gif_vid/."},
+    "conv_gif_files": {"de": "GIFs", "en": "GIFs"},
 }
 
 # Französisch steht in einer eigenen Datei (leichter zu prüfen) → hier einsortieren

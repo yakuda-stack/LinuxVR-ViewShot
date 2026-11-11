@@ -28,6 +28,10 @@ DEFAULTS = {
     "gif_hold": True,             # 🎞 Auslöser gedrückt halten = GIF aufnehmen (Foto dann beim Loslassen)
     "gif_max_s": 15,              # 🎞 längste GIF-Aufnahme in Sekunden (1–15)
     "gif_fps": 10,                # 🎞 Bilder pro Sekunde im GIF (5–15)
+    "rec_video": False,           # 🎬 Aufnahme als Video (MP4) statt GIF – Knopf GIF/VID
+    "video_fps": 24,              # 🎬 Bilder pro Sekunde im Video (10–30)
+    "gif_stabilize": "off",       # 🎯 GIF/Video ruhig halten, siehe STABILIZE
+    "pin_lock": True,             # 🎯 📌 Pin-Aufnahme entzerren: bleibt fest wie beim Start
     "live_interval_s": 3,         # 🔁 Lens: alle so viele Sekunden neu fotografieren + übersetzen
     "photo_only": False,          # 📷 Nur Foto/GIF: nichts übersetzen, auch nicht bei 🔁 Lens / 📌 Pin
     "overlay": False,             # 🥽 Übersetzung in VR über dem Original (overlay/overlay.png)
@@ -50,11 +54,28 @@ DAEMON_MODES = ("off", "all", "selected")
 COMBOS = ("left", "right", "both")
 ICON_POSITIONS = ("bottom_left", "bottom_right", "top_left", "top_right")
 ASPECTS = ("free", "1:1", "16:9")
+STABILIZE = ("off", "smooth", "lock")  # aus / Kopf weich folgen / an der Startposition fest
 
 
 def photo_only() -> bool:
     """📷 Nur Foto/GIF gewählt? Bleibt an, bis man selbst eine andere Aufgabe wählt."""
     return bool(load().get("photo_only"))
+
+
+def rec_video() -> bool:
+    """🎬 Aufnahme-Knopf steht auf VID (sonst GIF)?"""
+    return bool(load().get("rec_video"))
+
+
+def toggle_rec_video() -> bool:
+    """GIF ↔ VID umschalten, gibt den neuen Stand zurück."""
+    on = not rec_video()
+    update("rec_video", on)
+    return on
+
+
+def rec_label(video: bool) -> str:
+    return "🎬 VID" if video else "🎞 GIF"
 
 
 def update(key: str, value) -> dict:

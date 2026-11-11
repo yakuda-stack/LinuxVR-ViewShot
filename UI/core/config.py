@@ -8,6 +8,7 @@ Neue Einstellung? Einfach unten in DEFAULTS eintragen.
 import json
 
 from core.paths import CONFIG_DIR
+from core.convert import DEFAULTS as CONVERT_DEFAULTS
 from core.output import DEFAULTS as OUTPUT_DEFAULTS
 from core.translation import DEFAULTS as TRANSLATION_DEFAULTS
 
@@ -16,6 +17,7 @@ CONFIG_FILE = CONFIG_DIR / "ui.json"
 DEFAULTS = {
     "language": "de",   # "de", "en" oder "fr"
     "welcome_done": False,  # 👋 Willkommen-Fenster schon gezeigt (ui/welcome.py)
+    "folder_sort_asked": False,  # 🗂 „Foto-Ordner sortieren?“ schon gefragt (ui/sort_dialog.py)
     "thumb_size": 180,  # Kachelgröße in der Galerie (Pixel)
     "cleanup_qr": False,    # beim Beenden QR-Code-Fotos in den Papierkorb
     "cleanup_text": False,  # beim Beenden Text-Fotos in den Papierkorb
@@ -26,6 +28,7 @@ DEFAULTS = {
     "history": False,       # Main: Verlauf der Übersetzungen (Standard aus – spart Arbeit)
     **TRANSLATION_DEFAULTS,  # tr_… Einstellungen (Optionen → Übersetzung)
     **OUTPUT_DEFAULTS,       # out_… 📡 OSC / 📄 Textdatei (Optionen → Übersetzung → Ausgabe)
+    **CONVERT_DEFAULTS,      # conv_… 🔄 Converter (Video → GIF, 🗜 Komprimieren)
 }
 
 

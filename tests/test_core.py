@@ -1008,7 +1008,8 @@ def test_welcome_on_first_start(tmp_path, monkeypatch):
                                       [welcome.tr("welcome_install_now"), welcome.tr("welcome_later")],
                                       [welcome.tr("ok")]]
     assert installs == [1]
-    assert win.pages.currentIndex() == 2 and win.options_page.current_tab == welcome.TRANSLATION_TAB
+    assert win.pages.currentIndex() == win.page_order.index(win.options_page)
+    assert win.options_page.current_tab == welcome.TRANSLATION_TAB
     assert config.load()["welcome_done"] is True
     # schon installiert → Schritt 2 fällt weg; „Später“ installiert nichts
     shown.clear()
@@ -1300,3 +1301,73 @@ def test_gif_goes_to_clipboard_as_file_only(tmp_path):
     assert [u.toLocalFile() for u in mime.urls()] == [str(gif)]
     clipboard.set_image(gif.with_suffix(".png"))
     assert QApplication.clipboard().mimeData().hasImage()
+
+
+# ------------------------------------------------- 🔄 Converter
+def test_convert_command_and_target():
+    from core import convert
+    cmd = convert.command("ffmpeg", Path("/v/a.mp4"), Path("/o/.a.gif.part"), 12, 480, 15)
+    assert cmd[cmd.index("-t") + 1] == "15" and cmd.index("-t") < cmd.index("-i")
+    vf = cmd[cmd.index("-vf") + 1]
+    assert vf.startswith("fps=12,") and "min(480,iw)" in vf and "paletteuse" in vf
+    assert "-t" not in convert.command("ffmpeg", Path("a"), Path("b"), 10, 320, 0)
+    assert convert.target_bytes(10) == 9_500_000
+
+
+def test_convert_free_name(tmp_path):
+    from core import convert
+    assert convert.free_name(tmp_path, "clip", ".gif") == tmp_path / "clip.gif"
+    (tmp_path / "clip.gif").write_bytes(b"x")
+    assert convert.free_name(tmp_path, "clip", ".gif") == tmp_path / "clip_1.gif"
+
+
+def test_video_preview_path():
+    from core import paths
+    assert paths.is_video("/x/ViewShot_1.mp4") and not paths.is_video("/x/a.gif")
+    assert paths.preview_of("/x/ViewShot_1.mp4") == Path("/x/.ViewShot_1.mp4.png")
+    assert paths.preview_of("/x/a.png") == Path("/x/a.png")
+
+
+def test_rec_video_toggle():
+    from core import layer_config
+    assert layer_config.rec_video() is False
+    assert layer_config.toggle_rec_video() is True and layer_config.rec_video() is True
+    assert layer_config.rec_label(True).endswith("VID") and layer_config.rec_label(False).endswith("GIF")
+    layer_config.update("rec_video", False)
+
+
+def test_gallery_filter_gif_vid(tmp_path, monkeypatch):
+    from core import tags
+    monkeypatch.setattr(tags, "TAGS_FILE", tmp_path / "tags.json")
+    photos = [tmp_path / n for n in ("a.png", "b.gif", "c.mp4", "d.png")]
+    tags.set_tags(photos[0], ["text"], manual=True)
+    assert tags.filter_photos(photos, None) == photos
+    assert tags.filter_photos(photos, "gif_vid") == photos[1:3]
+    assert tags.filter_photos(photos, "text") == photos[:1]
+    assert tags.tags_of(photos[2]) == ["gif_vid"] and tags.tags_of(photos[3]) == []
+
+
+def test_sort_folder_moves_into_subfolders(tmp_path, monkeypatch):
+    """🗂 Fotos → picture/, GIFs/Videos (+ Vorschaubild) → gif_vid/, Rest bleibt."""
+    import os
+    monkeypatch.setenv("VIEWSHOT_OUTPUT_DIR", str(tmp_path))
+    from core import paths, sort_folder
+    for name in ("ViewShot_1.png", "a.jpg", "ViewShot_2.gif", "ViewShot_3.mp4", ".ViewShot_3.mp4.png",
+                 ".ViewShot_4.gif.part", "notes.txt"):
+        (tmp_path / name).write_bytes(b"x")
+    (tmp_path / "live").mkdir()
+    os.utime(tmp_path / "ViewShot_1.png", (1000, 1000))
+    (tmp_path / "picture").mkdir()
+    (tmp_path / "picture" / "a.jpg").write_bytes(b"old")  # gleicher Name → bleibt liegen
+    res = sort_folder.sort_now()
+    assert res == {"pictures": 1, "gif_vid": 2, "skipped": 1}
+    assert (tmp_path / "picture" / "ViewShot_1.png").stat().st_mtime == 1000
+    assert (tmp_path / "gif_vid" / "ViewShot_3.mp4").exists()
+    assert (tmp_path / "gif_vid" / ".ViewShot_3.mp4.png").exists()
+    assert sorted(p.name for p in tmp_path.iterdir() if p.is_file()) == [".ViewShot_4.gif.part", "a.jpg", "notes.txt"]
+    assert (tmp_path / "gif_vid" / "convert").is_dir()
+    # Galerie findet alles, nichts doppelt – auch mit „Unterordner“ an
+    found = paths.gallery_photos({"gallery_main_subfolders": True}, fresh=True)
+    assert sorted(p.name for p in found) == ["ViewShot_1.png", "ViewShot_2.gif", "ViewShot_3.mp4", "a.jpg", "a.jpg"]
+    assert [p.name for p in paths.list_photos()] == ["ViewShot_1.png"]
+    assert sort_folder.pending() == [(tmp_path / "a.jpg", tmp_path / "picture" / "a.jpg")]

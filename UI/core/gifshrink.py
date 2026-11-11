@@ -51,8 +51,8 @@ def make_backup(photo: Path) -> Path:
     return target
 
 
-def compress(photo: Path, keep_backup: bool) -> dict:
-    """GIF unter TARGET bringen. BLOCKIERT (bis zu ein paar Minuten) → nur im Thread!
+def compress(photo: Path, keep_backup: bool, target: int = TARGET) -> dict:
+    """GIF unter target (Bytes, Standard TARGET) bringen. BLOCKIERT (bis zu ein paar Minuten) → nur im Thread!
     → {"old", "new" (Bytes), "w", "h", "frames", "fps", "backup" (Pfad oder "")}"""
     tool = binary()
     if tool is None:
@@ -61,7 +61,7 @@ def compress(photo: Path, keep_backup: bool) -> dict:
     # Hilfsdatei ohne .gif-Endung → die Galerie zeigt sie nicht
     tmp = photo.with_name(f".{photo.name}.part")
     try:
-        run = subprocess.run([str(tool), "gif-shrink", str(photo), str(tmp), str(TARGET)],
+        run = subprocess.run([str(tool), "gif-shrink", str(photo), str(tmp), str(target)],
                              capture_output=True, text=True, timeout=TIMEOUT_S)
         if run.returncode != 0 or not tmp.is_file():
             lines = (run.stderr or "").strip().splitlines()

@@ -17,7 +17,7 @@ Neuer Tab? In build_tabs() eine Zeile ("Name", self.build_xyz()) ergänzen.
 import shutil
 import threading
 
-from PyQt6.QtCore import QUrl, Qt, pyqtSignal
+from PyQt6.QtCore import QSize, QUrl, Qt, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QGridLayout, QHBoxLayout, QLabel,
                              QLineEdit, QListWidget, QMessageBox, QPlainTextEdit, QPushButton, QRadioButton, QSlider,
@@ -31,7 +31,7 @@ from core import translators as T
 from core.custom_translator import LIBRE_EXAMPLE
 from core.i18n import tr
 from core.version import VERSION
-from ui.widgets import fill_methods, make_card, open_path, page_title, select_data
+from ui.widgets import LANGUAGES, fill_methods, flag_icon, make_card, open_path, page_title, select_data
 
 DISCORD_URL = "https://discord.gg/ShNKvvZu74"
 DONATE_URL = "https://ko-fi.com/yakuda_"
@@ -426,6 +426,24 @@ class OptionsPage(QWidget):
 
         value.setText(tr("live_seconds", s=slider.value()))
         slider.valueChanged.connect(max_changed)
+
+        # 🎯 Stabilisator: Aus / Glätten / Fest (Startposition) – 📌 Pin ist immer fest
+        row = QHBoxLayout()
+        row.addWidget(QLabel("🎯  " + tr("gif_stab")))
+        stab = QComboBox()
+        for mode in layer_config.STABILIZE:
+            stab.addItem(tr("gif_stab_" + mode), mode)
+        current = self.layer.get("gif_stabilize", layer_config.DEFAULTS["gif_stabilize"])
+        stab.setCurrentIndex(max(stab.findData(current), 0))
+        stab.currentIndexChanged.connect(lambda _: self.layer_set("gif_stabilize", stab.currentData()))
+        row.addWidget(stab)
+        row.addStretch()
+        box.addLayout(row)
+        box.addWidget(dim(tr("gif_stab_hint")))
+        pin = QCheckBox("📌  " + tr("gif_pin_lock"))
+        pin.setChecked(bool(self.layer.get("pin_lock", layer_config.DEFAULTS["pin_lock"])))
+        pin.toggled.connect(lambda checked: self.layer_set("pin_lock", checked))
+        box.addWidget(pin)
         box.addWidget(dim(tr("gif_note")))
         lay.addWidget(card)
 
@@ -804,16 +822,31 @@ class OptionsPage(QWidget):
     # ------------------------------------------------------------------
     def add_language_card(self, lay: QVBoxLayout):
         card, box = make_card(tr("language"))
-        self.lang = QComboBox()
-        self.lang.addItem("Deutsch", "de")   # sichtbarer Text, gespeicherter Wert
-        self.lang.addItem("English", "en")
-        self.lang.addItem("Français", "fr")
-        self.lang.setCurrentIndex(max(0, self.lang.findData(self.cfg["language"])))
-        self.lang.setFixedWidth(200)
-        # erst NACH dem Setzen verbinden, sonst feuert es schon beim Start
-        self.lang.currentIndexChanged.connect(lambda _: self.language_changed.emit(self.lang.currentData()))
-        box.addWidget(self.lang)
+        # 3 Knöpfe nebeneinander mit Flagge – der gewählte ist blau
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        self.lang_btns = {}
+        for code, name in LANGUAGES:
+            btn = QPushButton("  " + name)  # etwas Luft zur Flagge
+            btn.setObjectName("tabbtn")
+            btn.setCheckable(True)
+            btn.setChecked(code == self.cfg["language"])
+            btn.setIcon(flag_icon(code))
+            btn.setIconSize(QSize(30, 20))
+            btn.setMinimumSize(150, 44)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _, c=code: self.pick_language(c))
+            row.addWidget(btn)
+            self.lang_btns[code] = btn
+        row.addStretch()
+        box.addLayout(row)
         lay.addWidget(card)
+
+    def pick_language(self, code: str):
+        for c, btn in self.lang_btns.items():
+            btn.setChecked(c == code)  # nochmal auf den gewählten = bleibt gewählt
+        if code != self.cfg["language"]:
+            self.language_changed.emit(code)
 
     def add_cleanup_card(self, lay: QVBoxLayout):
         """Beim Beenden QR-/Text-Fotos löschen (Standard: aus)."""
@@ -859,7 +892,16 @@ class OptionsPage(QWidget):
             grid.addWidget(button(tr("open"), lambda _, p=path: open_path(p)), r, 2)
         grid.setColumnStretch(1, 1)
         box.addLayout(grid)
+        # 🗂 Foto-Ordner aufräumen: Fotos → picture/, GIFs/Videos → gif_vid/
+        row = QHBoxLayout()
+        row.addWidget(dim(tr("sort_hint")), 1)
+        row.addWidget(button(tr("sort_btn"), lambda: self.sort_folder()))
+        box.addLayout(row)
         lay.addWidget(card)
+
+    def sort_folder(self):
+        from ui import sort_dialog
+        sort_dialog.ask_and_sort(self)
 
     # ------------------------------------------------------------------
     # Tab: Übersetzung

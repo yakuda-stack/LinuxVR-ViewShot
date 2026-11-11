@@ -453,6 +453,16 @@ pub fn default_world(head: &xr::Posef) -> xr::Posef {
 
 // ─────────────────────── Bedienung ───────────────────────
 
+/// Hand, an der Panel/Knopf hängen: deren Laser zeigt immer aufs eigene Panel
+/// und würde die andere Hand blockieren → bekommt keinen Laser
+pub fn holding_hand(anchor: Anchor) -> Option<usize> {
+    match anchor {
+        Anchor::Left => Some(0),
+        Anchor::Right => Some(1),
+        Anchor::Head | Anchor::World => None,
+    }
+}
+
 /// Eingaben einer Hand in diesem Frame
 #[derive(Clone, Copy, Debug)]
 pub struct HandInput {
@@ -684,6 +694,14 @@ mod tests {
         assert_eq!(corner(0.95, 0.95), Some(Corner::BottomRight));
         assert_eq!(corner(0.05, 0.95), None);
         assert_eq!(corner(0.5, 0.95), None);
+    }
+
+    #[test]
+    fn holding_hand_gets_no_laser() {
+        assert_eq!(holding_hand(Anchor::Left), Some(0));
+        assert_eq!(holding_hand(Anchor::Right), Some(1));
+        assert_eq!(holding_hand(Anchor::Head), None);
+        assert_eq!(holding_hand(Anchor::World), None);
     }
 
     #[test]

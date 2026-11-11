@@ -118,7 +118,7 @@ fn file_uri(path: &Path) -> String {
 /// Bild kopieren (PNG; JPG wird umgewandelt – Discord & Co. wollen image/png).
 /// GIF als Datei: Über Bilddaten käme nur das erste Einzelbild an.
 pub fn copy_image(photo: &Path) -> bool {
-    if photo.extension().is_some_and(|e| e.eq_ignore_ascii_case("gif")) {
+    if photo.extension().is_some_and(|e| e.eq_ignore_ascii_case("gif")) || crate::paths::is_video(photo) {
         return copy(format!("{}\r\n", file_uri(photo)).as_bytes(), "text/uri-list");
     }
     let is_png = photo.extension().is_some_and(|e| e.eq_ignore_ascii_case("png"));
@@ -302,6 +302,32 @@ pub fn upload(photo: &Path) -> Result<(String, String), String> {
 }
 
 // ─────────────────────────── ⓘ Info ───────────────────────────
+
+/// 🎞 GIF oder Video? (Galerie-Filter „GIF/VID“ – kommt von der Dateiendung, wie tags.is_gif_vid)
+pub fn is_gif_vid(photo: &Path) -> bool {
+    photo.extension().is_some_and(|e| e.eq_ignore_ascii_case("gif") || e.eq_ignore_ascii_case("mp4"))
+}
+
+/// Galerie-Filter wie tags.filter_photos: "" = alle, "gif_vid" = GIFs/Videos,
+/// sonst Fotos mit diesem Tag in tags.json („text“ / „qr“ / „image“) – die Datei nur einmal lesen
+pub fn filter_gallery(list: Vec<crate::paths::GalleryPhoto>, key: &str) -> Vec<crate::paths::GalleryPhoto> {
+    match key {
+        "" => list,
+        "gif_vid" => list.into_iter().filter(|p| is_gif_vid(&p.path)).collect(),
+        tag => {
+            let data = std::fs::read_to_string(crate::paths::config_dir().join("tags.json"))
+                .ok()
+                .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+                .unwrap_or(Value::Null);
+            list.into_iter()
+                .filter(|p| {
+                    let name = p.path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                    data[name.as_str()]["tags"].as_array().is_some_and(|a| a.iter().any(|t| t.as_str() == Some(tag)))
+                })
+                .collect()
+        }
+    }
+}
 
 /// Typ-Tags aus tags.json („text“, „qr“, „image“) – wie core/tags.get
 pub fn photo_tags(photo: &Path) -> Vec<String> {

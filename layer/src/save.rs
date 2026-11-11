@@ -53,6 +53,16 @@ pub fn output_dir() -> PathBuf {
         .join("LinuxVR-ViewShot")
 }
 
+/// 🗂 Fotos landen in <Foto-Ordner>/picture/ (seit v1.0.9, wie paths.picture_dir)
+pub fn picture_dir() -> PathBuf {
+    output_dir().join("picture")
+}
+
+/// 🗂 GIFs und Videos landen in <Foto-Ordner>/gif_vid/
+pub fn gif_vid_dir() -> PathBuf {
+    output_dir().join("gif_vid")
+}
+
 /// `photo_type` (manueller Modus): landet als Text-Chunk "ViewShot-Type"
 /// im PNG ("image" / "text" / "qr") – die UI taggt das Foto dann direkt.
 /// Name fürs nächste Foto – vorher festgelegt, damit der Layer weiß, zu welchem
@@ -66,10 +76,15 @@ pub fn gif_name() -> String {
     chrono::Local::now().format("ViewShot_%Y-%m-%d_%H-%M-%S%.3f.gif").to_string()
 }
 
+/// 🎬 Name fürs nächste Video (gleiches Schema)
+pub fn video_name() -> String {
+    chrono::Local::now().format("ViewShot_%Y-%m-%d_%H-%M-%S%.3f.mp4").to_string()
+}
+
 pub fn save_png_async(name: String, raw: Vec<u8>, format: i64, w: u32, h: u32, photo_type: Option<&'static str>) {
     std::thread::spawn(move || {
         let rgb = to_rgb(&raw, format);
-        let dir = output_dir();
+        let dir = picture_dir();
         if let Err(e) = std::fs::create_dir_all(&dir) {
             crate::log!("Ordner {} kann nicht angelegt werden: {e}", dir.display());
             return;

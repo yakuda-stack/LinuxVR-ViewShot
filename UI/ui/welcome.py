@@ -51,7 +51,7 @@ def run(window) -> None:
     ask(window, tr("welcome_title"), tr("welcome_3"), [tr("ok")])
     window.cfg["welcome_done"] = True
     config.save(window.cfg)
-    window.switch_page(2)                      # Optionen …
+    window.switch_page(window.page_order.index(window.options_page))  # Optionen …
     window.options_page.show_tab(TRANSLATION_TAB)  # … → Übersetzung
 
 

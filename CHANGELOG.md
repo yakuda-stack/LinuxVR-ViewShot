@@ -1,6 +1,30 @@
 # Changelog
 
 
+## [v1.0.9] – 2026-11-11
+- **🎯 Laser fix with the panel on a controller** – when the VR panel hangs on the right (or left) controller, the other hand's laser works again. The hand that holds the panel no longer gets a laser, so it can't block the other one
+- **🎬 Video recording (MP4)** – new button **🎞 GIF / 🎬 VID** next to *Translation* (main page) and at the top of the VR panel. On VID, holding the shutter records an MP4 instead of a GIF (H.264, up to 1280 px, 24 fps, ~3 Mbit/s → about 6 MB for 15 s, fine for Discord). Works with 📌 Pin too
+  - Encoded inside the layer (OpenH264, no ffmpeg) – also works when the game runs in the Steam container
+  - Videos show up in the desktop and VR gallery with a ▶ preview; 📋 copy hands them over as a file
+  - If the encoder can't keep up, single frames are skipped instead of eating memory (the length stays right)
+  - **Needs a layer + service rebuild**
+- **🔄 Converter / Compression (new page)** – in the desktop app between *Gallery* and *Options*
+  - **🎬 Video → GIF:** pick any video (mp4, mkv, webm, mov, avi), set frames/s (8–20), size (320–800 px longest side) and max. length; optionally compressed right after to 10 / 8 / 5 MB (Discord). Uses `ffmpeg` with its own colour palette per GIF; the GIF lands in the photo folder → gallery
+  - **🗜 Compress GIF:** one or more GIFs at once to a target size (10 / 8 / 5 MB), optionally with backup. GIFs that are already small enough are skipped
+- **🎯 Stabilizer for GIF + video** – *Options → Shot → GIF recording → Stabilizer*: **Off** (as before) / **Smooth** (follows your head gently, no jitter, pans stay) / **Locked** (head movement is cancelled out, the picture stays where the recording started)
+  - Runs live while recording (no extra step afterwards), each frame is straightened in perspective – also against head tilt
+  - **📌 Pin GIFs/videos no longer sway** when you turn your head: they used the box around the slanted frame before (stretched differently every frame), now every frame is straightened back to the start view. On by default, can be switched off in *GIF recording* (*Keep Pin recordings locked*)
+- **🎞 GIF/VID filter in both galleries** – desktop: new filter button next to All / Text / QR code / Image; VR panel (app and background service): new filter row *All · 📝 · 🔳 · 🖼 · 🎞 GIF/VID*. Every GIF and video counts as 🎞 automatically (by file type, also old ones) and shows 🎞 on its tile
+- **🗂 Sorted photo folder** – inside `LinuxVR-ViewShot/`: photos → `picture/`, GIFs + videos → `gif_vid/`, Converter results → `gif_vid/convert/`
+  - The layer saves straight into the new folders; desktop + VR galleries (app and service) show them automatically, also without *subfolders*
+  - On the first start of this version a popup offers **once** to sort the old loose files (name and date stay the same → tags, translations and gallery order are kept). Afterwards only via *Options → General → Folders & files → 🗂 Sort pictures*
+  - Files with a name that already exists in the target folder are left alone (nothing is overwritten); `live/`, `panel/`, `desktop/` … stay as they are
+  - **Needs a layer + service rebuild** (an old layer still saves into the main folder – that keeps working)
+- **🟠 Layer out-of-date warning** – when the installed layer version doesn't match the app: orange **!** next to *Layer is installed* on the main page (tooltip + click explains: rebuild & install, then restart the game); in VR an orange **i** at the top of the panel, tap it to show the hint. The background service checks its own version against the installed layer the same way
+- **🌍 Language buttons** – *Options → General → Language*: three buttons side by side with a small flag (Deutsch · English · Français) instead of the dropdown; the chosen one is blue
+  - **Needs a layer rebuild**
+
+
 ## [v1.0.8] – 2026-11-03
 - ** Appimage Fix (permissions)
 

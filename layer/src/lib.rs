@@ -21,6 +21,7 @@ mod dispatch;
 mod frame;
 mod gesture;
 mod gifrec;
+mod vidrec;
 mod icons;
 #[macro_use]
 mod log;
@@ -159,6 +160,10 @@ struct GifRec {
     world: Option<WorldFrame>,
     started: Instant,
     next: Instant,
+    /// Takt beim Start festgelegt (GIF oder 🎬 Video)
+    interval: Duration,
+    /// 🎯 Stabilisator (nur ohne 📌 Pin): gedachter Rahmen in der Welt + weich folgen?
+    stab: Option<(WorldFrame, bool)>,
     rec: gifrec::Recorder,
 }
 
@@ -1729,8 +1734,9 @@ unsafe fn build_panel_quads(nx: &Next, session: xr::Session, info: &xr::FrameEnd
 
     // Bedienung: wer gerade verschoben/vergrößert wird oder getroffen ist, bekommt die Hände
     let a = s.actions.as_ref().expect("oben geprüft");
+    let held = panel::holding_hand(cfg.panel_anchor);
     let hands: [panel::HandInput; 2] = std::array::from_fn(|i| panel::HandInput {
-        aim: locate_pose(nx, s.aim_spaces[i], proj.space, time),
+        aim: if held == Some(i) { None } else { locate_pose(nx, s.aim_spaces[i], proj.space, time) },
         trigger: get_float(nx, session, a.trigger, a.hands[i]),
         grip: get_float(nx, session, a.grip, a.hands[i]),
     });
@@ -2231,6 +2237,9 @@ unsafe fn grab(s: &mut SessionData, view: &xr::CompositionLayerProjectionView, r
     vk.copy_region(ash::vk::Image::from_raw(image), sub.image_array_index, (rect.x, rect.y, rect.w as u32, rect.h as u32))
 }
 
+/// 🎯 Stabilisator „Glätten“: so schnell (Zeitkonstante in s) folgt der gedachte Rahmen dem Kopf
+const SMOOTH_S: f32 = 0.4;
+
 /// 🎞 GIF: beim Start den Ausschnitt festlegen, danach im Takt (gif_fps) Bilder kopieren.
 unsafe fn try_gif(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) {
     let mut g = state();
@@ -2265,41 +2274,67 @@ unsafe fn try_gif(nx: &Next, session: xr::Session, info: &xr::FrameEndInfo) {
             log!("GIF: Swapchain unbekannt");
             return;
         };
-        let rec = gifrec::Recorder::start(save::gif_name(), format, rect.w as u32, rect.h as u32, cfg.gif_interval());
+        let video = cfg.rec_video;
+        let interval = cfg.rec_interval();
+        let name = if video { save::video_name() } else { save::gif_name() };
+        let rec = gifrec::Recorder::start(name, format, rect.w as u32, rect.h as u32, interval, video);
         // 📌 Pin: Rahmen bleibt so in der Welt stehen, wie er beim Start gesehen wurde
-        let world = s.gif_pin.then_some(WorldFrame { eye, fov: view.fov, img, rect, depth, space: proj.space });
-        s.gif = Some(GifRec { img, rect, depth, world, started: now, next: now, rec });
-        log!("GIF{}: Aufnahme gestartet, Ausschnitt {rect:?}, höchstens {:?}", if world.is_some() { " (Pin)" } else { "" }, cfg.gif_max());
+        let here = WorldFrame { eye, fov: view.fov, img, rect, depth, space: proj.space };
+        let world = s.gif_pin.then_some(here);
+        // 🎯 Stabilisator: wie Pin, nur ohne Pin-Verhalten (Ende beim Loslassen)
+        let stab = match cfg.gif_stabilize {
+            _ if world.is_some() => None,
+            config::Stabilize::Off => None,
+            config::Stabilize::Smooth => Some((here, true)),
+            config::Stabilize::Lock => Some((here, false)),
+        };
+        s.gif = Some(GifRec { img, rect, depth, world, started: now, next: now, interval, stab, rec });
+        log!("{}{}: Aufnahme gestartet, Ausschnitt {rect:?}, höchstens {:?}", if video { "Video" } else { "GIF" }, if world.is_some() { " (Pin)" } else { "" }, cfg.gif_max());
     }
-    let Some((rect0, world)) = s.gif.as_ref().map(|r| (r.rect, r.world)) else { return };
+    let Some((rect0, world, interval)) = s.gif.as_ref().map(|r| (r.rect, r.world, r.interval)) else { return };
     if s.gif.as_ref().is_some_and(|r| r.img != img) {
         log!("GIF: Bildgröße hat sich geändert – Aufnahme beendet");
         stop_gif(&mut s.gif, &mut s.gif_start);
         return;
     }
-    // 📌 Pin-GIF: Ausschnitt = wo der Rahmen in der Welt GERADE im Bild ist.
-    // Schaut man nicht hinein → dieses Bild auslassen, gleich nochmal nachsehen.
-    let rect = match world {
+    // 📌 Pin / 🎯 Stabilisator: Ausschnitt = wo der Rahmen in der Welt GERADE im Bild ist,
+    // plus seine 4 Ecken → der Thread entzerrt das Bild (kein Schwanken beim Kopfdrehen).
+    // 🎯 Glätten: der gedachte Rahmen folgt dem Kopf weich (≈ 0,4 s Verzögerung).
+    if let Some((w, true)) = s.gif.as_mut().and_then(|g| g.stab.as_mut()) {
+        let t = 1.0 - (-interval.as_secs_f32() / SMOOTH_S).exp();
+        w.eye = frame::smooth_pose(&w.eye, &eye, t);
+    }
+    let anchor = world.or_else(|| s.gif.as_ref().and_then(|g| g.stab.map(|(w, _)| w)));
+    let (rect, quad) = match anchor {
         Some(w) => {
-            let r = (w.space == proj.space)
-                .then(|| frame::world_rect(&w.eye, &w.fov, w.img, w.rect, w.depth, &eye, &view.fov, img))
+            let found = (w.space == proj.space)
+                .then(|| {
+                    let r = frame::world_rect(&w.eye, &w.fov, w.img, w.rect, w.depth, &eye, &view.fov, img)?;
+                    let q = frame::world_quad(&w.eye, &w.fov, w.img, w.rect, w.depth, &eye, &view.fov, img)?;
+                    Some((r, q.map(|[x, y]| [x - r.x as f32, y - r.y as f32])))
+                })
                 .flatten();
-            let Some(r) = r else {
-                if let Some(g) = s.gif.as_mut() {
-                    g.next = now + Duration::from_millis(100);
+            match found {
+                // 📌 Pin ohne Entzerren (Optionen → GIF-Aufnahme): nur der Ausschnitt wandert mit
+                Some((r, _)) if world.is_some() && !cfg.pin_lock => (r, None),
+                Some((r, q)) => (r, Some(q)),
+                // Schaut man nicht hinein → dieses Bild auslassen, gleich nochmal nachsehen
+                None => {
+                    if let Some(g) = s.gif.as_mut() {
+                        g.next = now + Duration::from_millis(100);
+                    }
+                    return;
                 }
-                return;
-            };
-            r
+            }
         }
-        None => rect0,
+        None => (rect0, None),
     };
     match grab(s, view, rect) {
         Ok(raw) => {
             if let Some(r) = s.gif.as_mut() {
                 // Größe kann sich beim Pin ändern – der GIF-Thread bringt jedes Bild auf die Startgröße
-                r.rec.push(raw, rect.w as u32, rect.h as u32, now);
-                r.next = now + cfg.gif_interval();
+                r.rec.push(raw, rect.w as u32, rect.h as u32, now, quad);
+                r.next = now + r.interval;
             }
         }
         Err(e) => {
