@@ -26,9 +26,6 @@ const BYE_EXIT: Duration = Duration::from_secs(15);
 const TICK: Duration = Duration::from_millis(50);
 const CHECK: Duration = Duration::from_millis(500);
 const STALE_MIN_S: f64 = 10.0;
-/// ⚙ Einstellungen gleiten in so vielen Bildern herein, je SLIDE_MS (der Layer schaut alle 80 ms)
-const SLIDE_STEPS: usize = 4;
-const SLIDE_MS: Duration = Duration::from_millis(80);
 
 enum Job {
     /// Foto lesen + übersetzen. translate=false: nur Cache zeigen (tr_auto aus)
@@ -264,8 +261,11 @@ struct State {
     panel_size: (u32, u32),
     last_view: Option<View>,
     photo_cache: Option<PhotoCache>,
-    sheet_open: bool,
-    /// Hauptseite im Panel: Übersetzung / Galerie (◀ ▶ am Rand)
+    /// ⚙ Einstellungs-Seite: Tab "shot" / "vr", aufgeklappte Gruppe, 🪟 Größe für welche Seite
+    set_tab: String,
+    set_open: Option<String>,
+    size_page: Page,
+    /// Hauptseite im Panel: Übersetzung / Galerie / ⚙ Einstellungen (◀ ▶ am Rand)
     page: Page,
     gal_page: usize,
     /// Galerie: Foto in der Einzelansicht
@@ -296,8 +296,6 @@ struct State {
     result_page: usize,
     pages: usize,
     paged_result: String,
-    slide: Vec<crate::render::Canvas>,
-    slide_next: Instant,
     pose_mtime: Option<SystemTime>,
     next_id: u64,
     jobs: Sender<Job>,
@@ -728,17 +726,13 @@ impl State {
             }),
             route: (self.choosing == Some(Choice::Method) && llm::is_llm(&self.cfg.s("tr_method")))
                 .then(|| trn::route_mode(&self.cfg).to_string()),
-            sheet: self.sheet_open.then(|| panel::Sheet {
-                width_cm: panel::width_cm(),
-                anchor: self.lcfg.s("panel_anchor"),
-                detect: self.lcfg.s("detect_mode"),
-                shutter: self.lcfg.s("shutter"),
-                mode_button: self.lcfg.s("mode_button"),
-                button: self.lcfg.b("panel_button"),
-                open_on_shot: self.lcfg.b("panel_open_on_shot"),
+            settings: (self.page == Page::Settings).then(|| panel::SettingsView {
+                tab: self.set_tab.clone(),
+                open: self.set_open.clone(),
+                layer: self.lcfg.0.clone(),
+                size_page: self.size_page,
+                size_cm: panel::page_width_cm(self.size_page),
                 button_cm: panel::button_cm(),
-                color: self.lcfg.s("panel_button_color"),
-                page_name: self.t(if self.page == Page::Gallery { "nav_gallery" } else { "vr_page_translate" }, &[]),
             }),
             result_page: self.result_page,
             fixed_height: panel::fixed_height(),
@@ -835,6 +829,7 @@ impl State {
     fn switch_page(&mut self, new: Page) {
         let old = self.page;
         self.page = new;
+        self.choosing = None;
         self.gal_open = None;
         self.gal_confirm = false;
         self.gal_sub = None;
@@ -866,7 +861,7 @@ impl State {
 
     /// 🎞 GIF groß in der VR-Galerie → nächstes Bild ins Panel (nur wenn das Panel offen ist)
     fn tick_gif(&mut self) {
-        let shown = (self.page == Page::Gallery && !self.sheet_open && self.gal_sub.is_none())
+        let shown = (self.page == Page::Gallery && self.gal_sub.is_none())
             .then(|| self.gal_open.clone())
             .flatten()
             .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("gif")));
@@ -927,9 +922,6 @@ impl State {
             self.last_view = None;
             return;
         }
-        if !self.slide.is_empty() {
-            return; // ⚙ klappt gerade auf/zu
-        }
         if self.result != self.paged_result {
             self.paged_result = self.result.clone(); // neue Übersetzung → erste Seite
             self.result_page = 0;
@@ -984,47 +976,7 @@ impl State {
         Some(canvas)
     }
 
-    /// ⚙ Einstellungen gleiten wie beim Handy von oben herein (bzw. wieder hoch)
-    fn toggle_sheet(&mut self) {
-        let opening = !self.sheet_open;
-        let v = self.view();
-        let Some(before) = self.render_view(&v) else { return };
-        self.sheet_open = opening;
-        self.choosing = None;
-        let v = self.view();
-        let Some(after) = self.render_view(&v) else { return };
-        let (sheet, base) = if opening { (&after, &before) } else { (&before, &after) };
-        let (w, h) = (after.pix.width(), after.pix.height());
-        let mut frames = Vec::new();
-        for k in 1..SLIDE_STEPS {
-            let t = k as f32 / SLIDE_STEPS as f32;
-            let shown = if opening { t } else { 1.0 - t };
-            let Some(mut frame) = crate::render::Canvas::new(w, h) else { continue };
-            frame.pix.fill(crate::render::rgba(panel::BG, 255));
-            frame.draw(base, 0, 0);
-            frame.draw(sheet, 0, (-(1.0 - shown) * sheet.pix.height() as f32).round() as i32);
-            frames.push(frame);
-        }
-        frames.push(after);
-        self.slide = frames;
-        self.slide_next = Instant::now();
-        self.last_view = Some(v);
-        self.next_slide();
-    }
-
-    fn next_slide(&mut self) {
-        if self.slide.is_empty() {
-            return;
-        }
-        let frame = self.slide.remove(0);
-        let _ = frame.save(&paths::panel_file(), &[]);
-        self.slide_next = Instant::now();
-    }
-
     fn click(&mut self, u: f32, v: f32) {
-        if !self.slide.is_empty() {
-            return; // ⚙ klappt gerade auf/zu
-        }
         let Some((action, frac)) = panel::hit(&self.hits, self.panel_size, u, v) else {
             log::line(&format!("Klick {u:.3} {v:.3} trifft nichts ({} Flächen, {:?})", self.hits.len(), self.panel_size));
             return;
@@ -1033,9 +985,23 @@ impl State {
             let _ = settings::update_file(&settings::layer_file(), changes);
         };
         match action {
-            Action::Sheet => {
-                self.toggle_sheet();
-                return;
+            Action::Settings => {
+                if self.page != Page::Settings {
+                    self.switch_page(Page::Settings);
+                }
+            }
+            Action::SetTab(tab) => {
+                if tab != self.set_tab {
+                    self.set_tab = tab;
+                    self.set_open = None;
+                }
+            }
+            Action::Group(g) => self.set_open = if self.set_open.as_deref() == Some(g.as_str()) { None } else { Some(g) },
+            Action::SizePage(p) => self.size_page = Page::from_key(&p),
+            Action::ListRemove(key, name) => {
+                let list: Vec<Value> = self.lcfg.0.get(&key).and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                let kept: Vec<Value> = list.into_iter().filter(|e| e.as_str() != Some(name.as_str())).collect();
+                layer(&[(key.as_str(), Value::Array(kept))]);
             }
             Action::OldNote => self.old_open = !self.old_open,
             Action::Move => layer(&[("panel_edit", Value::Bool(!self.lcfg.b("panel_edit")))]),
@@ -1044,18 +1010,21 @@ impl State {
                 let _ = std::fs::remove_file(paths::panel_pose_file());
                 let _ = std::fs::remove_file(paths::button_pose_file());
             }
-            Action::Toggle(key) => layer(&[(key, Value::Bool(!self.lcfg.b(key)))]),
-            Action::Bar(panel::Bar::Button) => {
-                let (lo, hi) = panel::BUTTON_CM;
-                panel::set_button_cm(lo + (frac * (hi - lo) as f32).round() as i32);
-            }
-            Action::Bar(panel::Bar::Size) => {
+            Action::Toggle(key) => layer(&[(key.as_str(), Value::Bool(!self.lcfg.b(&key)))]),
+            Action::Slider(key) if key == "@size" => {
                 let (lo, hi) = panel::SIZE_CM;
-                panel::set_width_cm(lo + (frac * (hi - lo) as f32).round() as i32);
+                panel::set_page_width_cm(self.size_page, lo + (frac * (hi - lo) as f32).round() as i32);
             }
-            Action::Bar(panel::Bar::Opacity) => {
-                let pct = ((30.0 + frac * 70.0) / 10.0).round() as i64 * 10;
-                layer(&[("panel_opacity", Value::from(pct.clamp(30, 100)))]);
+            Action::Slider(key) => {
+                // Grenzen + Schrittweite aus der Einstellungs-Liste (UI/core/vr_settings.py)
+                let Some(item) = panel::spec_item(&key) else { return };
+                let (lo, hi) = (item["min"].as_i64().unwrap_or(0) as f32, item["max"].as_i64().unwrap_or(100) as f32);
+                let value = panel::snap(item, lo + frac * (hi - lo));
+                if key == "@button_cm" {
+                    panel::set_button_cm(value as i32);
+                } else {
+                    layer(&[(key.as_str(), Value::from(value))]);
+                }
             }
             Action::Anchor(a) => {
                 if self.lcfg.s("panel_anchor") != a {
@@ -1066,8 +1035,8 @@ impl State {
             }
             Action::Layer(key, value) => {
                 // Auslöser und Typ-Taste nie gleich → die andere ausweichen lassen (wie layer_config.update)
-                let mut changes = vec![(key, Value::from(value.clone()))];
-                let other = match key {
+                let mut changes = vec![(key.as_str(), Value::from(value.clone()))];
+                let other = match key.as_str() {
                     "shutter" => Some("mode_button"),
                     "mode_button" => Some("shutter"),
                     _ => None,
@@ -1301,7 +1270,9 @@ pub fn run(stay: bool) {
         panel_size: (1, 1),
         last_view: None,
         photo_cache: None,
-        sheet_open: false,
+        set_tab: "shot".into(),
+        set_open: None,
+        size_page: Page::Translate,
         page: panel::current_page(),
         gal_page: 0,
         gal_open: None,
@@ -1322,8 +1293,6 @@ pub fn run(stay: bool) {
         result_page: 0,
         pages: 1,
         paged_result: String::new(),
-        slide: Vec::new(),
-        slide_next: Instant::now(),
         pose_mtime: None,
         next_id: 0,
         jobs: job_tx,
@@ -1397,16 +1366,11 @@ pub fn run(stay: bool) {
             std::thread::sleep(TICK);
             continue;
         }
-        if !st.slide.is_empty() && st.slide_next.elapsed() >= SLIDE_MS {
-            st.next_slide();
-        }
         while let Ok(msg) = msg_rx.try_recv() {
             st.on_msg(msg);
             st.redraw(false);
         }
-        if st.slide.is_empty() {
-            st.tick_gif(); // 🎞 GIF in der VR-Galerie animiert
-        }
+        st.tick_gif(); // 🎞 GIF in der VR-Galerie animiert
         if let Some((_, sock)) = &panel_sock {
             let mut clicks = Vec::new();
             while let Ok((n, _)) = sock.recv_from(&mut buf) {

@@ -25,6 +25,11 @@ pub fn tr(lang: &str, key: &str, args: &[(&str, &str)]) -> String {
     s
 }
 
+/// ⚙ Einstellungs-Seite im VR-Panel (UI/core/vr_settings.py): {"tabs": […], "size_pages": […]}
+pub fn vr_settings() -> &'static Value {
+    &contract()["vr_settings"]
+}
+
 /// (Code, Deutsch, Englisch) – erster Eintrag = „Automatisch erkennen“ (Code "")
 pub fn languages() -> Vec<(String, String, String)> {
     contract()["languages"]

@@ -5,9 +5,10 @@
 //! Seiten: Übersetzung (lang → ▼ / ▲ blättern) · 🖼 Galerie (Raster über die ganze Fläche,
 //! Monats-Trenner, Antippen = Foto groß mit 📋 Kopieren · ☁ Hochladen + Link · ↗ Teilen ·
 //! 🌐 Übersetzen · ⓘ Info · 🗑 Löschen) · Auswahl-Liste (Dienst + Modus 🤖/✋, Von, Nach,
-//! Aufgabe) · ⚙ Einstellungen (klappt von oben herunter): Größe, Deckkraft, Hängt an,
-//! ✥ Verschieben, ⟲ Position, Erkennung & Tasten. Ganz unten: ◀ links, ▶ rechts = Seite
-//! wechseln (jede Seite hat ihre eigene Größe in VR, panel_sizes.json).
+//! Aufgabe) · ⚙ Einstellungen (eigene Seite): Tabs 📸 Shot | 🥽 VR mit einklappbaren Gruppen –
+//! was drinsteht, kommt aus UI/core/vr_settings.py (über contract.json, „vr_settings“).
+//! Ganz unten: ◀ links, ▶ rechts = Seite wechseln (jede Seite hat ihre eigene Größe in VR,
+//! panel_sizes.json).
 
 use crate::i18n::tr;
 use crate::ocr::Line;
@@ -43,9 +44,11 @@ const THUMB_RATIO: f32 = 0.75;
 const MONTH_H: f32 = 34.0;
 /// Galerie ohne von Hand gezogene Höhe: so hoch wird das Panel
 pub const GALLERY_H: f32 = 760.0;
+/// ⚙ Einstellungen: Gruppen-Kopf (▸ / ▾)
+const GROUP_H: f32 = 52.0;
 const SINGLE_MAX_H: f32 = 360.0;
 /// Breite in VR (m) je Seite, wenn noch keine gemerkt ist (Galerie größer)
-pub const PAGE_SIZE_DEFAULT: [(&str, f64); 2] = [("translate", 0.32), ("gallery", 0.48)];
+pub const PAGE_SIZE_DEFAULT: [(&str, f64); 3] = [("translate", 0.32), ("gallery", 0.48), ("settings", 0.40)];
 const NUMBERS: &str = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳";
 
 const TEXT: u32 = 0xd7dbe2;
@@ -65,18 +68,10 @@ pub enum Choice {
     Mode,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Bar {
-    Size,
-    Opacity,
-    /// 🔘 Knopf-Größe
-    Button,
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
-    /// ⚙ Einstellungen auf-/zuklappen
-    Sheet,
+    /// ⚙ oben: zur Einstellungs-Seite
+    Settings,
     /// 🟠 i: Hinweis „Layer veraltet“ auf-/zuklappen
     OldNote,
     Reset,
@@ -84,15 +79,24 @@ pub enum Action {
     Redo,
     Back,
     Pick(Choice, String),
-    /// Schieber: Wert aus der Klick-Position (0..1)
-    Bar(Bar),
+    /// Schieber: Wert aus der Klick-Position (0..1) – layer.json-Schlüssel,
+    /// "@size" = 🪟 Größe der gewählten Seite, "@button_cm" = 🔘 Knopf-Größe
+    Slider(String),
     Anchor(String),
     /// ✥ Verschieben (Grip) an/aus
     Move,
-    /// layer.json-Wert (detect_mode / shutter / mode_button / panel_button_color)
-    Layer(&'static str, String),
-    /// layer.json an/aus (panel_button / panel_open_on_shot)
-    Toggle(&'static str),
+    /// layer.json-Wert (detect_mode / shutter / aspect / panel_button_color …)
+    Layer(String, String),
+    /// layer.json an/aus (panel_button / gif_hold / rec_video …)
+    Toggle(String),
+    /// ⚙ Tab 📸 Shot / 🥽 VR
+    SetTab(String),
+    /// ⚙ Gruppe auf-/zuklappen
+    Group(String),
+    /// 🪟 Größe: für welche Seite
+    SizePage(String),
+    /// 🚫 Liste: (Schlüssel, Eintrag) entfernen
+    ListRemove(String, String),
     Route(String),
     Page(i32),
     /// ◀ ▶ ganz unten: Seite wechseln (Übersetzung ↔ Galerie)
@@ -130,9 +134,10 @@ pub enum Page {
     #[default]
     Translate,
     Gallery,
+    Settings,
 }
 
-pub const PAGES: [Page; 2] = [Page::Translate, Page::Gallery];
+pub const PAGES: [Page; 3] = [Page::Translate, Page::Gallery, Page::Settings];
 
 impl Page {
     /// Nächste Seite (step = ±1, im Kreis)
@@ -146,6 +151,7 @@ impl Page {
         match self {
             Page::Translate => "translate",
             Page::Gallery => "gallery",
+            Page::Settings => "settings",
         }
     }
 
@@ -157,6 +163,7 @@ impl Page {
         match self {
             Page::Translate => "vr_page_translate",
             Page::Gallery => "nav_gallery",
+            Page::Settings => "panel_settings",
         }
     }
 }
@@ -237,21 +244,20 @@ pub const HEADER: &str = "\u{1}header";
 /// Klick-Flächen: ([x, y, w, h], Knopf)
 pub type Hits = Vec<([f32; 4], Action)>;
 
-/// ⚙ Einstellungen (Werte aus layer.json / panel_pose.json)
+/// ⚙ Einstellungs-Seite (Werte aus layer.json / panel_pose.json / panel_sizes.json)
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct Sheet {
-    pub width_cm: Option<i32>,
-    pub anchor: String,
-    pub detect: String,
-    pub shutter: String,
-    pub mode_button: String,
-    /// 🔘 Knopf an, nach Foto öffnen, Größe (cm, None = noch nie in VR), Farbe
-    pub button: bool,
-    pub open_on_shot: bool,
+pub struct SettingsView {
+    /// Tab "shot" / "vr"
+    pub tab: String,
+    /// aufgeklappte Gruppe
+    pub open: Option<String>,
+    /// layer.json (mit Standardwerten)
+    pub layer: serde_json::Map<String, serde_json::Value>,
+    /// 🪟 Größe: gewählte Seite + ihre Breite (cm, None = Panel war noch nie in VR)
+    pub size_page: Page,
+    pub size_cm: Option<i32>,
+    /// 🔘 Knopf-Größe (cm, None = Knopf war noch nie in VR)
     pub button_cm: Option<i32>,
-    pub color: String,
-    /// Größe gilt für diese Seite („Größe · Galerie“)
-    pub page_name: String,
 }
 
 /// Alles, was man im Panel sieht
@@ -280,8 +286,8 @@ pub struct View {
     pub choosing: Option<(Choice, String, Items)>,
     /// Modus 🤖/✋ in der Dienst-Auswahl (nur mit KI als Main): aktueller Modus
     pub route: Option<String>,
-    /// ⚙ Einstellungen offen
-    pub sheet: Option<Sheet>,
+    /// ⚙ Einstellungs-Seite (nur wenn sie offen ist)
+    pub settings: Option<SettingsView>,
     pub fixed_height: Option<f32>,
     /// Hauptseite: Übersetzung / Galerie
     pub page: Page,
@@ -370,8 +376,19 @@ impl Layout<'_> {
         y + BTN_H
     }
 
+    /// Wie choices, aber Breite für `cols` Knöpfe (letzte Zeile eines Rasters bleibt gleich breit)
+    fn choices_n(&mut self, y: f32, items: &[(String, String)], cols: usize, chosen: &str, make: impl Fn(&str) -> Action) -> f32 {
+        let inner = WIDTH - 2.0 * self.mx;
+        let gap = 6.0;
+        let w = (inner - gap * (cols as f32 - 1.0)) / cols as f32;
+        for (i, (value, text)) in items.iter().enumerate() {
+            self.button(text, self.mx + i as f32 * (w + gap), y, w, value == chosen, make(value));
+        }
+        y + BTN_H
+    }
+
     /// Schieber (Klick irgendwo auf die Leiste = dieser Wert)
-    fn bar(&mut self, y: f32, frac: f32, enabled: bool, which: Bar) -> f32 {
+    fn bar(&mut self, y: f32, frac: f32, enabled: bool, action: Action) -> f32 {
         let mx = self.mx;
         let inner = WIDTH - 2.0 * mx;
         if let Some(c) = self.c.as_deref_mut() {
@@ -384,7 +401,7 @@ impl Layout<'_> {
             }
         }
         if enabled {
-            self.hits.push(([mx, y, inner, BAR_H], Action::Bar(which)));
+            self.hits.push(([mx, y, inner, BAR_H], action));
         }
         y + BAR_H
     }
@@ -434,7 +451,9 @@ pub fn render(f: &mut Fonts, v: &View, pics: &Pics) -> Option<(Canvas, Hits, usi
     };
     let gallery_grid = nav && v.page == Page::Gallery;
     let auto_h = if gallery_grid { GALLERY_H } else { (height + MY).max(200.0) };
-    let h = v.fixed_height.unwrap_or(auto_h).round();
+    // ⚙ Einstellungen: immer so hoch wie der Inhalt (Gruppen klappen auf und zu)
+    let fixed = if v.settings.is_some() { None } else { v.fixed_height };
+    let h = fixed.unwrap_or(auto_h).round();
     let mut canvas = Canvas::new(WIDTH as u32, h as u32)?;
     canvas.rounded(1.0, 1.0, WIDTH - 2.0, h - 2.0, 16.0, Some(rgba(BG, 255)), Some((rgba(0x2b3240, 255), 2.0)));
     let (hits, pages) = {
@@ -456,9 +475,6 @@ fn content(l: &mut Layout, v: &View, pics: &Pics) -> f32 {
     let mut y = MY;
     let title = Style::new(24.0, true, TEXT);
     l.mx = MX;
-    if let Some(sheet) = &v.sheet {
-        return sheet_content(l, v, sheet);
-    }
     if let Some((which, title_text, items)) = &v.choosing {
         let back = format!("←  {}", tr(lang, "back", &[]));
         let bw = l.btn_width(&back);
@@ -502,15 +518,16 @@ fn content(l: &mut Layout, v: &View, pics: &Pics) -> f32 {
         return single_content(l, v, pics);
     }
     // Hauptseiten – ⚙ bleibt oben, ◀ ▶ zeichnet render() ganz unten
-    match v.page {
-        Page::Translate => translate_content(l, v, pics.photo),
-        Page::Gallery => gallery_content(l, v, pics),
+    match (v.page, &v.settings) {
+        (Page::Settings, Some(s)) => settings_content(l, v, s),
+        (Page::Gallery, _) => gallery_content(l, v, pics),
+        _ => translate_content(l, v, pics.photo),
     }
 }
 
-/// ◀ ▶-Zeile unten nur auf den Hauptseiten (nicht in ⚙, Auswahl-Liste, Foto groß)
+/// ◀ ▶-Zeile unten nur auf den Hauptseiten (nicht in der Auswahl-Liste, Foto groß)
 fn shows_nav(v: &View) -> bool {
-    v.sheet.is_none() && v.choosing.is_none() && !v.gallery.as_ref().is_some_and(|g| g.open.is_some())
+    v.choosing.is_none() && !v.gallery.as_ref().is_some_and(|g| g.open.is_some())
 }
 
 /// Ganz unten: [◀ Galerie]   ● ○   [Galerie ▶]
@@ -552,11 +569,11 @@ fn translate_content(l: &mut Layout, v: &View, photo: Option<&image::RgbaImage>)
     let title = Style::new(24.0, true, TEXT);
 
     // Kopf: 🌐 ViewShot  [🎞 GIF / 🎬 VID] [⚙]
-    l.button("⚙", mx + inner - TIP_W, y, TIP_W, false, Action::Sheet);
+    l.button("⚙", mx + inner - TIP_W, y, TIP_W, false, Action::Settings);
     let rec = if v.rec_video { "🎬 VID" } else { "🎞 GIF" };
     let rec_w = REC_W;
     let rec_x = mx + inner - TIP_W - 8.0 - rec_w;
-    l.button(rec, rec_x, y, rec_w, false, Action::Toggle("rec_video"));
+    l.button(rec, rec_x, y, rec_w, false, Action::Toggle("rec_video".into()));
     // 🟠 i: Layer passt nicht zum Dienst → antippen klappt den Hinweis auf
     let mut used = TIP_W + rec_w + 16.0;
     if v.layer_old.is_some() {
@@ -655,7 +672,7 @@ fn translate_content(l: &mut Layout, v: &View, photo: Option<&image::RgbaImage>)
 fn head_row(l: &mut Layout, title: &str, y: f32) -> f32 {
     let inner = WIDTH - 2.0 * MX;
     let st = Style::new(24.0, true, TEXT);
-    l.button("⚙", MX + inner - TIP_W, y, TIP_W, false, Action::Sheet);
+    l.button("⚙", MX + inner - TIP_W, y, TIP_W, false, Action::Settings);
     let th = measure(l.f, title, None, st).1;
     l.label(title, MX, y + (BTN_H - th) / 2.0, inner - TIP_W - 8.0, st);
     MX + inner - TIP_W - 8.0
@@ -1015,85 +1032,224 @@ pub fn switch_page_size(old: Page, new: Page) {
     let _ = crate::settings::write_json(&file, &sizes, 2);
 }
 
-/// ⚙ Einstellungen
-fn sheet_content(l: &mut Layout, v: &View, s: &Sheet) -> f32 {
+/// Text aus der Einstellungs-Liste: "=1:1" = genau so, sonst i18n-Schlüssel
+fn spec_text(lang: &str, key: &str) -> String {
+    match key.strip_prefix('=') {
+        Some(literal) => literal.to_string(),
+        None => tr(lang, key, &[]),
+    }
+}
+
+/// Zahl aus layer.json (true/false zählt als 1/0, fehlt → 0)
+fn layer_num(layer: &serde_json::Map<String, serde_json::Value>, key: &str) -> i64 {
+    match layer.get(key) {
+        Some(serde_json::Value::Number(n)) => n.as_f64().unwrap_or(0.0).round() as i64,
+        Some(serde_json::Value::String(t)) => t.trim().parse::<f64>().map(|f| f.round() as i64).unwrap_or(0),
+        Some(serde_json::Value::Bool(b)) => i64::from(*b),
+        _ => 0,
+    }
+}
+
+fn layer_str(layer: &serde_json::Map<String, serde_json::Value>, key: &str) -> String {
+    match layer.get(key) {
+        Some(serde_json::Value::String(t)) => t.clone(),
+        Some(serde_json::Value::Null) | None => String::new(),
+        Some(v) => v.to_string(),
+    }
+}
+
+/// Schieber-Wert auf Schrittweite + Grenzen bringen (wie vr_settings.snap)
+pub fn snap(item: &serde_json::Value, value: f32) -> i64 {
+    let lo = item["min"].as_i64().unwrap_or(0);
+    let hi = item["max"].as_i64().unwrap_or(100);
+    let step = item["step"].as_i64().unwrap_or(1).max(1);
+    let v = lo + ((value - lo as f32) / step as f32).round() as i64 * step;
+    v.clamp(lo, hi)
+}
+
+/// Eintrag der Einstellungs-Liste zu einem layer.json-Schlüssel
+pub fn spec_item(key: &str) -> Option<&'static serde_json::Value> {
+    crate::i18n::vr_settings()["tabs"]
+        .as_array()?
+        .iter()
+        .flat_map(|t| t["groups"].as_array().into_iter().flatten())
+        .flat_map(|g| g["items"].as_array().into_iter().flatten())
+        .find(|i| i["key"].as_str() == Some(key))
+}
+
+/// ⚙ Einstellungs-Seite: Kopf, Tabs 📸 Shot | 🥽 VR, Gruppen (▸ zu / ▾ offen)
+fn settings_content(l: &mut Layout, v: &View, s: &SettingsView) -> f32 {
     let lang = v.lang.as_str();
     let inner = WIDTH - 2.0 * MX;
-    let t = |k: &str| tr(lang, k, &[]);
     let mut y = MY;
     let title = Style::new(24.0, true, TEXT);
-    let section = Style::new(17.0, false, SECTION);
-    l.button("▲", MX + inner - TIP_W, y, TIP_W, false, Action::Sheet);
-    let head = format!("⚙  {}", t("panel_settings"));
+    let head = format!("⚙  {}", tr(lang, "panel_settings", &[]));
     let th = measure(l.f, &head, None, title).1;
-    l.label(&head, MX, y + (BTN_H - th) / 2.0, inner - TIP_W - 8.0, title);
+    l.label(&head, MX, y + (BTN_H - th) / 2.0, inner, title);
     y += BTN_H + 8.0;
-
-    let size = match s.width_cm {
-        Some(cm) => format!("{} · {}:  {cm} cm", t("panel_size"), s.page_name),
-        None => format!("{} {}", t("panel_size"), t("panel_size_later")),
-    };
-    y += l.label(&size, MX, y, inner, section) + 4.0;
-    let cm = s.width_cm.unwrap_or(32);
-    let frac = (cm - SIZE_CM.0) as f32 / (SIZE_CM.1 - SIZE_CM.0) as f32;
-    y = l.bar(y, frac.clamp(0.0, 1.0), s.width_cm.is_some(), Bar::Size) + 8.0;
-    y += l.label(&format!("{}:  {} %", t("panel_opacity"), v.opacity), MX, y, inner, section) + 4.0;
-    y = l.bar(y, ((v.opacity - 30) as f32 / 70.0).clamp(0.0, 1.0), true, Bar::Opacity) + 8.0;
-
-    y += l.label(&t("panel_anchor"), MX, y, inner, section) + 4.0;
-    let anchors: Vec<(String, String)> =
-        ["left", "right", "head", "world"].iter().map(|a| (a.to_string(), t(&format!("panel_anchor_short_{a}")))).collect();
-    y = l.choices(y, &anchors, &s.anchor, |a| Action::Anchor(a.to_string())) + 8.0;
-    let move_text = format!("{}  {}", if v.edit { "✔" } else { "✥" }, t("panel_move"));
-    let reset_text = format!("⟲  {}", t("panel_reset"));
-    let half = (inner - 8.0) / 2.0;
-    l.button(&move_text, MX, y, half, v.edit, Action::Move);
-    l.button(&reset_text, MX + half + 8.0, y, half, false, Action::Reset);
-    y += BTN_H + 8.0;
-
-    // 🔘 Knopf: an/aus, nach Foto öffnen, Größe, Farbe
-    y += l.label(&t("panel_button"), MX, y, inner, section) + 4.0;
-    let on = format!("{}  {}", if s.button { "✔" } else { "✕" }, t("panel_button_short"));
-    let auto = format!("{}  {}", if s.open_on_shot { "✔" } else { "✕" }, t("panel_open_on_shot_short"));
-    l.button(&on, MX, y, half, s.button, Action::Toggle("panel_button"));
-    l.button(&auto, MX + half + 8.0, y, half, s.open_on_shot, Action::Toggle("panel_open_on_shot"));
-    y += BTN_H + 8.0;
-    let bsize = match s.button_cm {
-        Some(cm) => format!("{}:  {cm} cm", t("panel_button_size")),
-        None => format!("{}  {}", t("panel_button_size"), t("panel_size_later")),
-    };
-    y += l.label(&bsize, MX, y, inner, section) + 4.0;
-    let cm = s.button_cm.unwrap_or(3);
-    let frac = (cm - BUTTON_CM.0) as f32 / (BUTTON_CM.1 - BUTTON_CM.0) as f32;
-    y = l.bar(y, frac.clamp(0.0, 1.0), s.button_cm.is_some(), Bar::Button) + 8.0;
-    let gap = 6.0;
-    let sw = (inner - gap * (BUTTON_COLORS.len() as f32 - 1.0)) / BUTTON_COLORS.len() as f32;
-    for (i, color) in BUTTON_COLORS.iter().enumerate() {
-        let x = MX + i as f32 * (sw + gap);
-        let hex = u32::from_str_radix(color.trim_start_matches('#'), 16).unwrap_or(BLUE);
-        let chosen = s.color.eq_ignore_ascii_case(color);
+    let spec = crate::i18n::vr_settings();
+    let tabs = spec["tabs"].as_array().cloned().unwrap_or_default();
+    let items: Vec<(String, String)> = tabs
+        .iter()
+        .map(|t| (t["id"].as_str().unwrap_or("").to_string(), tr(lang, t["label"].as_str().unwrap_or(""), &[])))
+        .collect();
+    y = l.choices(y, &items, &s.tab, |t| Action::SetTab(t.to_string())) + 8.0;
+    let Some(tab) = tabs.iter().find(|t| t["id"].as_str() == Some(s.tab.as_str())) else { return y };
+    let head_st = Style::new(20.0, true, BTN_TEXT);
+    for group in tab["groups"].as_array().into_iter().flatten() {
+        let gid = group["id"].as_str().unwrap_or("");
+        let opened = s.open.as_deref() == Some(gid);
+        let icon = group["icon"].as_str().unwrap_or("");
+        let name = tr(lang, group["title"].as_str().unwrap_or(""), &[]);
+        let text = format!("{}  {}{name}", if opened { "▾" } else { "▸" }, if icon.is_empty() { String::new() } else { format!("{icon}  ") });
         if let Some(c) = l.c.as_deref_mut() {
-            let border = if chosen { 0xffffff } else { 0x2b3240 };
-            c.rounded(x + 1.5, y + 1.5, sw - 3.0, BTN_H - 3.0, 10.0, Some(rgba(hex, 255)), Some((rgba(border, 255), 3.0)));
+            let (bg, border) = if opened { (BLUE, BLUE) } else { (BTN_BG, BTN_BORDER) };
+            let fg = if opened { 0xffffff } else { BTN_TEXT };
+            c.rounded(MX + 0.5, y + 0.5, inner - 1.0, GROUP_H - 1.0, 8.0, Some(rgba(bg, 255)), Some((rgba(border, 255), 1.0)));
+            let st = Style::new(head_st.size, true, fg);
+            let th = measure(l.f, &text, None, st).1;
+            c.text(l.f, &text, MX + 16.0, y + (GROUP_H - th) / 2.0, Some(inner - 32.0), st);
         }
-        if chosen {
-            let st = Style::new(22.0, true, 0x10131a);
-            let (tw, th) = measure(l.f, "✔", None, st);
-            l.label("✔", x + (sw - tw) / 2.0, y + (BTN_H - th) / 2.0, sw, st);
+        l.hits.push(([MX, y, inner, GROUP_H], Action::Group(gid.to_string())));
+        y += GROUP_H + 8.0;
+        if opened {
+            for item in group["items"].as_array().into_iter().flatten() {
+                y = setting_item(l, v, s, item, y) + 8.0;
+            }
         }
-        l.hits.push(([x, y, sw, BTN_H], Action::Layer("panel_button_color", color.to_string())));
     }
-    y += BTN_H + 8.0;
+    y - 8.0
+}
 
-    y += l.label(&t("buttons_title"), MX, y, inner, section) + 4.0;
-    let detect = [("auto".to_string(), t("detect_short_auto")), ("manual".to_string(), t("detect_short_manual"))];
-    y = l.choices(y, &detect, &s.detect, |d| Action::Layer("detect_mode", d.to_string())) + 8.0;
-    let combos: Vec<(String, String)> =
-        ["left", "right", "both"].iter().map(|c| (c.to_string(), t(&format!("combo_short_{c}")))).collect();
-    y += l.label(&t("shutter"), MX, y, inner, section) + 4.0;
-    y = l.choices(y, &combos, &s.shutter, |c| Action::Layer("shutter", c.to_string())) + 8.0;
-    y += l.label(&t("mode_button"), MX, y, inner, section) + 4.0;
-    l.choices(y, &combos, &s.mode_button, |c| Action::Layer("mode_button", c.to_string()))
+/// Ein Eintrag der Einstellungs-Liste – gibt die Unterkante zurück
+fn setting_item(l: &mut Layout, v: &View, s: &SettingsView, item: &serde_json::Value, mut y: f32) -> f32 {
+    let lang = v.lang.as_str();
+    let inner = WIDTH - 2.0 * MX;
+    let section = Style::new(17.0, false, SECTION);
+    let t = |k: &str| tr(lang, k, &[]);
+    let key = item["key"].as_str().unwrap_or("");
+    let label = item["label"].as_str().unwrap_or("");
+    match item["type"].as_str().unwrap_or("") {
+        "toggle" => {
+            let on = layer_num(&s.layer, key) != 0;
+            let text = format!("{}  {}", if on { "✔" } else { "✕" }, t(label));
+            l.button(&text, MX, y, inner, on, Action::Toggle(key.to_string()));
+            y + BTN_H
+        }
+        "choice" => {
+            if !label.is_empty() {
+                y += l.label(&t(label), MX, y, inner, section) + 4.0;
+            }
+            let options: Vec<(String, String)> = item["options"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|o| (o[0].as_str().unwrap_or("").to_string(), spec_text(lang, o[1].as_str().unwrap_or(""))))
+                .collect();
+            let cols = match item["cols"].as_u64().unwrap_or(0) as usize {
+                0 => options.len().max(1),
+                n => n,
+            };
+            let chosen = layer_str(&s.layer, key);
+            let make = |value: &str| {
+                if key == "panel_anchor" {
+                    Action::Anchor(value.to_string())
+                } else {
+                    Action::Layer(key.to_string(), value.to_string())
+                }
+            };
+            for row in options.chunks(cols) {
+                y = l.choices_n(y, row, cols, &chosen, make) + 6.0;
+            }
+            y - 6.0
+        }
+        "slider" => {
+            let (lo, hi) = (item["min"].as_i64().unwrap_or(0), item["max"].as_i64().unwrap_or(100));
+            let current = if key == "@button_cm" { s.button_cm.map(i64::from) } else { Some(layer_num(&s.layer, key)) };
+            let text = match (current, item["fmt"].as_str().filter(|f| !f.is_empty())) {
+                (None, _) => format!("{}  {}", t(label), t("panel_size_later")),
+                (Some(c), Some(fmt)) => tr(lang, fmt, &[("v", &c.to_string()), ("inv", &(lo + hi - c).to_string())]),
+                (Some(c), None) => format!("{}:  {c}{}", t(label), item["unit"].as_str().unwrap_or("")),
+            };
+            y += l.label(&text, MX, y, inner, section) + 4.0;
+            let frac = (current.unwrap_or(lo) - lo) as f32 / (hi - lo).max(1) as f32;
+            l.bar(y, frac.clamp(0.0, 1.0), current.is_some(), Action::Slider(key.to_string()))
+        }
+        "size" => {
+            let pages: Vec<(String, String)> = crate::i18n::vr_settings()["size_pages"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|p| (p[0].as_str().unwrap_or("").to_string(), t(p[1].as_str().unwrap_or(""))))
+                .collect();
+            let name = pages.iter().find(|p| p.0 == s.size_page.key()).map(|p| p.1.clone()).unwrap_or_default();
+            let text = match s.size_cm {
+                Some(cm) => format!("{} · {name}:  {cm} cm", t("panel_size")),
+                None => format!("{} · {name}  {}", t("panel_size"), t("panel_size_later")),
+            };
+            y += l.label(&text, MX, y, inner, section) + 4.0;
+            y = l.choices(y, &pages, s.size_page.key(), |p| Action::SizePage(p.to_string())) + 4.0;
+            let default = PAGE_SIZE_DEFAULT.iter().find(|d| d.0 == s.size_page.key()).map(|d| (d.1 * 100.0) as i32).unwrap_or(32);
+            let cm = s.size_cm.unwrap_or(default);
+            let frac = (cm - SIZE_CM.0) as f32 / (SIZE_CM.1 - SIZE_CM.0) as f32;
+            l.bar(y, frac.clamp(0.0, 1.0), s.size_cm.is_some(), Action::Slider("@size".into()))
+        }
+        "actions" => {
+            let actions = item["actions"].as_array().cloned().unwrap_or_default();
+            let n = actions.len().max(1) as f32;
+            let w = (inner - 8.0 * (n - 1.0)) / n;
+            for (i, a) in actions.iter().enumerate() {
+                let x = MX + i as f32 * (w + 8.0);
+                let text = t(a[1].as_str().unwrap_or(""));
+                if a[0].as_str() == Some("move") {
+                    l.button(&format!("{}  {text}", if v.edit { "✔" } else { "✥" }), x, y, w, v.edit, Action::Move);
+                } else {
+                    l.button(&format!("⟲  {text}"), x, y, w, false, Action::Reset);
+                }
+            }
+            y + BTN_H
+        }
+        "colors" => {
+            let current = layer_str(&s.layer, key);
+            let gap = 6.0;
+            let sw = (inner - gap * (BUTTON_COLORS.len() as f32 - 1.0)) / BUTTON_COLORS.len() as f32;
+            for (i, color) in BUTTON_COLORS.iter().enumerate() {
+                let x = MX + i as f32 * (sw + gap);
+                let hex = u32::from_str_radix(color.trim_start_matches('#'), 16).unwrap_or(BLUE);
+                let chosen = current.eq_ignore_ascii_case(color);
+                if let Some(c) = l.c.as_deref_mut() {
+                    let border = if chosen { 0xffffff } else { 0x2b3240 };
+                    c.rounded(x + 1.5, y + 1.5, sw - 3.0, BTN_H - 3.0, 10.0, Some(rgba(hex, 255)), Some((rgba(border, 255), 3.0)));
+                }
+                if chosen {
+                    let st = Style::new(22.0, true, 0x10131a);
+                    let (tw, th) = measure(l.f, "✔", None, st);
+                    l.label("✔", x + (sw - tw) / 2.0, y + (BTN_H - th) / 2.0, sw, st);
+                }
+                l.hits.push(([x, y, sw, BTN_H], Action::Layer(key.to_string(), color.to_string())));
+            }
+            y + BTN_H
+        }
+        "list" => {
+            let dim = Style::new(16.0, false, SECTION);
+            y += l.label(&t(item["hint"].as_str().unwrap_or("")), MX, y, inner, dim) + 6.0;
+            let entries: Vec<String> = s
+                .layer
+                .get(key)
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|e| e.as_str().map(String::from)).collect())
+                .unwrap_or_default();
+            if entries.is_empty() {
+                return y + l.label(&t(item["empty"].as_str().unwrap_or("")), MX, y, inner, section);
+            }
+            for name in entries {
+                l.button(&format!("✕  {name}"), MX, y, inner, false, Action::ListRemove(key.to_string(), name.clone()));
+                y += BTN_H + 6.0;
+            }
+            y - 6.0
+        }
+        _ => y,
+    }
 }
 
 /// Zeilen → Seiten (leere Zeilen am Seitenanfang fallen weg) – wie vr_panel.paginate
@@ -1155,6 +1311,41 @@ pub fn set_button_cm(cm: i32) -> bool {
     };
     v["width"] = serde_json::Value::from(cm.clamp(BUTTON_CM.0, BUTTON_CM.1) as f64 / 100.0);
     crate::settings::write_json(&file, &v, 2).is_ok()
+}
+
+/// Breite einer Seite in VR (cm): die offene aus panel_pose.json, die anderen aus
+/// panel_sizes.json (oder Standard) – wie vr_panel.page_width_cm
+pub fn page_width_cm(page: Page) -> Option<i32> {
+    let now = width_cm()?;
+    if page == current_page() {
+        return Some(now);
+    }
+    let sizes: serde_json::Value = std::fs::read_to_string(sizes_file()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+    let default = PAGE_SIZE_DEFAULT.iter().find(|d| d.0 == page.key()).map(|d| d.1).unwrap_or(0.32);
+    Some((sizes[page.key()]["width"].as_f64().unwrap_or(default) * 100.0).round() as i32)
+}
+
+/// Größe einer Seite ändern – die offene sofort in VR, die anderen beim nächsten Wechsel
+pub fn set_page_width_cm(page: Page, cm: i32) -> bool {
+    use serde_json::{json, Value};
+    if page == current_page() {
+        return set_width_cm(cm);
+    }
+    if width_cm().is_none() {
+        return false;
+    }
+    let file = sizes_file();
+    let mut sizes = std::fs::read_to_string(&file)
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({}));
+    let default = PAGE_SIZE_DEFAULT.iter().find(|d| d.0 == page.key()).map(|d| d.1).unwrap_or(0.32);
+    let old = sizes[page.key()]["width"].as_f64().unwrap_or(default);
+    let new = cm.clamp(SIZE_CM.0, SIZE_CM.1) as f64 / 100.0;
+    let height = sizes[page.key()]["height"].as_f64().map(|h| json!(h * new / old)).unwrap_or(Value::Null);
+    sizes[page.key()] = json!({"width": new, "height": height});
+    crate::settings::write_json(&file, &sizes, 2).is_ok()
 }
 
 pub fn width_cm() -> Option<i32> {
@@ -1220,9 +1411,9 @@ mod tests {
         let y = (MY + BTN_H + GAP + BTN_H / 2.0) / size.1 as f32;
         assert_eq!(hit(&hits, size, 0.2, y).map(|h| h.0), Some(Action::Choose(Choice::Method)));
         let y = (MY + BTN_H / 2.0) / size.1 as f32;
-        assert_eq!(hit(&hits, size, 0.95, y).map(|h| h.0), Some(Action::Sheet));
+        assert_eq!(hit(&hits, size, 0.95, y).map(|h| h.0), Some(Action::Settings));
         let x = (WIDTH - MX - TIP_W - 8.0 - REC_W / 2.0) / size.0 as f32;
-        assert_eq!(hit(&hits, size, x, y).map(|h| h.0), Some(Action::Toggle("rec_video")));
+        assert_eq!(hit(&hits, size, x, y).map(|h| h.0), Some(Action::Toggle("rec_video".into())));
         // 🟠 Layer veraltet: i-Knopf oben, angetippt erscheint der Hinweis darunter
         assert!(!hits.iter().any(|h| h.1 == Action::OldNote));
         let old = View { layer_old: Some("⚠ Layer veraltet".into()), ..view() };
@@ -1237,26 +1428,49 @@ mod tests {
         if let Some(out) = std::env::var_os("PANEL_OUT") {
             c.save(std::path::Path::new(&out), &[]).unwrap();
         }
-        // ⚙ offen: Schieber liefert die Position
-        let v = View { sheet: Some(Sheet {
-                width_cm: Some(32),
-                anchor: "left".into(),
-                detect: "auto".into(),
-                shutter: "right".into(),
-                mode_button: "left".into(),
-                button: true,
-                open_on_shot: true,
+        // ⚙ Einstellungs-Seite: Tabs, Gruppen, Schieber liefert die Position
+        let layer: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(crate::settings::LAYER_DEFAULTS).unwrap();
+        let settings = |tab: &str, open: Option<&str>| View {
+            page: Page::Settings,
+            settings: Some(SettingsView {
+                tab: tab.into(),
+                open: open.map(String::from),
+                layer: layer.clone(),
+                size_page: Page::Translate,
+                size_cm: Some(32),
                 button_cm: Some(5),
-                color: "#4caf7a".into(),
-                page_name: "Übersetzung".into(),
-            }), ..view() };
-        let (c, hits, _) = render(&mut f, &v, &Pics::default()).unwrap();
-        let (r, _) = hits.iter().find(|h| h.1 == Action::Bar(Bar::Size)).unwrap();
+            }),
+            fixed_height: Some(300.0),
+            ..view()
+        };
+        let (c, hits, _) = render(&mut f, &settings("shot", None), &Pics::default()).unwrap();
+        assert!(c.pix.height() > 300, "⚙ Seite ignoriert die von Hand gezogene Höhe");
+        for a in [Action::SetTab("shot".into()), Action::SetTab("vr".into()), Action::Group("gif".into()),
+                  Action::Group("excluded".into()), Action::Nav(1)] {
+            assert!(hits.iter().any(|h| h.1 == a), "{a:?} fehlt");
+        }
+        assert!(!hits.iter().any(|h| matches!(h.1, Action::Slider(_))), "alles zugeklappt");
+        let (_, hits, _) = render(&mut f, &settings("shot", Some("gif")), &Pics::default()).unwrap();
+        assert!(hits.iter().any(|h| h.1 == Action::Toggle("gif_hold".into())));
+        assert!(hits.iter().any(|h| h.1 == Action::Layer("gif_stabilize".into(), "smooth".into())));
+        let (_, hits, _) = render(&mut f, &settings("shot", Some("excluded")), &Pics::default()).unwrap();
+        assert!(hits.iter().any(|h| h.1 == Action::ListRemove("excluded_apps".into(), "wayvr".into())));
+        let (_, hits, _) = render(&mut f, &settings("shot", Some("icon")), &Pics::default()).unwrap();
+        let icons: Vec<_> = hits.iter().filter(|h| matches!(&h.1, Action::Layer(k, _) if k == "icon_position")).collect();
+        assert_eq!(icons.len(), 4);
+        assert!(icons[2].0[1] > icons[0].0[1], "2 × 2 Raster");
+        let (c, hits, _) = render(&mut f, &settings("vr", Some("panel")), &Pics::default()).unwrap();
+        assert!(hits.iter().any(|h| h.1 == Action::Anchor("head".into())) && hits.iter().any(|h| h.1 == Action::Move));
+        let (r, _) = hits.iter().find(|h| h.1 == Action::Slider("@size".into())).unwrap();
         let size = (c.pix.width(), c.pix.height());
         let u = (r[0] + BAR_PAD + 0.75 * (r[2] - 2.0 * BAR_PAD)) / size.0 as f32;
         let (a, frac) = hit(&hits, size, u, (r[1] + 10.0) / size.1 as f32).unwrap();
-        assert_eq!(a, Action::Bar(Bar::Size));
+        assert_eq!(a, Action::Slider("@size".into()));
         assert!((frac - 0.75).abs() < 0.01);
+        let eye = spec_item("eye_mix").unwrap();
+        assert_eq!(snap(eye, 47.0), 45);
+        assert_eq!(snap(eye, 120.0), 100);
         if let Some(out) = std::env::var_os("PANEL_OUT2") {
             c.save(std::path::Path::new(&out), &[]).unwrap();
         }
@@ -1313,7 +1527,7 @@ mod tests {
         assert!(r[1] + r[3] > size.1 as f32 - MY - 1.0 && r[0] < WIDTH / 2.0);
         let (r, _) = hits.iter().find(|h| h.1 == Action::Nav(1)).unwrap();
         assert!(r[0] > WIDTH / 2.0);
-        assert!(hits.iter().any(|h| h.1 == Action::Sheet));
+        assert!(hits.iter().any(|h| h.1 == Action::Settings));
         assert_eq!(hits.iter().filter(|h| matches!(h.1, Action::GalOpen(_))).count(), 10);
         assert!(hits.iter().any(|h| h.1 == Action::GalFilter("gif_vid".into())));
         assert!(hits.iter().any(|h| h.1 == Action::GalPage(1)) && !hits.iter().any(|h| h.1 == Action::GalPage(-1)));
@@ -1352,7 +1566,7 @@ mod tests {
             Action::GalTranslate,
             Action::GalInfo,
             Action::GalDelete,
-            Action::Sheet,
+            Action::Settings,
         ] {
             assert!(hits.iter().any(|h| h.1 == a), "{a:?} fehlt");
         }
@@ -1407,6 +1621,14 @@ mod tests {
         let p: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&pose).unwrap()).unwrap();
         assert_eq!((p["width"].as_f64(), p["height"].as_f64()), (Some(0.32), Some(0.2)), "alte Größe zurück");
         assert_eq!(p["anchor"], "left", "Rest der Pose bleibt");
+        // ⚙ 🪟 Größe für eine andere Seite: gemerkt, wirkt beim Wechsel
+        assert_eq!(page_width_cm(Page::Gallery), Some(48));
+        assert_eq!(page_width_cm(Page::Settings), Some(40), "Standard");
+        assert!(set_page_width_cm(Page::Settings, 55));
+        assert_eq!((page_width_cm(Page::Settings), width_cm()), (Some(55), Some(32)), "offene Seite bleibt");
+        switch_page_size(Page::Translate, Page::Settings);
+        assert_eq!(width_cm(), Some(55));
+        assert!(set_page_width_cm(Page::Settings, 60) && width_cm() == Some(60), "offene Seite sofort");
         std::env::remove_var("XDG_CONFIG_HOME");
         let _ = std::fs::remove_dir_all(&dir);
     }

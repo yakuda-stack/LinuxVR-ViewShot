@@ -457,7 +457,8 @@ pub fn add_history(cfg: &Cfg, photo: &str, ocr: &str, translated: &str, method: 
     }
     let time = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
     entries.insert(0, json!({"time": time, "photo": photo, "ocr": ocr, "tr": translated, "method": method}));
-    entries.truncate(200);
+    let keep = cfg.f("history_keep", 0.0) as usize;
+    entries.truncate(if keep > 0 { keep.min(200) } else { 200 });
     let _ = write_json(&file, &Value::Array(entries), 1);
 }
 

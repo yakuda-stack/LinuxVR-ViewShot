@@ -1,9 +1,11 @@
 """
 ui/pages/options_page.py – Optionen mit Tabs (wie bei OSC-DreamChatbox):
 
-    ⚙ General      Community-Links (Discord, Ko-fi …), Sprache, Main-Seite, Ordner, Aufräumen,
-                   📤 Ausgabe (OSC / Textdatei), ⚙ Ohne App (Hintergrund-Dienst), Über
-    📸 Shot        Rahmengröße, Auge, 📐 Seitenverhältnis, 🎞 GIF, Erkennung & Tasten, Symbol-Ecke, Ausnahmen
+    ⚙ General      Community-Links (Discord, Ko-fi …), Sprache, Main-Seite (🕘 Verlauf + Auto-Löschen),
+                   Aufräumen, 📤 Ausgabe (OSC / Textdatei), ⚙ Ohne App (Hintergrund-Dienst), Über,
+                   📁 Ordner & Dateien (ganz unten)
+    📸 Shot        🎞 GIF, Erkennung & Tasten, Symbol-Ecke, 📐 Seitenverhältnis, Rahmengröße, Auge,
+                   Ausnahmen, 🖥 Desktop-Screenshot (gleiche Reihenfolge wie in VR)
     🥽 VR          🪟 Panel + 🔘 Knopf, 🔁 Lens, 🥽 Overlay
     🌐 Übersetzung Dienst (Lingva, Google, LibreTranslate, DeepL, eigene API,
                    KI: Claude Code / Gemini / ChatGPT / eigener Befehl), Zielsprache
@@ -23,7 +25,7 @@ from PyQt6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QGridLayout, QH
                              QLineEdit, QListWidget, QMessageBox, QPlainTextEdit, QPushButton, QRadioButton, QSlider,
                              QSpinBox, QVBoxLayout, QWidget)
 
-from core import config, desktop_shot, i18n, layer_config, ocr, output, overlay, paths, translation
+from core import config, desktop_shot, history, i18n, layer_config, ocr, output, overlay, paths, translation
 from core import pkginstall, terminal
 from core import llm_translator as L
 from core import vision
@@ -133,6 +135,7 @@ class OptionsPage(QWidget):
         self.cfg = cfg
         self.shot_service = shot_service
         self.layer = layer_config.load()
+        self.layer_watch = []  # (Schlüssel, Widget, nachziehen) – Änderungen aus dem VR-Panel
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -182,8 +185,14 @@ class OptionsPage(QWidget):
         lay.setSpacing(16)
         return w, lay
 
-    def save_layer(self):
-        layer_config.save(self.layer)
+    def save_layer(self, key: str):
+        """Nur DIESEN Wert speichern (frisch geladen) – sonst würde ein alter Stand
+        Änderungen aus dem VR-Panel überschreiben."""
+        self.layer[key] = layer_config.update(key, self.layer[key])[key]
+
+    def watch(self, key: str, widget, apply):
+        """In VR geändert → Widget nachziehen, ohne dass es selbst wieder speichert."""
+        self.layer_watch.append((key, widget, apply))
 
     # ------------------------------------------------------------------
     # Tab: General – Community, Sprache, Ordner, Über
@@ -205,7 +214,6 @@ class OptionsPage(QWidget):
 
         self.add_language_card(lay)
         self.add_main_page_card(lay)
-        self.add_folders_card(lay)
         self.add_cleanup_card(lay)
 
         # --- 📤 Ausgabe: OSC / Textdatei (z. B. für ein OSC-DreamChatbox-Plugin) ---
@@ -218,14 +226,29 @@ class OptionsPage(QWidget):
         box.addWidget(QLabel(f"LinuxVR-ViewShot  v{VERSION}"))
         box.addWidget(dim(tr("about_text")))
         lay.addWidget(card)
+
+        # --- 📁 Ordner & Dateien ganz unten ---
+        self.add_folders_card(lay)
         return w
 
     # ------------------------------------------------------------------
-    # Tab: Shot – Rahmengröße, Auge, Ausnahmen
+    # Tab: Shot – gleiche Reihenfolge wie die Shot-Seite im VR-Panel
     # (alles landet in layer.json und wirkt sofort im Layer)
     # ------------------------------------------------------------------
     def build_shot(self) -> QWidget:
         w, lay = self.tab_widget()
+        self.add_gif_card(lay)
+        self.add_buttons_card(lay)
+        self.add_icon_position_card(lay)
+        self.add_aspect_card(lay)
+        self.add_frame_card(lay)
+        self.add_eye_card(lay)
+        self.add_excluded_card(lay)
+        self.add_desktop_shot_card(lay)
+        return w
+
+    def add_frame_card(self, lay: QVBoxLayout):
+        """Rahmengröße (cm nach innen)."""
         card, box = make_card(tr("frame_size"))
         box.addWidget(dim(tr("frame_size_hint")))
 
@@ -246,15 +269,19 @@ class OptionsPage(QWidget):
         def frame_changed(cm: int):
             frame_value.setText(tr("frame_value", cm=cm))
             self.layer["frame_inset_cm"] = cm
-            self.save_layer()
+            self.save_layer("frame_inset_cm")
 
         frame_slider.valueChanged.connect(frame_changed)
         frame_value.setText(tr("frame_value", cm=frame_slider.value()))
+        self.watch("frame_inset_cm", frame_slider, lambda v: (
+            frame_slider.setValue(int(v)), frame_value.setText(tr("frame_value", cm=int(v)))))
         box.addWidget(button("↺  " + tr("reset"), lambda: frame_slider.setValue(layer_config.DEFAULTS["frame_inset_cm"])),
                       alignment=Qt.AlignmentFlag.AlignLeft)
         lay.addWidget(card)
 
-        # --- Auge ---
+
+    def add_eye_card(self, lay: QVBoxLayout):
+        """Welches Auge (links/rechts/Mischung) im Foto landet."""
         card, box = make_card(tr("eye"))
         box.addWidget(dim(tr("eye_hint")))
         row = QHBoxLayout()
@@ -273,38 +300,30 @@ class OptionsPage(QWidget):
         eye_value.setAlignment(Qt.AlignmentFlag.AlignCenter)
         box.addWidget(eye_value)
 
-        def eye_changed(right: int):
+        def eye_text(right: int):
             source = tr("right") if right > 50 else tr("left")
             eye_value.setText(tr("eye_value", left=100 - right, right=right, source=source))
+
+        def eye_changed(right: int):
+            eye_text(right)
             self.layer["eye_mix"] = right
-            self.save_layer()
+            self.save_layer("eye_mix")
 
         eye_slider.valueChanged.connect(eye_changed)
+        self.watch("eye_mix", eye_slider, lambda v: (eye_slider.setValue(int(v)), eye_text(int(v))))
         eye_changed(eye_slider.value())
         box.addWidget(button("↺  " + tr("reset"), lambda: eye_slider.setValue(layer_config.DEFAULTS["eye_mix"])),
                       alignment=Qt.AlignmentFlag.AlignLeft)
         lay.addWidget(card)
 
-        # --- 📐 Seitenverhältnis ---
-        self.add_aspect_card(lay)
 
-        # --- 🎞 GIF ---
-        self.add_gif_card(lay)
-
-        # --- 🖥 Desktop-Screenshot ---
-        self.add_desktop_shot_card(lay)
-
-        # --- Erkennung & Tasten ---
-        self.add_buttons_card(lay)
-
-        # --- Ecke des Typ-Symbols ---
-        self.add_icon_position_card(lay)
-
-        # --- Ausnahmen ---
+    def add_excluded_card(self, lay: QVBoxLayout):
+        """Ausnahmen: Spiele/Apps, in denen der Layer nichts macht."""
         card, box = make_card(tr("excluded"))
         box.addWidget(dim(tr("excluded_hint")))
         self.excluded = QListWidget()
         self.excluded.addItems(self.layer["excluded_apps"])
+        self.watch("excluded_apps", self.excluded, lambda v: (self.excluded.clear(), self.excluded.addItems(list(v))))
         self.excluded.setFixedHeight(110)
         box.addWidget(self.excluded)
 
@@ -318,7 +337,6 @@ class OptionsPage(QWidget):
         box.addLayout(row)
         box.addWidget(dim(tr("excluded_restart")))
         lay.addWidget(card)
-        return w
 
     # ------------------------------------------------------------------
     # Tab: VR – was in VR angezeigt wird: 🪟 Panel, 🔁 Lens, 🥽 Overlay
@@ -369,6 +387,11 @@ class OptionsPage(QWidget):
     def sync_layer(self):
         """Dropdowns an layer.json anpassen (auch nach Änderung auf der Main-Seite)."""
         fresh = layer_config.load()
+        self.layer.update(fresh)
+        for key, widget, apply in self.layer_watch:
+            widget.blockSignals(True)
+            apply(fresh[key])
+            widget.blockSignals(False)
         box = getattr(self, "panel_edit_box", None)
         if box is not None:
             box.blockSignals(True)
@@ -394,6 +417,7 @@ class OptionsPage(QWidget):
             radio = QRadioButton(names[value])
             radio.setChecked(value == current)
             radio.toggled.connect(lambda on, v=value: on and self.layer_set("aspect", v))
+            self.watch("aspect", radio, lambda new, r=radio, v=value: r.setChecked(new == v))
             self.aspect_group.addButton(radio)
             row.addWidget(radio)
         row.addStretch()
@@ -408,6 +432,7 @@ class OptionsPage(QWidget):
         on.setChecked(bool(self.layer.get("gif_hold", layer_config.DEFAULTS["gif_hold"])))
         on.toggled.connect(lambda checked: self.layer_set("gif_hold", checked))
         box.addWidget(on)
+        self.watch("gif_hold", on, lambda v: on.setChecked(bool(v)))
 
         row = QHBoxLayout()
         row.addWidget(QLabel(tr("gif_max")))
@@ -426,6 +451,7 @@ class OptionsPage(QWidget):
 
         value.setText(tr("live_seconds", s=slider.value()))
         slider.valueChanged.connect(max_changed)
+        self.watch("gif_max_s", slider, lambda v: (slider.setValue(int(v)), value.setText(tr("live_seconds", s=int(v)))))
 
         # 🎯 Stabilisator: Aus / Glätten / Fest (Startposition) – 📌 Pin ist immer fest
         row = QHBoxLayout()
@@ -436,6 +462,7 @@ class OptionsPage(QWidget):
         current = self.layer.get("gif_stabilize", layer_config.DEFAULTS["gif_stabilize"])
         stab.setCurrentIndex(max(stab.findData(current), 0))
         stab.currentIndexChanged.connect(lambda _: self.layer_set("gif_stabilize", stab.currentData()))
+        self.watch("gif_stabilize", stab, lambda v: stab.setCurrentIndex(max(stab.findData(v), 0)))
         row.addWidget(stab)
         row.addStretch()
         box.addLayout(row)
@@ -443,6 +470,7 @@ class OptionsPage(QWidget):
         pin = QCheckBox("📌  " + tr("gif_pin_lock"))
         pin.setChecked(bool(self.layer.get("pin_lock", layer_config.DEFAULTS["pin_lock"])))
         pin.toggled.connect(lambda checked: self.layer_set("pin_lock", checked))
+        self.watch("pin_lock", pin, lambda v: pin.setChecked(bool(v)))
         box.addWidget(pin)
         box.addWidget(dim(tr("gif_note")))
         lay.addWidget(card)
@@ -549,6 +577,7 @@ class OptionsPage(QWidget):
             radio = QRadioButton(tr(value))
             radio.setChecked(value == current)
             radio.toggled.connect(lambda on, v=value: on and self.icon_position_changed(v))
+            self.watch("icon_position", radio, lambda new, r=radio, v=value: r.setChecked(new == v))
             self.icon_group.addButton(radio)
             grid.addWidget(radio, *cells[value])
         box.addLayout(grid)
@@ -580,6 +609,8 @@ class OptionsPage(QWidget):
 
         value.setText(tr("live_seconds", s=slider.value()))
         slider.valueChanged.connect(interval_changed)
+        self.watch("live_interval_s", slider,
+                   lambda v: (slider.setValue(int(v)), value.setText(tr("live_seconds", s=int(v)))))
         lay.addWidget(card)
 
     def add_panel_card(self, lay: QVBoxLayout):
@@ -632,6 +663,9 @@ class OptionsPage(QWidget):
             self.layer["panel_opacity"] = layer_config.update("panel_opacity", step * 10)["panel_opacity"]
 
         opacity.valueChanged.connect(opacity_changed)
+        self.watch("panel_opacity", opacity, lambda v: (
+            opacity.setValue(round(float(v) / 10)), opacity_value.setText(f"{round(float(v) / 10) * 10} %")))
+        self.watch("panel_anchor", anchor, lambda v: anchor.setCurrentIndex(max(0, anchor.findData(v))))
         edit = QCheckBox(tr("panel_edit_mode"))
         edit.setChecked(bool(self.layer.get("panel_edit")))
         box.addWidget(edit)
@@ -644,12 +678,14 @@ class OptionsPage(QWidget):
         knob.setChecked(bool(self.layer.get("panel_button", True)))
         knob.toggled.connect(lambda c: self.layer.__setitem__(
             "panel_button", layer_config.update("panel_button", c)["panel_button"]))
+        self.watch("panel_button", knob, lambda v: knob.setChecked(bool(v)))
         box.addWidget(knob)
         box.addWidget(dim(tr("panel_button_hint")))
         auto_open = QCheckBox(tr("panel_open_on_shot"))
         auto_open.setChecked(bool(self.layer.get("panel_open_on_shot", True)))
         auto_open.toggled.connect(lambda c: self.layer.__setitem__(
             "panel_open_on_shot", layer_config.update("panel_open_on_shot", c)["panel_open_on_shot"]))
+        self.watch("panel_open_on_shot", auto_open, lambda v: auto_open.setChecked(bool(v)))
         box.addWidget(auto_open)
         brow = QHBoxLayout()
         brow.addWidget(QLabel(tr("panel_button_size")))
@@ -667,10 +703,12 @@ class OptionsPage(QWidget):
         crow.addWidget(QLabel(tr("panel_button_color")))
         swatch = QPushButton(tr("panel_button_pick"))
         swatch.setObjectName("linkbtn")
+        dot = QLabel()
+        dot.setFixedSize(26, 26)
 
         def show_color():
             c = str(self.layer.get("panel_button_color", vr_panel.BUTTON_COLORS[0]))
-            swatch.setStyleSheet(f"border-left: 28px solid {c};")
+            dot.setStyleSheet(f"background: {c}; border-radius: 13px; border: 2px solid #2b3240;")
 
         def pick_color():
             from PyQt6.QtGui import QColor
@@ -684,13 +722,15 @@ class OptionsPage(QWidget):
 
         swatch.clicked.connect(pick_color)
         show_color()
+        self.watch("panel_button_color", dot, lambda _v: show_color())
+        crow.addWidget(dot)
         crow.addWidget(swatch)
         crow.addStretch()
         box.addLayout(crow)
 
         def toggled(checked: bool):
             self.layer["panel"] = layer_config.update("panel", checked)["panel"]
-            for w in (anchor, edit, reset, opacity, size, knob, auto_open, bsize, swatch):
+            for w in (anchor, edit, reset, opacity, size, knob, auto_open, bsize, swatch, dot):
                 w.setEnabled(checked)
 
         def anchor_changed(_):
@@ -796,6 +836,7 @@ class OptionsPage(QWidget):
                 overlay.clear()  # sofort weg aus VR
 
         on.toggled.connect(toggled)
+        self.watch("overlay", on, lambda v: on.setChecked(bool(v)))
         lay.addWidget(card)
 
     def icon_position_changed(self, position: str):
@@ -807,7 +848,7 @@ class OptionsPage(QWidget):
         if name and name.lower() not in [a.lower() for a in self.layer["excluded_apps"]]:
             self.layer["excluded_apps"].append(name)
             self.excluded.addItem(name)
-            self.save_layer()
+            self.save_layer("excluded_apps")
         self.new_app.clear()
 
     def remove_excluded(self):
@@ -815,7 +856,7 @@ class OptionsPage(QWidget):
         if row >= 0:
             self.excluded.takeItem(row)
             del self.layer["excluded_apps"][row]
-            self.save_layer()
+            self.save_layer("excluded_apps")
 
     # ------------------------------------------------------------------
     # Karten für den General-Tab
@@ -870,6 +911,33 @@ class OptionsPage(QWidget):
         hist.setChecked(bool(self.cfg.get("history")))
         hist.toggled.connect(lambda on: self.set_cfg("history", on))
         box.addWidget(hist)
+
+        row = QHBoxLayout()
+        row.addSpacing(24)
+        keep_label = QLabel(tr("history_keep"))
+        row.addWidget(keep_label)
+        keep = QComboBox()
+        for n in history.KEEP_CHOICES:
+            keep.addItem(tr("history_keep_off") if n == 0 else str(n), n)
+        keep.setCurrentIndex(max(0, keep.findData(int(self.cfg.get("history_keep") or 0))))
+
+        def keep_changed(_i):
+            self.set_cfg("history_keep", keep.currentData())
+            history.trim(keep.currentData())
+            self.translation_changed.emit()
+
+        keep.currentIndexChanged.connect(keep_changed)
+        row.addWidget(keep)
+        row.addStretch()
+        box.addLayout(row)
+        box.addWidget(dim(tr("history_keep_hint")))
+
+        def hist_toggled(on: bool):
+            keep_label.setEnabled(on)
+            keep.setEnabled(on)
+
+        hist.toggled.connect(hist_toggled)
+        hist_toggled(hist.isChecked())
         lay.addWidget(card)
 
     def add_folders_card(self, lay: QVBoxLayout):
@@ -961,8 +1029,7 @@ class OptionsPage(QWidget):
         grid.addWidget(self.classify_hint, 3, 1, 1, 2)
 
         self.method = QComboBox()
-        fill_methods(self.method, translation.METHODS)  # ── Übersetzung ── / ── KI-Übersetzung ──
-        select_data(self.method, self.cfg["tr_method"])
+        self.fill_main_combo()  # ── Übersetzung ── / ── KI-Übersetzung ── (nur ⭐, wenn welche angehakt)
         grid.addWidget(QLabel(tr("tr_main")), 4, 0)
         grid.addWidget(self.method, 4, 1)
         # Main [Lokales Bild-LLM ▾] [qwen2.5vl:7b ▾] – Modell nur bei KIs (wie bei Kontext/Frage)
@@ -1289,16 +1356,12 @@ class OptionsPage(QWidget):
         (+ Hinweis). Das Modell gehört zur KI (dasselbe wie bei ihr eingestellt).
         Übersetzen darf jeder Dienst (auch Lingva/DeepL), Kontext/Frage nur KIs."""
         tasks = {L.MODE_TRANSLATE: L.TRANSLATE_KEY, **L.TASK_KEYS}
+        self.task_combos = []  # (Dropdown, Aufgabe, Schlüssel) – für ⭐ neu füllen
         for i, mode in enumerate(tasks):
             key = tasks[mode]
             service = QComboBox()
-            service.addItem("", "")  # Text: update() („wie Main“ / „aus“)
-            if mode == L.MODE_TRANSLATE:
-                fill_methods(service, translation.METHODS)  # ── Übersetzung ── / ── KI ──
-            else:
-                for m in L.METHODS:
-                    service.addItem(tr("tr_m_" + m), m)
-            service.setCurrentIndex(max(0, service.findData(self.cfg.get(key) or "")))
+            self.fill_task_combo(service, mode, key)
+            self.task_combos.append((service, mode, key))
             model = model_combo(service.currentData() or L.METHOD_CLAUDE, "", lambda _m: None)
             status = dim("")
             r = row + 2 * i
@@ -1337,6 +1400,37 @@ class OptionsPage(QWidget):
 
             service.currentIndexChanged.connect(changed)
             self.task_updates.append(update)
+            update()
+
+    def fill_main_combo(self):
+        """Main-Dropdown: alle Dienste – bei ⭐ Favoriten nur diese (+ der gewählte)."""
+        methods = translation.favorites_only(self.cfg, translation.METHODS, keep=(self.cfg["tr_method"],))
+        self.method.blockSignals(True)
+        self.method.clear()
+        fill_methods(self.method, methods)
+        select_data(self.method, self.cfg["tr_method"])
+        self.method.blockSignals(False)
+
+    def fill_task_combo(self, combo: QComboBox, mode: str, key: str):
+        """Übersetzen: alle Dienste, Kontext/Frage: nur KIs – bei ⭐ Favoriten nur diese."""
+        current = self.cfg.get(key) or ""
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("", "")  # Text: update() („wie Main“ / „aus“)
+        if mode == L.MODE_TRANSLATE:
+            fill_methods(combo, translation.favorites_only(self.cfg, translation.METHODS, keep=(current,)))
+        else:
+            for m in translation.favorites_only(self.cfg, L.METHODS, keep=(current,)):
+                combo.addItem(tr("tr_m_" + m), m)
+        combo.setCurrentIndex(max(0, combo.findData(current)))
+        combo.blockSignals(False)
+
+    def refill_favorite_combos(self):
+        """⭐ geändert → Main + Aufgaben-Dropdowns neu füllen."""
+        self.fill_main_combo()
+        for combo, mode, key in getattr(self, "task_combos", []):
+            self.fill_task_combo(combo, mode, key)
+        for update in getattr(self, "task_updates", []):
             update()
 
     def main_model_chosen(self):
@@ -1409,6 +1503,7 @@ class OptionsPage(QWidget):
             self.cfg["tr_method"] = usable[0]
             self.sync_translation()
         self.set_cfg("tr_favorites", favs)
+        self.refill_favorite_combos()
 
     def retry_row(self, method: str) -> QHBoxLayout:
         """[✓] Neu senden, wenn länger als [60] s  – hängt die KI, wird neu gefragt."""

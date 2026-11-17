@@ -1,6 +1,22 @@
 # Changelog
 
 
+## [v1.1.0] – 2026-11-12
+- **⚙ New settings page in the VR panel** – replaces the old ⚙ drop-down sheet. It's now the third page next to 🌐 *Translation* and 🖼 *Gallery* (◀ ▶ at the bottom, ⚙ at the top jumps straight there)
+  - Two tabs: **📸 Shot** – GIF recording · Detection & buttons · Icon position · Aspect ratio · Frame size · Eye · Exceptions (tap = remove) – and **🥽 VR** – Panel (size per page, opacity, attach to, ✥ move, ⟲ reset) · 🔘 Button · 🔁 Lens · 🥽 Overlay. Same order as the desktop options
+  - Every group folds open on its own (only one at a time), so the panel stays small; the page always fits its content
+  - 🪟 *Size* can now be set for every page (Translation / Gallery / Settings) from one place
+  - Translation settings and ⭐ favourites stay in the desktop app – the VR menus already only show your favourites
+  - Works the same with and without the app (background service); the list of settings lives in one place (`UI/core/vr_settings.py`) and the service gets it via `daemon/contract.json`
+  - **Needs a service rebuild**
+- **🔄 Desktop options follow VR changes** – things changed in the VR panel (GIF, eye, frame size, exceptions, panel, Lens …) show up in the open options right away, and the options no longer overwrite them with an old state
+- **📸 Options → Shot re-sorted** – same order as the VR panel: GIF recording → Detection & buttons → Icon position → Aspect ratio → Frame size → Eye → Exceptions → Desktop screenshot
+- **⭐ Favourites in the options too** – when favourites are ticked, the dropdowns *Main / Translate / Explain context / Answer question* in *Options → Translation* only list them (nothing ticked = all, as before). *Settings for …* still lists every service so you can set them up
+- **🕘 History auto-delete** – *Options → General → Main page*: *Only keep the last* 5 / 10 / 15 / 30 / 45 / 60 / 120 entries (default 30) or *Off* (up to 200 as before). Older entries are deleted right away and with every new one – also by the background service
+- **📁 Folders & files** moved to the very bottom of *Options → General*
+- **🎨 Fix: “Pick colour …” button** (VR button colour) – the colour now shows as a round dot next to the button instead of a broken grey block
+
+
 ## [v1.0.9] – 2026-11-11
 - **🎯 Laser fix with the panel on a controller** – when the VR panel hangs on the right (or left) controller, the other hand's laser works again. The hand that holds the panel no longer gets a laser, so it can't block the other one
 - **🎬 Video recording (MP4)** – new button **🎞 GIF / 🎬 VID** next to *Translation* (main page) and at the top of the VR panel. On VID, holding the shutter records an MP4 instead of a GIF (H.264, up to 1280 px, 24 fps, ~3 Mbit/s → about 6 MB for 15 s, fine for Discord). Works with 📌 Pin too

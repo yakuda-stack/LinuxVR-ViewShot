@@ -12,6 +12,7 @@ pub const UI_DEFAULTS: &str = r#"{
   "gallery_main_subfolders": false,
   "gallery_folders": [],
   "history": false,
+  "history_keep": 30,
   "tr_method": "lingva",
   "tr_source": "",
   "tr_target": "de",
@@ -70,7 +71,16 @@ pub const LAYER_DEFAULTS: &str = r##"{
   "mode_button": "left",
   "panel_button": true,
   "panel_button_color": "#5b8dc9",
-  "panel_open_on_shot": true
+  "panel_open_on_shot": true,
+  "gif_hold": true,
+  "gif_max_s": 15,
+  "gif_stabilize": "off",
+  "pin_lock": true,
+  "icon_position": "bottom_left",
+  "aspect": "free",
+  "frame_inset_cm": 7,
+  "eye_mix": 50,
+  "excluded_apps": ["wayvr"]
 }"##;
 
 #[derive(Clone, Debug, Default)]

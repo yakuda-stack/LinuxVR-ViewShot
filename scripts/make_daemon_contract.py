@@ -44,7 +44,7 @@ I18N_KEYS = [
 
 # Keys, die der Dienst aus ui.json liest (Standardwerte müssen gleich sein)
 UI_KEYS = [
-    "language", "gallery_main_subfolders", "gallery_folders", "history", "tr_method", "tr_source", "tr_target", "tr_auto", "tr_google_key",
+    "language", "gallery_main_subfolders", "gallery_folders", "history", "history_keep", "tr_method", "tr_source", "tr_target", "tr_auto", "tr_google_key",
     "tr_deepl_key", "tr_libre_url", "tr_libre_online_url", "tr_libre_online_key", "tr_libre_seen",
     "tr_llm_claude_model", "tr_llm_gemini_model", "tr_llm_chatgpt_model", "tr_llm_grok_model", "tr_llm_custom_cmd",
     "tr_llm_custom_model",
@@ -92,10 +92,10 @@ PROMPT_TEXT = "鬼の居ぬ間の○○\nせんたく\nすいじ"
 def build() -> dict:
     sys.path.insert(0, str(ROOT / "UI"))
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from core import config, i18n, layer_config, translation, vision
+    from core import config, i18n, layer_config, translation, vision, vr_settings
     from core import llm_translator as L
 
-    strings = {k: dict(i18n.TEXTS[k]) for k in I18N_KEYS}
+    strings = {k: dict(i18n.TEXTS[k]) for k in dict.fromkeys(I18N_KEYS + vr_settings.text_keys())}
     for m in translation.METHODS:
         strings["tr_m_" + m] = dict(i18n.TEXTS["tr_m_" + m])
     prompts = []
@@ -125,7 +125,10 @@ def build() -> dict:
         "i18n": strings,
         "languages": [list(translation.AUTO)] + [list(x) for x in translation.LANGUAGES],
         "defaults": {"ui": {k: config.DEFAULTS[k] for k in UI_KEYS},
-                     "layer": {k: layer_config.DEFAULTS[k] for k in LAYER_KEYS}},
+                     "layer": {k: layer_config.DEFAULTS[k]
+                               for k in dict.fromkeys(LAYER_KEYS + vr_settings.layer_keys())}},
+        # ⚙ Einstellungs-Seite im VR-Panel (core/vr_settings.py)
+        "vr_settings": {"tabs": vr_settings.TABS, "size_pages": [list(p) for p in vr_settings.SIZE_PAGES]},
         "keys": keys,
         "prompts": prompts,
     }

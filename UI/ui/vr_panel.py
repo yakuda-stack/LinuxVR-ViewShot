@@ -12,13 +12,14 @@ alle Knöpfe, ohne sie in Rust nachzubauen.
 Inhalt: Foto mit Nummern ①②③ auf den Textzeilen · darunter die Übersetzungen
 1, 2, 3 (lang → ▼ / ▲ blättern) · Dienst (+ Modus 🤖/✋) / Aufgabe / Von → Nach
 (Auswahl als Liste im Panel, keine Dropdowns – deren Klapplisten wären eigene
-Fenster und nicht im Bild) · ↻ · ⚙ klappt wie beim Handy von oben die
-Einstellungen auf: Größe, Deckkraft, Hängt an, ✥ Verschieben, ⟲ Position,
-Erkennung & Tasten.
+Fenster und nicht im Bild) · ↻ · ⚙ springt auf die Einstellungs-Seite.
 
-Seiten: 🌐 Übersetzung und 🖼 Galerie. Unten eine Zeile: ◀ links, ▶ rechts wechseln
-die Seite, ⚙ bleibt oben. Jede Seite hat ihre eigene Größe in VR (panel_sizes.json) –
-die Galerie ist standardmäßig größer. Galerie = Raster mit Vorschaubildern über die
+Seiten: 🌐 Übersetzung, 🖼 Galerie und ⚙ Einstellungen. Unten eine Zeile: ◀ links,
+▶ rechts wechseln die Seite. Jede Seite hat ihre eigene Größe in VR (panel_sizes.json) –
+die Galerie ist standardmäßig größer.
+⚙ Einstellungen: Tabs 📸 Shot | 🥽 VR, darin einklappbare Gruppen (immer nur eine offen) –
+was drinsteht, kommt aus core/vr_settings.py (gleiche Liste nutzt der Rust-Dienst).
+Galerie = Raster mit Vorschaubildern über die
 ganze Fläche, Monats-Trenner („── 2026 Oktober ──“); Antippen öffnet das Foto groß mit
 📋 Kopieren · ☁ Hochladen + Link · ↗ Teilen · 🌐 Übersetzen · ⓘ Info · 🗑 Löschen.
 """
@@ -38,7 +39,8 @@ from PyQt6.QtNetwork import QHostAddress, QUdpSocket
 from PyQt6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton,
                              QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
 
-from core import clipboard, config, layer_config, layer_install, overlay, paths, share, tags, translation, uploader
+from core import (clipboard, config, layer_config, layer_install, overlay, paths, share, tags, translation, uploader,
+                  vr_settings)
 from core.version import VERSION
 from core import llm_translator as llm
 from core.i18n import month_title, tr
@@ -49,8 +51,6 @@ WIDTH = 720              # Pixel-Breite des Panel-Bilds (Höhe ergibt sich aus d
 PHOTO_MAX_H = 360        # so hoch darf das Foto im Panel höchstens werden
 CHECK_MS = 400           # so oft schauen, ob sich etwas geändert hat
 RESULT_MAX_H = 300       # Übersetzung höher → blättern (▼ / ▲)
-SLIDE_STEPS = 4          # ⚙ Einstellungen gleiten in so vielen Bildern herein …
-SLIDE_MS = 80            # … je so lange (der Layer schaut alle 80 ms nach)
 SIZE_CM = (15, 80)       # Panel-Breite in VR (Schieber „Größe“)
 BUTTON_CM = (2, 20)      # 🔘 Knopf-Durchmesser in VR (Schieber „Knopf-Größe“)
 # 🔘 Knopf-Farben zum Antippen in VR (passend zu Hand-Overlays wie WayVR)
@@ -63,11 +63,11 @@ MONTH_H = 34             # Höhe eines Monats-Trenners im Raster
 GALLERY_H = 760          # Galerie ohne von Hand gezogene Höhe: so hoch wird das Panel
 SINGLE_MAX_H = 360       # Einzelansicht: so hoch darf das Foto höchstens werden
 GIF_MIN_FRAME_S = 0.125  # 🎞 GIF in VR: höchstens so oft ein neues Panel-Bild (der Layer schaut alle 80 ms)
-PAGES = ("translate", "gallery")
-PAGE_SIZE_DEFAULT = {"translate": 0.32, "gallery": 0.48}  # Breite in VR (m) je Seite
+PAGES = ("translate", "gallery", "settings")
+PAGE_SIZE_DEFAULT = {"translate": 0.32, "gallery": 0.48, "settings": 0.40}  # Breite in VR (m) je Seite
 # Stapel-Seiten im Panel
-PAGE_MAIN, PAGE_PICK, PAGE_SHEET, PAGE_GALLERY, PAGE_SINGLE, PAGE_SHARE, PAGE_INFO = range(7)
-NAV_PAGES = (PAGE_MAIN, PAGE_GALLERY)  # nur hier ist die ◀ ▶-Zeile unten zu sehen
+PAGE_MAIN, PAGE_PICK, PAGE_SETTINGS, PAGE_GALLERY, PAGE_SINGLE, PAGE_SHARE, PAGE_INFO = range(7)
+NAV_PAGES = (PAGE_MAIN, PAGE_GALLERY, PAGE_SETTINGS)  # nur hier ist die ◀ ▶-Zeile unten zu sehen
 BADGE = QColor(70, 150, 255)
 NUMBERS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
 
@@ -189,6 +189,48 @@ def switch_page_size(old: str, new: str) -> None:
         sizes_file().write_text(json.dumps(sizes, indent=2), encoding="utf-8")
     except OSError:
         pass
+
+
+def page_width_cm(page: str) -> int | None:
+    """Breite einer Seite in VR (cm): die offene aus panel_pose.json, die anderen aus
+    panel_sizes.json (oder Standard). None = Panel war noch nie in VR zu sehen."""
+    now = width_cm()
+    if page == current_page() or now is None:
+        return now
+    entry = load_sizes().get(page)
+    width = entry.get("width") if isinstance(entry, dict) else None
+    return round(float(width or PAGE_SIZE_DEFAULT[page]) * 100)
+
+
+def set_page_width_cm(page: str, cm: int) -> bool:
+    """Größe einer Seite ändern – die offene sofort in VR, die anderen beim nächsten Wechsel."""
+    if page == current_page():
+        return set_width_cm(cm)
+    if width_cm() is None:
+        return False
+    sizes = load_sizes()
+    entry = sizes.get(page) if isinstance(sizes.get(page), dict) else {}
+    old = float(entry.get("width") or PAGE_SIZE_DEFAULT[page])
+    new = max(SIZE_CM[0], min(SIZE_CM[1], cm)) / 100
+    height = entry.get("height")
+    sizes[page] = {"width": new, "height": float(height) * new / old if height else None}
+    try:
+        sizes_file().write_text(json.dumps(sizes, indent=2), encoding="utf-8")
+    except OSError:
+        return False
+    return True
+
+
+def clear_layout(lay) -> None:
+    """Alles aus einem Layout entfernen (Widgets verschwinden sofort, gelöscht wird später)."""
+    while lay.count():
+        item = lay.takeAt(0)
+        if item.widget() is not None:
+            item.widget().hide()
+            item.widget().deleteLater()
+        elif item.layout() is not None:
+            clear_layout(item.layout())
+            item.layout().deleteLater()
 
 
 def wrap_lines(text: str, font: QFont, width: int) -> list[str]:
@@ -374,10 +416,10 @@ class VRPanel(QWidget):
         self.choosing = None     # welches Auswahl-Menü ist offen ("tr_method", …)
         self.result_full = ""    # ganze Übersetzung …
         self.result_page = 0     # … angezeigte Seite (▼ / ▲)
-        self.slide = []          # ⚙ auf-/zuklappen: noch zu zeigende Bilder
-        self.slide_timer = QTimer(self)
-        self.slide_timer.timeout.connect(self.next_slide)
-        self.mode = current_page()  # Hauptseite: "translate" / "gallery" (wie zuletzt)
+        self.mode = current_page()  # Hauptseite: "translate" / "gallery" / "settings" (wie zuletzt)
+        self.set_tab = vr_settings.TABS[0]["id"]  # ⚙ Einstellungen: Tab "shot" / "vr"
+        self.set_open = None     # ⚙ aufgeklappte Gruppe (nur eine) oder None
+        self.size_page = "translate"  # 🪟 Größe: für welche Seite
         self.old_open = False    # 🟠 Hinweis „Layer veraltet“ aufgeklappt?
         self.gal_page = 0        # Galerie: Seite im Raster
         self.gal_filter = ""     # Galerie-Filter: "" = alle, "text" / "qr" / "image" / "gif_vid"
@@ -437,7 +479,7 @@ class VRPanel(QWidget):
         self.rec_btn = self.button("", self.toggle_rec)
         self.rec_btn.setMinimumWidth(120)
         head.addWidget(self.rec_btn)
-        head.addWidget(self.button("⚙", self.toggle_sheet, tip=True))
+        head.addWidget(self.button("⚙", self.go_settings, tip=True))
         col.addLayout(head)
         self.old_note = QLabel()
         self.old_note.setWordWrap(True)
@@ -467,7 +509,6 @@ class VRPanel(QWidget):
         self.edit_help.setObjectName("dim")
         self.edit_help.setWordWrap(True)
         col.addWidget(self.edit_help)
-
         self.photo = QLabel()
         self.photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         col.addWidget(self.photo)
@@ -517,8 +558,8 @@ class VRPanel(QWidget):
         pcol.addStretch(1)
         self.stack.addWidget(pick)
 
-        # ---------- Seite 2: ⚙ Einstellungen (klappt von oben herunter) ----------
-        self.stack.addWidget(self.build_sheet())
+        # ---------- Seite 2: ⚙ Einstellungen (Tabs + einklappbare Gruppen) ----------
+        self.stack.addWidget(self.build_settings())
 
         # ---------- Seite 3: 🖼 Galerie (Raster) · Seite 4: ein Foto groß ----------
         self.stack.addWidget(self.build_gallery())
@@ -538,82 +579,150 @@ class VRPanel(QWidget):
         self.timer.timeout.connect(self.refresh)
         self.timer.start(CHECK_MS)
 
-    def build_sheet(self) -> QWidget:
-        sheet = QWidget()
-        col = QVBoxLayout(sheet)
+    # ------------------------------------------------------------ ⚙ Einstellungs-Seite
+    def build_settings(self) -> QWidget:
+        """Kopf + Tabs 📸 Shot | 🥽 VR – die Gruppen darunter baut fill_settings() jedes Mal neu."""
+        page = QWidget()
+        col = QVBoxLayout(page)
         col.setContentsMargins(0, 0, 0, 0)
         col.setSpacing(8)
-        head = QHBoxLayout()
         title = QLabel("⚙  " + tr("panel_settings"))
         title.setObjectName("vrtitle")
-        head.addWidget(title, 1)
-        head.addWidget(self.button("▲", self.toggle_sheet, tip=True))
-        col.addLayout(head)
+        col.addWidget(title)
+        row, self.set_tab_btns = self.choice_row(
+            [(t["id"], tr(t["label"])) for t in vr_settings.TABS], self.set_settings_tab)
+        col.addWidget(row)
+        self.set_body = QVBoxLayout()
+        self.set_body.setSpacing(8)
+        col.addLayout(self.set_body)
+        col.addStretch(1)
+        return page
 
-        def section(text: str) -> QLabel:
+    def fill_settings(self):
+        """Gruppen des Tabs zeichnen: ▸ zu / ▾ offen (dann mit den Einträgen darunter)."""
+        clear_layout(self.set_body)
+        lcfg = layer_config.load()
+        self.mark(self.set_tab_btns, self.set_tab)
+        tab = next(t for t in vr_settings.TABS if t["id"] == self.set_tab)
+        for group in tab["groups"]:
+            opened = group["id"] == self.set_open
+            title = (group["icon"] + "  " if group["icon"] else "") + tr(group["title"]).replace("&", "&&")
+            head = self.button(("▾  " if opened else "▸  ") + title, lambda g=group["id"]: self.toggle_group(g))
+            head.setStyleSheet("text-align: left; padding-left: 16px;")
+            self.mark({True: head}, opened)
+            widgets = [head] + ([self.setting_widget(item, lcfg) for item in group["items"]] if opened else [])
+            for w in widgets:
+                self.set_body.addWidget(w)
+                w.show()  # neu in ein schon sichtbares Fenster → selbst zeigen
+
+    def setting_widget(self, item: dict, lcfg: dict) -> QWidget:
+        """Ein Eintrag aus core/vr_settings.py als Knöpfe / Leiste."""
+        box = QWidget()
+        col = QVBoxLayout(box)
+        col.setContentsMargins(0, 0, 0, 8)
+        col.setSpacing(4)
+
+        def section(text: str):
             label = QLabel(text)
             label.setObjectName("vrsection")
-            return label
+            label.setWordWrap(True)
+            col.addWidget(label)
 
-        # Größe (Breite in VR) + Deckkraft: Laser auf die Leiste = dieser Wert
-        self.size_label = section("")
-        col.addWidget(self.size_label)
-        self.size_bar = ClickBar(*SIZE_CM, self.size_changed)
-        col.addWidget(self.size_bar)
-        self.opacity_label = section("")
-        col.addWidget(self.opacity_label)
-        self.opacity_bar = ClickBar(30, 100, self.opacity_changed)
-        col.addWidget(self.opacity_bar)
+        kind, key = item["type"], item.get("key", "")
+        value = lcfg.get(key, layer_config.DEFAULTS.get(key))
+        if kind == "toggle":
+            on = bool(value)
+            btn = self.button(("✔  " if on else "✕  ") + tr(item["label"]), lambda: self.set_toggle(key))
+            self.mark({True: btn}, on)
+            col.addWidget(btn)
+        elif kind == "choice":
+            if item.get("label"):
+                section(tr(item["label"]))
+            options = [(v, text[1:] if text.startswith("=") else tr(text)) for v, text in item["options"]]
+            cols = item.get("cols") or len(options)
+            grid = QGridLayout()
+            grid.setSpacing(6)
+            btns = {}
+            for i, (v, text) in enumerate(options):
+                btn = self.button(text, lambda v=v: self.set_choice(key, v))
+                btn.setStyleSheet("padding: 4px 6px;")
+                grid.addWidget(btn, i // cols, i % cols)
+                btns[v] = btn
+            self.mark(btns, value)
+            col.addLayout(grid)
+        elif kind == "slider":
+            current = button_cm() if key == "@button_cm" else int(value)
+            if current is None:
+                section(f"{tr(item['label'])}  {tr('panel_size_later')}")
+            elif item.get("fmt"):
+                section(tr(item["fmt"], v=current, inv=item["min"] + item["max"] - current))
+            else:
+                section(f"{tr(item['label'])}:  {current}{item.get('unit', '')}")
+            bar = ClickBar(item["min"], item["max"], lambda v, it=item: self.set_slider(it, v))
+            bar.set_value(current if current is not None else item["min"])
+            bar.setEnabled(current is not None)
+            col.addWidget(bar)
+        elif kind == "size":
+            cm = page_width_cm(self.size_page)
+            name = tr(dict(vr_settings.SIZE_PAGES)[self.size_page])
+            section(f"{tr('panel_size')} · {name}" + (f":  {cm} cm" if cm else f"  {tr('panel_size_later')}"))
+            row, btns = self.choice_row([(p, tr(k)) for p, k in vr_settings.SIZE_PAGES], self.set_size_page)
+            self.mark(btns, self.size_page)
+            col.addWidget(row)
+            bar = ClickBar(*SIZE_CM, self.size_changed)
+            bar.set_value(cm or round(PAGE_SIZE_DEFAULT[self.size_page] * 100))
+            bar.setEnabled(cm is not None)
+            col.addWidget(bar)
+        elif kind == "actions":
+            row = QHBoxLayout()
+            for name, label in item["actions"]:
+                if name == "move":
+                    edit = bool(lcfg.get("panel_edit"))
+                    btn = self.button(("✔  " if edit else "✥  ") + tr(label), self.toggle_edit)
+                    self.mark({True: btn}, edit)
+                else:
+                    btn = self.button("⟲  " + tr(label), reset_position)
+                row.addWidget(btn, 1)
+            col.addLayout(row)
+        elif kind == "colors":
+            row = QHBoxLayout()
+            row.setSpacing(6)
+            current = str(value or BUTTON_COLORS[0]).lower()
+            for color in BUTTON_COLORS:
+                b = self.button("✔" if color == current else "", lambda c=color: self.set_layer(key, c))
+                b.setObjectName("swatch")
+                b.setStyleSheet(f"QPushButton#swatch {{ background: {color}; border: 3px solid #2b3240; "
+                                f"border-radius: 10px; min-height: 44px; font-size: 22px; color: #10131a; }}")
+                row.addWidget(b, 1)
+            col.addLayout(row)
+        elif kind == "list":
+            hint = QLabel(tr(item["hint"]))
+            hint.setObjectName("dim")
+            hint.setWordWrap(True)
+            col.addWidget(hint)
+            entries = list(value or [])
+            if not entries:
+                section(tr(item["empty"]))
+            for name in entries:
+                btn = self.button("✕  " + name, lambda n=name: self.remove_from_list(key, n))
+                btn.setStyleSheet("text-align: left; padding-left: 16px;")
+                col.addWidget(btn)
+        return box
 
-        col.addWidget(section(tr("panel_anchor")))
-        row, self.anchor_btns = self.choice_row(
-            [(a, tr("panel_anchor_short_" + a)) for a in ("left", "right", "head", "world")], self.set_anchor)
-        col.addWidget(row)
-        row = QHBoxLayout()
-        self.move_btn = self.button("", self.toggle_edit)
-        row.addWidget(self.move_btn, 1)
-        row.addWidget(self.button("⟲  " + tr("panel_reset"), reset_position))
-        col.addLayout(row)
+    def go_settings(self):
+        """⚙ oben auf jeder Seite: direkt zu den Einstellungen."""
+        if self.mode != "settings":
+            self.switch_to("settings")
 
-        # 🔘 Knopf: an/aus, nach Foto öffnen, Größe, Farbe
-        col.addWidget(section(tr("panel_button")))
-        row = QHBoxLayout()
-        self.btn_on = self.button("", lambda: self.toggle_layer("panel_button"))
-        row.addWidget(self.btn_on, 1)
-        self.btn_auto = self.button("", lambda: self.toggle_layer("panel_open_on_shot"))
-        row.addWidget(self.btn_auto, 1)
-        col.addLayout(row)
-        self.btn_size_label = section("")
-        col.addWidget(self.btn_size_label)
-        self.btn_size_bar = ClickBar(*BUTTON_CM, self.button_size_changed)
-        col.addWidget(self.btn_size_bar)
-        row = QHBoxLayout()
-        row.setSpacing(6)
-        self.color_btns = {}
-        for color in BUTTON_COLORS:
-            b = self.button("", lambda c=color: self.set_layer("panel_button_color", c))
-            b.setObjectName("swatch")
-            b.setStyleSheet(f"QPushButton#swatch {{ background: {color}; border: 3px solid #2b3240; "
-                            f"border-radius: 10px; min-height: 44px; font-size: 22px; color: #10131a; }}")
-            row.addWidget(b, 1)
-            self.color_btns[color] = b
-        col.addLayout(row)
+    def set_settings_tab(self, tab: str):
+        if tab != self.set_tab:
+            self.set_tab, self.set_open = tab, None
 
-        # Erkennung & Tasten (wie Optionen → Shot)
-        col.addWidget(section(tr("buttons_title")))
-        row, self.detect_btns = self.choice_row(
-            [("auto", tr("detect_short_auto")), ("manual", tr("detect_short_manual"))],
-            lambda v: self.set_layer("detect_mode", v))
-        col.addWidget(row)
-        col.addWidget(section(tr("shutter")))
-        row, self.shutter_btns = self.choice_row(
-            [(c, tr("combo_short_" + c)) for c in layer_config.COMBOS], lambda v: self.set_layer("shutter", v))
-        col.addWidget(row)
-        col.addWidget(section(tr("mode_button")))
-        row, self.mode_button_btns = self.choice_row(
-            [(c, tr("combo_short_" + c)) for c in layer_config.COMBOS], lambda v: self.set_layer("mode_button", v))
-        col.addWidget(row)
-        return sheet
+    def toggle_group(self, gid: str):
+        self.set_open = None if self.set_open == gid else gid
+
+    def set_size_page(self, page: str):
+        self.size_page = page
 
     # ------------------------------------------------------------ Seiten (◀ ▶ unten) + 🖼 Galerie
     def content_w(self, _index: int | None = None) -> int:
@@ -621,21 +730,26 @@ class VRPanel(QWidget):
         return WIDTH - 36
 
     def home_index(self) -> int:
-        """Stapel-Seite der aktuellen Hauptseite (dahin geht's nach ⚙ / Auswahl zurück)."""
+        """Stapel-Seite der aktuellen Hauptseite (dahin geht's nach der Auswahl zurück)."""
         if self.mode == "gallery":
             return PAGE_SINGLE if self.gal_open is not None else PAGE_GALLERY
+        if self.mode == "settings":
+            return PAGE_SETTINGS
         return PAGE_MAIN
 
     def step_page(self, step: int):
         """◀ / ▶: andere Seite – mit ihrer eigenen Größe in VR."""
-        old = self.mode
-        self.mode = PAGES[(PAGES.index(self.mode) + step) % len(PAGES)]
+        self.switch_to(PAGES[(PAGES.index(self.mode) + step) % len(PAGES)])
+
+    def switch_to(self, new: str):
+        old, self.mode = self.mode, new
         self.gal_open, self.gal_confirm, self.gal_toast = None, False, ""
+        self.choosing = None
         switch_page_size(old, self.mode)
         self.stack.setCurrentIndex(self.home_index())
 
     def page_name(self, page: str) -> str:
-        return tr("vr_page_translate") if page == "translate" else tr("nav_gallery")
+        return tr(dict(vr_settings.SIZE_PAGES)[page])
 
     def fill_nav(self):
         i = PAGES.index(self.mode)
@@ -651,7 +765,7 @@ class VRPanel(QWidget):
         row.addWidget(title, 1)
         for w in extra:
             row.addWidget(w)
-        row.addWidget(self.button("⚙", self.toggle_sheet, tip=True))
+        row.addWidget(self.button("⚙", self.go_settings, tip=True))
         return row
 
     def build_gallery(self) -> QWidget:
@@ -961,8 +1075,8 @@ class VRPanel(QWidget):
             self.stop_gif()  # Einzelansicht verlassen / anderes Foto
             return
         now = time.monotonic()
-        if self.slide or not enabled() or not panel_open() or now - self.gif_written < GIF_MIN_FRAME_S:
-            return  # ⚙ klappt gerade / Panel zu / zu schnell – dieses Bild auslassen
+        if not enabled() or not panel_open() or now - self.gif_written < GIF_MIN_FRAME_S:
+            return  # Panel zu / zu schnell – dieses Bild auslassen
         self.gif_written = now
         try:
             self.write(self.render())
@@ -1004,9 +1118,7 @@ class VRPanel(QWidget):
         if not p.tr_result and not p.translating and p.translate_btn.isEnabled():
             p.start_translation()
         self.gal_open, self.gal_confirm, self.gal_toast = None, False, ""
-        old, self.mode = self.mode, PAGES[0]
-        switch_page_size(old, self.mode)
-        self.stack.setCurrentIndex(PAGE_MAIN)
+        self.switch_to(PAGES[0])
 
     def gal_copy(self):
         """📋 Bild in die Zwischenablage (kommt auch auf dem Desktop an)."""
@@ -1202,10 +1314,10 @@ class VRPanel(QWidget):
             pose = (pose_file().stat().st_mtime, button_cm())
         except OSError:
             pose = (0, button_cm())
-        layer_keys = ("panel_opacity", "panel_edit", "panel_anchor", "detect_mode", "shutter", "mode_button",
-                      "panel_button", "panel_open_on_shot", "panel_button_color", "photo_only", "rec_video")
         old = (layer_install.outdated(), self.old_open)
-        return (str(photo), mtime, pose, old, tuple(lcfg.get(k) for k in layer_keys), p.tr_result,
+        settings = (self.set_tab, self.set_open, self.size_page,
+                    page_width_cm(self.size_page) if self.mode == "settings" else None)
+        return (str(photo), mtime, pose, old, json.dumps(lcfg, sort_keys=True), settings, p.tr_result,
                 p.tr_status.text(), p.cfg.get("tr_method"),
                 p.cfg.get("tr_source"), p.cfg.get("tr_target"), p.cfg.get("tr_llm_mode"),
                 p.cfg.get("tr_explain_method"), p.cfg.get("tr_answer_method"),
@@ -1255,7 +1367,8 @@ class VRPanel(QWidget):
         self.fill_pages()
         self.route_row.setVisible(self.choosing == "tr_method" and llm.is_llm(cfg["tr_method"]))
         self.mark(self.route_btns, translation.route_mode(cfg))
-        self.fill_sheet()
+        if self.mode == "settings":
+            self.fill_settings()
         self.fill_nav()
         if self.mode == "gallery":
             self.fill_gallery()
@@ -1290,39 +1403,7 @@ class VRPanel(QWidget):
     def turn_page(self, step: int):
         self.result_page += step
 
-    def fill_sheet(self):
-        lcfg = layer_config.load()
-        cm = width_cm()
-        # Größe gilt für die aktuelle Seite (Übersetzung / Galerie haben je ihre eigene)
-        self.size_label.setText(f"{tr('panel_size')} · {self.page_name(self.mode)}" + (f":  {cm} cm" if cm else ""))
-        self.size_bar.set_value(cm or round(0.32 * 100))
-        self.size_bar.setEnabled(cm is not None)
-        self.opacity_label.setText(f"{tr('panel_opacity')}:  {round(opacity() * 100)} %")
-        self.opacity_bar.set_value(round(opacity() * 100))
-        self.mark(self.anchor_btns, lcfg.get("panel_anchor", "left"))
-        edit = bool(lcfg.get("panel_edit"))
-        self.move_btn.setText(("✔  " if edit else "✥  ") + tr("panel_move"))
-        self.mark({True: self.move_btn}, edit)
-        on = bool(lcfg.get("panel_button", True))
-        self.btn_on.setText(("✔  " if on else "✕  ") + tr("panel_button_short"))
-        self.mark({True: self.btn_on}, on)
-        auto = bool(lcfg.get("panel_open_on_shot", True))
-        self.btn_auto.setText(("✔  " if auto else "✕  ") + tr("panel_open_on_shot_short"))
-        self.mark({True: self.btn_auto}, auto)
-        bcm = button_cm()
-        self.btn_size_label.setText(tr("panel_button_size") + (f":  {bcm} cm" if bcm else f"  {tr('panel_size_later')}"))
-        self.btn_size_bar.set_value(bcm or 3)
-        self.btn_size_bar.setEnabled(bcm is not None)
-        current = str(lcfg.get("panel_button_color", BUTTON_COLORS[0])).lower()
-        for color, b in self.color_btns.items():
-            b.setText("✔" if color == current else "")
-        self.mark(self.detect_btns, lcfg.get("detect_mode"))
-        self.mark(self.shutter_btns, lcfg.get("shutter"))
-        self.mark(self.mode_button_btns, lcfg.get("mode_button"))
-
     def refresh(self, force: bool = False):
-        if self.slide:
-            return  # ⚙ klappt gerade auf/zu
         if not enabled():
             if panel_file().exists():
                 try:
@@ -1343,7 +1424,8 @@ class VRPanel(QWidget):
     def render(self) -> QImage:
         """Inhalt füllen, Höhe anpassen, als Bild holen (mit Deckkraft)."""
         self.fill()
-        fixed = fixed_height_px()
+        # ⚙ Einstellungen: immer so hoch wie der Inhalt (Gruppen klappen auf und zu)
+        fixed = None if self.stack.currentIndex() == PAGE_SETTINGS else fixed_height_px()
         if fixed is None:
             self.fit_height()  # automatisch: so hoch wie der Inhalt
         else:
@@ -1392,42 +1474,6 @@ class VRPanel(QWidget):
         if img.save(str(tmp), "PNG"):
             os.replace(tmp, target)
 
-    # ------------------------------------------------------------ ⚙ auf-/zuklappen
-    def toggle_sheet(self):
-        """⚙ Einstellungen gleiten wie beim Handy von oben herein (bzw. wieder hoch)."""
-        if self.slide:
-            return
-        opening = self.stack.currentIndex() != PAGE_SHEET
-        before = self.render()
-        self.stack.setCurrentIndex(PAGE_SHEET if opening else self.home_index())
-        after = self.render()
-        sheet, base = (after, before) if opening else (before, after)
-        size = after.size()
-        frames = []
-        for k in range(1, SLIDE_STEPS):
-            t = k / SLIDE_STEPS
-            shown = t if opening else 1 - t  # wie weit die Einstellungen schon unten sind
-            frame = QImage(size, QImage.Format.Format_ARGB32)
-            frame.fill(QColor("#161a22"))  # Panel-Hintergrund (Seiten sind verschieden hoch)
-            p = QPainter(frame)
-            p.drawImage(0, 0, base)
-            p.drawImage(0, round(-(1 - shown) * sheet.height()), sheet)
-            p.end()
-            frames.append(frame)
-        self.slide = frames + [after]
-        self.last_sig = None
-        self.next_slide()
-        self.slide_timer.start(SLIDE_MS)
-
-    def next_slide(self):
-        if not self.slide:
-            self.slide_timer.stop()
-            return
-        self.write(self.slide.pop(0))
-        if not self.slide:
-            self.slide_timer.stop()
-            self.last_sig = self.state()
-
     # ------------------------------------------------------------ Klicks
     def read_clicks(self):
         while self.udp.hasPendingDatagrams():
@@ -1440,8 +1486,6 @@ class VRPanel(QWidget):
 
     def click(self, u: float, v: float):
         """Klick an Stelle u/v (0..1) → echter Maus-Klick ins Fenster."""
-        if self.slide:
-            return
         pos = QPointF(u * self.width(), v * self.height())
         target = self.childAt(pos.toPoint())
         if target is None:
@@ -1456,16 +1500,32 @@ class VRPanel(QWidget):
 
     # ------------------------------------------------------------ Einstellungen
     def size_changed(self, cm: int):
-        set_width_cm(cm)
+        set_page_width_cm(self.size_page, cm)
         self.refresh(force=True)
 
-    def button_size_changed(self, cm: int):
-        set_button_cm(cm)
+    def set_toggle(self, key: str):
+        """An/aus-Schalter in layer.json."""
+        layer_config.update(key, not bool(layer_config.load().get(key, layer_config.DEFAULTS.get(key, True))))
+        self.page.layer_changed.emit()
+
+    def set_choice(self, key: str, value: str):
+        if key == "panel_anchor":
+            self.set_anchor(value)
+        else:
+            self.set_layer(key, value)
+
+    def set_slider(self, item: dict, value: int):
+        v = vr_settings.snap(item, value)
+        if item["key"] == "@button_cm":
+            set_button_cm(v)
+        else:
+            layer_config.update(item["key"], v)
+            self.page.layer_changed.emit()
         self.refresh(force=True)
 
-    def toggle_layer(self, key: str):
-        """An/aus-Schalter in layer.json (🔘 Knopf, Nach Foto öffnen) – Standard an."""
-        layer_config.update(key, not bool(layer_config.load().get(key, True)))
+    def remove_from_list(self, key: str, name: str):
+        """🚫 Ausnahme antippen = entfernen."""
+        layer_config.update(key, [a for a in layer_config.load().get(key, []) if a != name])
         self.page.layer_changed.emit()
 
     def toggle_old_note(self):
@@ -1475,10 +1535,6 @@ class VRPanel(QWidget):
         """🎞 GIF ↔ 🎬 VID aus VR."""
         layer_config.toggle_rec_video()
         self.page.layer_changed.emit()
-
-    def opacity_changed(self, value: int):
-        layer_config.update("panel_opacity", max(30, min(100, round(value / 10) * 10)))
-        self.refresh(force=True)
 
     def set_anchor(self, anchor: str):
         if layer_config.load().get("panel_anchor") != anchor:

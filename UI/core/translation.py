@@ -120,14 +120,20 @@ def configured_methods(cfg: dict) -> list[str]:
     return [m for m in METHODS if m == cfg.get("tr_method") or is_configured(m, cfg)]
 
 
-def menu_methods(cfg: dict) -> list[str]:
-    """Dienste fürs Main-Dropdown: nur die ⭐ Favoriten (wenn davon welche eingerichtet
-    sind), sonst alle eingerichteten. Der gerade gewählte ist immer dabei."""
-    methods = configured_methods(cfg)
+def favorites_only(cfg: dict, methods, keep=()) -> list[str]:
+    """Nur die ⭐ Favoriten aus methods – ist keiner davon favorisiert, alle.
+    keep = Dienste, die trotzdem bleiben (der gerade gewählte)."""
+    methods = list(methods)
     favs = set(cfg.get("tr_favorites") or [])
     if not favs & set(methods):
         return methods  # nichts favorisiert → wie bisher
-    return [m for m in methods if m in favs or m == cfg.get("tr_method")]
+    return [m for m in methods if m in favs or m in keep]
+
+
+def menu_methods(cfg: dict) -> list[str]:
+    """Dienste fürs Main-Dropdown: nur die ⭐ Favoriten (wenn davon welche eingerichtet
+    sind), sonst alle eingerichteten. Der gerade gewählte ist immer dabei."""
+    return favorites_only(cfg, configured_methods(cfg), keep=(cfg.get("tr_method"),))
 
 
 def _chain(method: str) -> list[str]:

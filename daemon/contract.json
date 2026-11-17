@@ -466,6 +466,156 @@
    "en": "December",
    "fr": "décembre"
   },
+  "vr_tab_shot": {
+   "de": "📸 Shot",
+   "en": "📸 Shot",
+   "fr": "📸 Shot"
+  },
+  "gif_card": {
+   "de": "GIF-Aufnahme",
+   "en": "GIF recording",
+   "fr": "Enregistrement GIF"
+  },
+  "vr_gif_hold": {
+   "de": "Auslöser halten = GIF/VID",
+   "en": "Hold shutter = GIF/VID",
+   "fr": "Maintenir le déclencheur = GIF/VID"
+  },
+  "gif_max": {
+   "de": "Höchstens",
+   "en": "At most",
+   "fr": "Au maximum"
+  },
+  "gif_stab": {
+   "de": "Stabilisator",
+   "en": "Stabilizer",
+   "fr": "Stabilisateur"
+  },
+  "gif_stab_short_off": {
+   "de": "Aus",
+   "en": "Off",
+   "fr": "Désactivé"
+  },
+  "gif_stab_short_smooth": {
+   "de": "Glätten",
+   "en": "Smooth",
+   "fr": "Lisser"
+  },
+  "gif_stab_short_lock": {
+   "de": "Fest",
+   "en": "Locked",
+   "fr": "Fixe"
+  },
+  "vr_pin_lock": {
+   "de": "📌 Pin-Aufnahmen fest halten",
+   "en": "📌 Keep Pin recordings locked",
+   "fr": "📌 Garder les enregistrements Pin fixes"
+  },
+  "detect_mode": {
+   "de": "Erkennung",
+   "en": "Detection",
+   "fr": "Détection"
+  },
+  "icon_position": {
+   "de": "Symbol-Position",
+   "en": "Icon position",
+   "fr": "Position de l'icône"
+  },
+  "top_left": {
+   "de": "↖ Oben links",
+   "en": "↖ Top left",
+   "fr": "↖ En haut à gauche"
+  },
+  "top_right": {
+   "de": "↗ Oben rechts",
+   "en": "↗ Top right",
+   "fr": "↗ En haut à droite"
+  },
+  "bottom_left": {
+   "de": "↙ Unten links",
+   "en": "↙ Bottom left",
+   "fr": "↙ En bas à gauche"
+  },
+  "bottom_right": {
+   "de": "↘ Unten rechts",
+   "en": "↘ Bottom right",
+   "fr": "↘ En bas à droite"
+  },
+  "aspect_card": {
+   "de": "Seitenverhältnis",
+   "en": "Aspect ratio",
+   "fr": "Format d'image"
+  },
+  "aspect_free": {
+   "de": "Frei",
+   "en": "Free",
+   "fr": "Libre"
+  },
+  "frame_size": {
+   "de": "Rahmengröße",
+   "en": "Frame size",
+   "fr": "Taille du cadre"
+  },
+  "vr_frame_value": {
+   "de": "{v} cm Abstand zu den Händen",
+   "en": "{v} cm gap to your hands",
+   "fr": "{v} cm d'écart avec les mains"
+  },
+  "eye": {
+   "de": "Auge",
+   "en": "Eye",
+   "fr": "Œil"
+  },
+  "vr_eye_value": {
+   "de": "👁 Links {inv} %  ·  Rechts {v} %",
+   "en": "👁 Left {inv} %  ·  Right {v} %",
+   "fr": "👁 Gauche {inv} %  ·  Droite {v} %"
+  },
+  "excluded": {
+   "de": "Ausnahmen",
+   "en": "Exceptions",
+   "fr": "Exceptions"
+  },
+  "vr_excluded_hint": {
+   "de": "Antippen = entfernen · Hinzufügen geht in der Desktop-App",
+   "en": "Tap = remove · adding works in the desktop app",
+   "fr": "Toucher = supprimer · l'ajout se fait dans l'application de bureau"
+  },
+  "vr_excluded_empty": {
+   "de": "Keine Ausnahmen",
+   "en": "No exceptions",
+   "fr": "Aucune exception"
+  },
+  "vr_tab_vr": {
+   "de": "🥽 VR",
+   "en": "🥽 VR",
+   "fr": "🥽 VR"
+  },
+  "vr_panel_group": {
+   "de": "Panel",
+   "en": "Panel",
+   "fr": "Panneau"
+  },
+  "vr_lens_group": {
+   "de": "🔁 Lens",
+   "en": "🔁 Lens",
+   "fr": "🔁 Lens"
+  },
+  "vr_live_value": {
+   "de": "Alle {v} s neu übersetzen",
+   "en": "Translate again every {v} s",
+   "fr": "Retraduire toutes les {v} s"
+  },
+  "overlay_card": {
+   "de": "🔁 Lens: Übersetzung über dem Original",
+   "en": "🔁 Lens: translation over the original",
+   "fr": "🔁 Lens : traduction par-dessus l'original"
+  },
+  "overlay_on": {
+   "de": "🥽 Übersetzung über dem Text anzeigen",
+   "en": "🥽 Show translation over the text",
+   "fr": "🥽 Afficher la traduction par-dessus le texte"
+  },
   "tr_m_lingva": {
    "de": "Lingva (anonym, kein Key)",
    "en": "Lingva (anonymous, no key)",
@@ -610,6 +760,7 @@
    "gallery_main_subfolders": false,
    "gallery_folders": [],
    "history": false,
+   "history_keep": 30,
    "tr_method": "lingva",
    "tr_source": "",
    "tr_target": "de",
@@ -666,8 +817,381 @@
    "mode_button": "left",
    "panel_button": true,
    "panel_button_color": "#5b8dc9",
-   "panel_open_on_shot": true
+   "panel_open_on_shot": true,
+   "gif_hold": true,
+   "gif_max_s": 15,
+   "gif_stabilize": "off",
+   "pin_lock": true,
+   "icon_position": "bottom_left",
+   "aspect": "free",
+   "frame_inset_cm": 7,
+   "eye_mix": 50,
+   "excluded_apps": [
+    "wayvr"
+   ]
   }
+ },
+ "vr_settings": {
+  "tabs": [
+   {
+    "id": "shot",
+    "label": "vr_tab_shot",
+    "groups": [
+     {
+      "id": "gif",
+      "icon": "🎞",
+      "title": "gif_card",
+      "items": [
+       {
+        "type": "toggle",
+        "key": "gif_hold",
+        "label": "vr_gif_hold"
+       },
+       {
+        "type": "slider",
+        "key": "gif_max_s",
+        "label": "gif_max",
+        "min": 1,
+        "max": 15,
+        "step": 1,
+        "unit": " s",
+        "fmt": ""
+       },
+       {
+        "type": "choice",
+        "key": "gif_stabilize",
+        "label": "gif_stab",
+        "options": [
+         [
+          "off",
+          "gif_stab_short_off"
+         ],
+         [
+          "smooth",
+          "gif_stab_short_smooth"
+         ],
+         [
+          "lock",
+          "gif_stab_short_lock"
+         ]
+        ],
+        "cols": 0
+       },
+       {
+        "type": "toggle",
+        "key": "pin_lock",
+        "label": "vr_pin_lock"
+       }
+      ]
+     },
+     {
+      "id": "buttons",
+      "icon": "🎮",
+      "title": "buttons_title",
+      "items": [
+       {
+        "type": "choice",
+        "key": "detect_mode",
+        "label": "detect_mode",
+        "options": [
+         [
+          "auto",
+          "detect_short_auto"
+         ],
+         [
+          "manual",
+          "detect_short_manual"
+         ]
+        ],
+        "cols": 0
+       },
+       {
+        "type": "choice",
+        "key": "shutter",
+        "label": "shutter",
+        "options": [
+         [
+          "left",
+          "combo_short_left"
+         ],
+         [
+          "right",
+          "combo_short_right"
+         ],
+         [
+          "both",
+          "combo_short_both"
+         ]
+        ],
+        "cols": 0
+       },
+       {
+        "type": "choice",
+        "key": "mode_button",
+        "label": "mode_button",
+        "options": [
+         [
+          "left",
+          "combo_short_left"
+         ],
+         [
+          "right",
+          "combo_short_right"
+         ],
+         [
+          "both",
+          "combo_short_both"
+         ]
+        ],
+        "cols": 0
+       }
+      ]
+     },
+     {
+      "id": "icon",
+      "icon": "🔣",
+      "title": "icon_position",
+      "items": [
+       {
+        "type": "choice",
+        "key": "icon_position",
+        "label": null,
+        "options": [
+         [
+          "top_left",
+          "top_left"
+         ],
+         [
+          "top_right",
+          "top_right"
+         ],
+         [
+          "bottom_left",
+          "bottom_left"
+         ],
+         [
+          "bottom_right",
+          "bottom_right"
+         ]
+        ],
+        "cols": 2
+       }
+      ]
+     },
+     {
+      "id": "aspect",
+      "icon": "📐",
+      "title": "aspect_card",
+      "items": [
+       {
+        "type": "choice",
+        "key": "aspect",
+        "label": null,
+        "options": [
+         [
+          "free",
+          "aspect_free"
+         ],
+         [
+          "1:1",
+          "=1:1"
+         ],
+         [
+          "16:9",
+          "=16:9"
+         ]
+        ],
+        "cols": 0
+       }
+      ]
+     },
+     {
+      "id": "frame",
+      "icon": "🔲",
+      "title": "frame_size",
+      "items": [
+       {
+        "type": "slider",
+        "key": "frame_inset_cm",
+        "label": null,
+        "min": 0,
+        "max": 15,
+        "step": 1,
+        "unit": "",
+        "fmt": "vr_frame_value"
+       }
+      ]
+     },
+     {
+      "id": "eye",
+      "icon": "👁",
+      "title": "eye",
+      "items": [
+       {
+        "type": "slider",
+        "key": "eye_mix",
+        "label": null,
+        "min": 0,
+        "max": 100,
+        "step": 5,
+        "unit": "",
+        "fmt": "vr_eye_value"
+       }
+      ]
+     },
+     {
+      "id": "excluded",
+      "icon": "🚫",
+      "title": "excluded",
+      "items": [
+       {
+        "type": "list",
+        "key": "excluded_apps",
+        "hint": "vr_excluded_hint",
+        "empty": "vr_excluded_empty"
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "vr",
+    "label": "vr_tab_vr",
+    "groups": [
+     {
+      "id": "panel",
+      "icon": "🪟",
+      "title": "vr_panel_group",
+      "items": [
+       {
+        "type": "size"
+       },
+       {
+        "type": "slider",
+        "key": "panel_opacity",
+        "label": "panel_opacity",
+        "min": 30,
+        "max": 100,
+        "step": 10,
+        "unit": " %",
+        "fmt": ""
+       },
+       {
+        "type": "choice",
+        "key": "panel_anchor",
+        "label": "panel_anchor",
+        "options": [
+         [
+          "left",
+          "panel_anchor_short_left"
+         ],
+         [
+          "right",
+          "panel_anchor_short_right"
+         ],
+         [
+          "head",
+          "panel_anchor_short_head"
+         ],
+         [
+          "world",
+          "panel_anchor_short_world"
+         ]
+        ],
+        "cols": 0
+       },
+       {
+        "type": "actions",
+        "actions": [
+         [
+          "move",
+          "panel_move"
+         ],
+         [
+          "reset",
+          "panel_reset"
+         ]
+        ]
+       }
+      ]
+     },
+     {
+      "id": "button",
+      "icon": "",
+      "title": "panel_button",
+      "items": [
+       {
+        "type": "toggle",
+        "key": "panel_button",
+        "label": "panel_button_short"
+       },
+       {
+        "type": "toggle",
+        "key": "panel_open_on_shot",
+        "label": "panel_open_on_shot_short"
+       },
+       {
+        "type": "slider",
+        "key": "@button_cm",
+        "label": "panel_button_size",
+        "min": 2,
+        "max": 20,
+        "step": 1,
+        "unit": " cm",
+        "fmt": ""
+       },
+       {
+        "type": "colors",
+        "key": "panel_button_color"
+       }
+      ]
+     },
+     {
+      "id": "lens",
+      "icon": "",
+      "title": "vr_lens_group",
+      "items": [
+       {
+        "type": "slider",
+        "key": "live_interval_s",
+        "label": null,
+        "min": 1,
+        "max": 10,
+        "step": 1,
+        "unit": "",
+        "fmt": "vr_live_value"
+       }
+      ]
+     },
+     {
+      "id": "overlay",
+      "icon": "",
+      "title": "overlay_card",
+      "items": [
+       {
+        "type": "toggle",
+        "key": "overlay",
+        "label": "overlay_on"
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "size_pages": [
+   [
+    "translate",
+    "vr_page_translate"
+   ],
+   [
+    "gallery",
+    "nav_gallery"
+   ],
+   [
+    "settings",
+    "panel_settings"
+   ]
+  ]
  },
  "keys": [
   {

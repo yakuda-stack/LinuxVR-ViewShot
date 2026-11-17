@@ -133,7 +133,7 @@ class HistoryMixin:
 
     def add_history(self, photo: str, ocr: str, translated: str, method: str):
         if self.cfg.get("history") and history.add(Path(photo).name if photo else "",
-                                                   ocr, translated, method):
+                                                   ocr, translated, method, self.cfg.get("history_keep")):
             self.sync_history()
 
     def show_history(self, item):

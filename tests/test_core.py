@@ -783,20 +783,56 @@ def test_panel_click_from_vr_presses_button(tmp_path, monkeypatch):
     from core import layer_config
     monkeypatch.setattr(layer_config, "CONFIG_DIR", tmp_path)
     monkeypatch.setattr(layer_config, "LAYER_FILE", tmp_path / "layer.json")
+    from ui import vr_panel
+    monkeypatch.setattr(vr_panel, "sizes_file", lambda: tmp_path / "panel_sizes.json")
     from ui.mainwindow import MainWindow
     w = MainWindow()
     pw = w.main_page.vr_panel
     pw.refresh(force=True)
-    pw.toggle_sheet()          # ⚙ Einstellungen (klappt auf)
-    pw.slide.clear()
-    c = pw.move_btn.mapTo(pw, pw.move_btn.rect().center())
-    pw.click(c.x() / pw.width(), c.y() / pw.height())
+    from PyQt6.QtWidgets import QPushButton
+    from core.i18n import tr
+
+    def tap(widget):  # Klick wie vom Layer (u/v)
+        c = widget.mapTo(pw, widget.rect().center())
+        pw.click(c.x() / pw.width(), c.y() / pw.height())
+        pw.refresh(force=True)
+
+    def find(text):  # Knopf auf der ⚙ Seite (wird bei jedem Zeichnen neu gebaut)
+        return next(b for b in pw.findChildren(QPushButton) if b.isVisible() and text in b.text())
+
+    tap(find("⚙"))                                     # ⚙ → Einstellungs-Seite (3. Seite)
+    assert pw.mode == "settings" and pw.stack.currentIndex() == vr_panel.PAGE_SETTINGS
+    assert pw.nav.isVisible()
+    tap(find(tr("vr_tab_vr")))                         # Tab 🥽 VR
+    tap(find(tr("vr_panel_group")))                    # ▸ Panel aufklappen
+    assert pw.set_open == "panel"
+    tap(find(tr("panel_move")))
     assert layer_config.load()["panel_edit"] is True
-    b = pw.shutter_btns["left"]  # Auslöser links → Typ-Taste weicht aus
-    c = b.mapTo(pw, b.rect().center())
-    pw.click(c.x() / pw.width(), c.y() / pw.height())
+    tap(find(tr("vr_tab_shot")))                       # Tab 📸 Shot
+    tap(find(tr("buttons_title").replace("&", "&&")))  # ▸ Erkennung & Tasten (&& = echtes &)
+    shutter_left = [b for b in pw.findChildren(QPushButton)
+                    if b.isVisible() and b.text() == tr("combo_short_left")][0]  # erste Zeile = Auslöser
+    tap(shutter_left)                                  # Auslöser links → Typ-Taste weicht aus
     fresh = layer_config.load()
     assert fresh["shutter"] == "left" and fresh["mode_button"] != "left"
+    tap(find(tr("excluded")))                          # 🚫 Ausnahmen: antippen = entfernen
+    tap(find("✕  wayvr"))
+    assert layer_config.load()["excluded_apps"] == []
+    tap(find(tr("eye")))                               # 👁 Leiste ganz rechts = 100
+    bar = [w for w in pw.findChildren(vr_panel.ClickBar) if w.isVisible()][0]
+    c = bar.mapTo(pw, bar.rect().center())
+    pw.click((c.x() + bar.width() / 2 - 2) / pw.width(), c.y() / pw.height())
+    assert layer_config.load()["eye_mix"] == 100
+    # Desktop-Optionen ziehen nach – und überschreiben die VR-Änderung nicht mehr
+    from PyQt6.QtWidgets import QListWidget, QSlider
+    opts = w.options_page
+    eye = [sl for sl in opts.findChildren(QSlider) if sl.maximum() == 100 and sl.singleStep() == 5][0]
+    assert eye.value() == 100
+    assert opts.findChildren(QListWidget)[0].count() == 0      # wayvr in VR entfernt
+    frame = [sl for sl in opts.findChildren(QSlider) if sl.maximum() == 15 and sl.minimum() == 0][0]
+    frame.setValue(3)
+    fresh = layer_config.load()
+    assert fresh["frame_inset_cm"] == 3 and fresh["eye_mix"] == 100 and fresh["excluded_apps"] == []
     assert (tmp_path / "panel" / "panel.png").exists()
     os.environ.pop("VIEWSHOT_OUTPUT_DIR", None)
 

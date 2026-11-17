@@ -26,6 +26,7 @@ DEFAULTS = {
     "gallery_folders": [],  # 🖼 Galerie: weitere Ordner [{"path": …, "subfolders": bool}]
     "desktop_shot": False,  # 🖥 Desktop-Screenshot per Tastenkürzel (core/desktop_shot.py)
     "history": False,       # Main: Verlauf der Übersetzungen (Standard aus – spart Arbeit)
+    "history_keep": 30,     # 🕘 nur die letzten N behalten, ältere löschen (0 = aus → bis 200)
     **TRANSLATION_DEFAULTS,  # tr_… Einstellungen (Optionen → Übersetzung)
     **OUTPUT_DEFAULTS,       # out_… 📡 OSC / 📄 Textdatei (Optionen → Übersetzung → Ausgabe)
     **CONVERT_DEFAULTS,      # conv_… 🔄 Converter (Video → GIF, 🗜 Komprimieren)

@@ -170,11 +170,6 @@ impl Canvas {
         }
     }
 
-    /// Anderes Bild darüberlegen (y darf negativ sein – für das Aufklappen)
-    pub fn draw(&mut self, other: &Canvas, x: i32, y: i32) {
-        self.pix.draw_pixmap(x, y, other.pix.as_ref(), &tiny_skia::PixmapPaint::default(), Transform::identity(), None);
-    }
-
     /// Ganzes Bild durchsichtiger machen (Deckkraft 0..1)
     pub fn fade(&mut self, alpha: f32) {
         if alpha >= 1.0 {

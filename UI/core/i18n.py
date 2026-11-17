@@ -371,6 +371,10 @@ TEXTS = {
                         "en": "🕘 From history: {time}  {service}"},
     "history_option":  {"de": "🕘 Verlauf auf der Main-Seite (Übersetzungen merken)",
                         "en": "🕘 History on the Main page (remember translations)"},
+    "history_keep":    {"de": "Nur die letzten behalten:", "en": "Only keep the last:"},
+    "history_keep_off": {"de": "Aus", "en": "Off"},
+    "history_keep_hint": {"de": "Ältere Einträge werden automatisch gelöscht. Aus = bis zu 200 Einträge.",
+                          "en": "Older entries are deleted automatically. Off = up to 200 entries."},
     "ocr_edit_hint":   {"de": "Text hier eintippen oder korrigieren …",
                         "en": "Type or correct the text here …"},
     "ocr_retranslate": {"de": "Korrigierten Text übersetzen", "en": "Translate corrected text"},
@@ -602,6 +606,21 @@ TEXTS = {
                         "en": "Panel and 🔘 button each on their own: laser on it + grip = move/rotate · "
                               "bottom right corner + trigger = size · panel: top left corner + trigger = height · ⟲ = reset"},
     "panel_settings":  {"de": "Einstellungen", "en": "Settings"},
+    "vr_tab_shot":     {"de": "📸 Shot", "en": "📸 Shot"},
+    "vr_tab_vr":       {"de": "🥽 VR", "en": "🥽 VR"},
+    "vr_gif_hold":     {"de": "Auslöser halten = GIF/VID", "en": "Hold shutter = GIF/VID"},
+    "gif_stab_short_off": {"de": "Aus", "en": "Off"},
+    "gif_stab_short_smooth": {"de": "Glätten", "en": "Smooth"},
+    "gif_stab_short_lock": {"de": "Fest", "en": "Locked"},
+    "vr_pin_lock":     {"de": "📌 Pin-Aufnahmen fest halten", "en": "📌 Keep Pin recordings locked"},
+    "vr_frame_value":  {"de": "{v} cm Abstand zu den Händen", "en": "{v} cm gap to your hands"},
+    "vr_eye_value":    {"de": "👁 Links {inv} %  ·  Rechts {v} %", "en": "👁 Left {inv} %  ·  Right {v} %"},
+    "vr_excluded_hint": {"de": "Antippen = entfernen · Hinzufügen geht in der Desktop-App",
+                         "en": "Tap = remove · adding works in the desktop app"},
+    "vr_excluded_empty": {"de": "Keine Ausnahmen", "en": "No exceptions"},
+    "vr_panel_group":  {"de": "Panel", "en": "Panel"},
+    "vr_lens_group":   {"de": "🔁 Lens", "en": "🔁 Lens"},
+    "vr_live_value":   {"de": "Alle {v} s neu übersetzen", "en": "Translate again every {v} s"},
     "vr_delete_sure":  {"de": "Wirklich löschen?", "en": "Really delete?"},
     "month_1": {"de": "Januar", "en": "January"},
     "month_2": {"de": "Februar", "en": "February"},
@@ -754,10 +773,10 @@ TEXTS = {
     "tr_answer_not_ready": {"de": "Dieser Dienst ist noch nicht eingerichtet – bis dahin wird der normale "
                                   "Dienst genommen.",
                             "en": "This service is not set up yet – the normal service is used until then."},
-    "tr_favorites_hint": {"de": "Nur angehakte Dienste stehen auf der Main-Seite im Dropdown. "
+    "tr_favorites_hint": {"de": "Nur angehakte Dienste stehen im Dropdown – auf der Main-Seite und hier unten bei Main / Übersetzen / Kontext / Frage. "
                                 "Nichts angehakt = alle eingerichteten Dienste (wie bisher). "
                                 "Nicht eingerichtete Favoriten erscheinen erst, wenn sie eingerichtet sind.",
-                          "en": "Only ticked services appear in the Main page dropdown. "
+                          "en": "Only ticked services appear in the dropdowns – on the Main page and below at Main / Translate / Context / Question. "
                                 "Nothing ticked = all services that are set up (as before). "
                                 "Favourites that aren't set up only appear once they are."},
     "tr_only_configured": {"de": "Auf der Main-Seite stehen nur Dienste, die eingerichtet sind "
