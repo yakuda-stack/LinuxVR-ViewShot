@@ -353,6 +353,13 @@ class OptionsPage(QWidget):
         """Erkennung (automatisch / manuell in VR) + welche Trigger was tun."""
         card, box = make_card(tr("buttons_title"))
         box.addWidget(dim(tr("buttons_hint")))
+        for key, label in (("gesture", "gesture_on"), ("gesture_strict", "gesture_strict")):
+            check = QCheckBox(tr(label))
+            check.setChecked(bool(self.layer.get(key, layer_config.DEFAULTS[key])))
+            check.toggled.connect(lambda checked, k=key: self.layer_set(k, checked))
+            self.watch(key, check, lambda v, c=check: c.setChecked(bool(v)))
+            box.addWidget(check)
+        box.addWidget(dim(tr("gesture_strict_hint")))
         grid = QGridLayout()
         grid.setHorizontalSpacing(12)
         self.layer_combos = {}

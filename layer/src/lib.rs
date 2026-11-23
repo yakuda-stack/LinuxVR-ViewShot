@@ -830,6 +830,8 @@ unsafe fn update_gesture(nx: &Next, session: xr::Session) {
     // 📷 Nur Foto/GIF: kurz drücken = Foto, halten = GIF – auch bei 🔁 und 📌
     let lens = buttons.mode.is_some() && kind == icons::PhotoType::Lens && !cfg.photo_only;
     let pin = buttons.mode.is_some() && kind == icons::PhotoType::Pin;
+    s.gesture.cfg.enabled = cfg.gesture;
+    s.gesture.cfg.strict = cfg.gesture_strict;
     let mut event = s.gesture.update(&inputs, Instant::now(), &buttons);
     if event == gesture::Event::GifStart && lens {
         event = gesture::Event::TakePhoto;

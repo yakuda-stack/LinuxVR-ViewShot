@@ -1,6 +1,12 @@
 # Changelog
 
 
+## [v1.1.1] – 2026-11-23
+- **✋ Re-grab (weapon guard)** – the frame no longer pops up while you hold a two-handed weapon (e.g. VRChat shooters). It only opens when both grips are pressed almost at the same time (≤ 0.4 s). If a trigger/button is pressed while holding, or one hand grabs later, you have to let go and grab again. On by default
+- **🖐 Frame gesture on/off** – switch the hand-frame gesture off completely (an open frame closes right away). Both in *Options → Shot → Detection & buttons* and in the VR panel ⚙ (📸 Shot → 🎮)
+- **Needs a layer + service rebuild**
+
+
 ## [v1.1.0] – 2026-11-12
 - **⚙ New settings page in the VR panel** – replaces the old ⚙ drop-down sheet. It's now the third page next to 🌐 *Translation* and 🖼 *Gallery* (◀ ▶ at the bottom, ⚙ at the top jumps straight there)
   - Two tabs: **📸 Shot** – GIF recording · Detection & buttons · Icon position · Aspect ratio · Frame size · Eye · Exceptions (tap = remove) – and **🥽 VR** – Panel (size per page, opacity, attach to, ✥ move, ⟲ reset) · 🔘 Button · 🔁 Lens · 🥽 Overlay. Same order as the desktop options

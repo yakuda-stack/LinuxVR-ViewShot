@@ -51,6 +51,8 @@ TABS = [
             _toggle("pin_lock", "vr_pin_lock"),
         ]),
         _group("buttons", "🎮", "buttons_title", [
+            _toggle("gesture", "vr_gesture_on"),
+            _toggle("gesture_strict", "vr_gesture_strict"),
             _choice("detect_mode", "detect_mode", [("auto", "detect_short_auto"), ("manual", "detect_short_manual")]),
             _choice("shutter", "shutter", COMBOS),
             _choice("mode_button", "mode_button", COMBOS),

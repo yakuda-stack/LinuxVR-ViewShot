@@ -168,6 +168,15 @@ TEXTS = {
                               "nur beim ersten Mal Layer neu bauen (Main → Neu bauen).",
                         "en": "What the triggers do while the frame is open. Applies instantly – "
                               "rebuild the layer once (Main → Rebuild)."},
+    "gesture_on":      {"de": "🖐  Rahmen-Geste an (aus = Rahmen geht nie auf, z. B. in Shootern)",
+                        "en": "🖐  Frame gesture on (off = the frame never opens, e.g. in shooters)"},
+    "gesture_strict":  {"de": "✋  Neu greifen (Schutz bei Zwei-Hand-Waffen)",
+                        "en": "✋  Re-grab (guard for two-handed weapons)"},
+    "gesture_strict_hint": {"de": "Rahmen nur, wenn beide Grips fast gleichzeitig gedrückt werden. Kommt beim "
+                                  "Halten ein Trigger/Knopf dazwischen oder greift eine Hand später zu, erst "
+                                  "loslassen und neu greifen.",
+                            "en": "Frame only when both grips are pressed almost together. If a trigger/button "
+                                  "is pressed while holding, or one hand grabs later, let go and grab again."},
     "detect_mode":     {"de": "Erkennung",       "en": "Detection"},
     "shutter":         {"de": "Foto auslösen",   "en": "Take photo"},
     "mode_button":     {"de": "Typ wechseln",    "en": "Switch type"},
@@ -613,6 +622,8 @@ TEXTS = {
     "gif_stab_short_smooth": {"de": "Glätten", "en": "Smooth"},
     "gif_stab_short_lock": {"de": "Fest", "en": "Locked"},
     "vr_pin_lock":     {"de": "📌 Pin-Aufnahmen fest halten", "en": "📌 Keep Pin recordings locked"},
+    "vr_gesture_on":   {"de": "🖐 Rahmen-Geste an", "en": "🖐 Frame gesture on"},
+    "vr_gesture_strict": {"de": "✋ Neu greifen (Waffen-Schutz)", "en": "✋ Re-grab (weapon guard)"},
     "vr_frame_value":  {"de": "{v} cm Abstand zu den Händen", "en": "{v} cm gap to your hands"},
     "vr_eye_value":    {"de": "👁 Links {inv} %  ·  Rechts {v} %", "en": "👁 Left {inv} %  ·  Right {v} %"},
     "vr_excluded_hint": {"de": "Antippen = entfernen · Hinzufügen geht in der Desktop-App",

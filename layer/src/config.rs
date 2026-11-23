@@ -12,6 +12,8 @@
 //!                                 "manual" = Typ in VR wählen (Symbol am Rahmen)
 //!   "shutter": "right",           Auslöser: "left" / "right" / "both"
 //!   "mode_button": "left",        Typ wechseln (nur manual): "left" / "right" / "both"
+//!   "gesture": true,              🖐 Rahmen-Geste an (aus = Rahmen geht nie auf, z. B. in Shootern)
+//!   "gesture_strict": true,       ✋ Neu greifen: beide Grips fast gleichzeitig drücken, sonst erst loslassen
 //!   "aspect": "free",             📐 Seitenverhältnis des Fotos: "free" / "1:1" / "16:9"
 //!   "gif_hold": true,             🎞 Auslöser gedrückt halten = GIF aufnehmen (max. gif_max_s)
 //!   "gif_max_s": 15,              längste GIF-Aufnahme in Sekunden (1–15)
@@ -128,6 +130,10 @@ pub struct LayerConfig {
     pub detect_mode: DetectMode,
     pub shutter: Combo,
     pub mode_button: Combo,
+    /// 🖐 Rahmen-Geste an
+    pub gesture: bool,
+    /// ✋ Neu greifen (gegen Zwei-Hand-Waffen): Grips fast gleichzeitig, Trigger dazwischen = erst loslassen
+    pub gesture_strict: bool,
     pub icon_position: IconPosition,
     /// 📐 Seitenverhältnis (frei / 1:1 / 16:9)
     pub aspect: Aspect,
@@ -171,6 +177,8 @@ impl Default for LayerConfig {
             detect_mode: DetectMode::Auto,
             shutter: Combo::Right,
             mode_button: Combo::Left,
+            gesture: true,
+            gesture_strict: true,
             icon_position: IconPosition::BottomLeft,
             aspect: Aspect::Free,
             gif_hold: true,
@@ -389,6 +397,14 @@ mod tests {
         assert_eq!(s.gif_stabilize, Stabilize::Lock);
         assert_eq!(LayerConfig::default().gif_stabilize, Stabilize::Off);
         assert!(LayerConfig::default().pin_lock);
+    }
+
+    #[test]
+    fn gesture_switches_default_on() {
+        let c = LayerConfig::default();
+        assert!(c.gesture && c.gesture_strict);
+        let c: LayerConfig = serde_json::from_str(r#"{"gesture": false, "gesture_strict": false}"#).unwrap();
+        assert!(!c.gesture && !c.gesture_strict);
     }
 
     #[test]
