@@ -95,6 +95,8 @@ struct SessionData {
     vk_failed: bool,
     swapchains: HashMap<u64, SwapchainInfo>,
     last_time: xr::Time,
+    /// 🔫 Letzte Kopf-Pose (im Raum des Spiels) – für „Hände hintereinander?“
+    head: Option<(xr::Space, xr::Posef)>,
     gesture: gesture::Gesture,
     capture_pending: bool,
     /// Frames seit dem Auslösen ohne erfolgreiche Aufnahme (Diagnose)
@@ -805,6 +807,19 @@ unsafe extern "system" fn sync_actions(session: xr::Session, info: *const xr::Ac
     r
 }
 
+/// 🔫 Wie sehr liegen die Hände hintereinander (in Blickrichtung)?
+/// 0 = nebeneinander (Rahmen vor dem Gesicht), 1 = genau hintereinander (Gewehr).
+/// None = Hände/Kopf nicht getrackt.
+unsafe fn hands_in_line(nx: &Next, s: &SessionData) -> Option<f32> {
+    let (space, head) = s.head?;
+    let l = locate(nx, s.spaces[0], space, s.last_time)?;
+    let r = locate(nx, s.spaces[1], space, s.last_time)?;
+    let diff = xr::Vector3f { x: l.x - r.x, y: l.y - r.y, z: l.z - r.z };
+    let d = panel::rotate(panel::inverse(&head).orientation, diff);
+    let dist = (d.x * d.x + d.y * d.y + d.z * d.z).sqrt();
+    (dist > 0.01).then(|| d.z.abs() / dist)
+}
+
 unsafe fn update_gesture(nx: &Next, session: xr::Session) {
     let mut g = state();
     let Some(s) = g.session_mut(session) else { return };
@@ -820,6 +835,7 @@ unsafe fn update_gesture(nx: &Next, session: xr::Session) {
         buttons: get_bool(nx, session, a.buttons),
         // Position der linken Hand relativ zur rechten = Abstand
         hand_distance: left.map(|p| (p.x * p.x + p.y * p.y + p.z * p.z).sqrt()),
+        in_line: hands_in_line(nx, s),
     };
 
     let cfg = config::get();
@@ -830,9 +846,12 @@ unsafe fn update_gesture(nx: &Next, session: xr::Session) {
     // 📷 Nur Foto/GIF: kurz drücken = Foto, halten = GIF – auch bei 🔁 und 📌
     let lens = buttons.mode.is_some() && kind == icons::PhotoType::Lens && !cfg.photo_only;
     let pin = buttons.mode.is_some() && kind == icons::PhotoType::Pin;
-    s.gesture.cfg.enabled = cfg.gesture;
-    s.gesture.cfg.strict = cfg.gesture_strict;
+    s.gesture.cfg.mode = cfg.gesture_mode();
+    let was_blocked = matches!(s.gesture.state, gesture::State::Blocked(_));
     let mut event = s.gesture.update(&inputs, Instant::now(), &buttons);
+    if let (gesture::State::Blocked(why), false) = (s.gesture.state, was_blocked) {
+        log!("🔫 Waffe erkannt ({why:?}, in_line {:?}) – Rahmen erst nach Loslassen wieder", inputs.in_line);
+    }
     if event == gesture::Event::GifStart && lens {
         event = gesture::Event::TakePhoto;
     }
@@ -962,6 +981,7 @@ unsafe extern "system" fn create_session(
             vk_failed: false,
             swapchains: HashMap::new(),
             last_time: xr::Time::from_nanos(0),
+            head: None,
             gesture: gesture::Gesture::new(),
             capture_pending: false,
             pending_frames: 0,
@@ -1500,6 +1520,14 @@ unsafe fn build_frame_quads(nx: &Next, session: xr::Session, info: &xr::FrameEnd
         return Vec::new();
     }
     let Some(proj) = find_projection(info) else { return Vec::new() };
+    // 🔫 Kopf merken (Waffen-Schutz: Hände hintereinander in Blickrichtung?)
+    let left_eye = (*proj.views).pose;
+    let head = if proj.view_count > 1 {
+        frame::blend_eye(&left_eye, &(*proj.views.add(1)).pose, 0.5, left_eye.orientation)
+    } else {
+        left_eye
+    };
+    s.head = Some((proj.space, head));
     // 🎞 GIF läuft: fester Ausschnitt, blinkt rot/weiß (wie „REC“)
     if let Some(r) = s.gif.as_ref() {
         let layer = if (r.started.elapsed().as_millis() / 500) % 2 == 0 { 0 } else { 1 };

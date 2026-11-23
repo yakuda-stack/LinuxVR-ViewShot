@@ -511,15 +511,25 @@
    "en": "📌 Keep Pin recordings locked",
    "fr": "📌 Garder les enregistrements Pin fixes"
   },
-  "vr_gesture_on": {
-   "de": "🖐 Rahmen-Geste an",
-   "en": "🖐 Frame gesture on",
-   "fr": "🖐 Geste du cadre activé"
+  "gesture_mode": {
+   "de": "Rahmen-Geste",
+   "en": "Frame gesture",
+   "fr": "Geste du cadre"
   },
-  "vr_gesture_strict": {
-   "de": "✋ Neu greifen (Waffen-Schutz)",
-   "en": "✋ Re-grab (weapon guard)",
-   "fr": "✋ Reprendre en main (protection armes)"
+  "gesture_short_on": {
+   "de": "An",
+   "en": "On",
+   "fr": "Activé"
+  },
+  "gesture_short_auto": {
+   "de": "🔫 Auto",
+   "en": "🔫 Auto",
+   "fr": "🔫 Auto"
+  },
+  "gesture_short_off": {
+   "de": "Aus",
+   "en": "Off",
+   "fr": "Désactivé"
   },
   "detect_mode": {
    "de": "Erkennung",
@@ -832,8 +842,7 @@
    "gif_max_s": 15,
    "gif_stabilize": "off",
    "pin_lock": true,
-   "gesture": true,
-   "gesture_strict": true,
+   "gesture_mode": "on",
    "icon_position": "bottom_left",
    "aspect": "free",
    "frame_inset_cm": 7,
@@ -902,14 +911,24 @@
       "title": "buttons_title",
       "items": [
        {
-        "type": "toggle",
-        "key": "gesture",
-        "label": "vr_gesture_on"
-       },
-       {
-        "type": "toggle",
-        "key": "gesture_strict",
-        "label": "vr_gesture_strict"
+        "type": "choice",
+        "key": "gesture_mode",
+        "label": "gesture_mode",
+        "options": [
+         [
+          "on",
+          "gesture_short_on"
+         ],
+         [
+          "auto",
+          "gesture_short_auto"
+         ],
+         [
+          "off",
+          "gesture_short_off"
+         ]
+        ],
+        "cols": 0
        },
        {
         "type": "choice",

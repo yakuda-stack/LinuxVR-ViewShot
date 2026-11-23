@@ -10,11 +10,15 @@
 //!   Cooldown ──(Trigger losgelassen)──► Active
 //!   Grips loslassen ──► Idle   (aus jedem Zustand)
 //!
-//! ✋ Neu greifen (`Config::strict`, Standard an): Gegen Zwei-Hand-Waffen in Spielen.
-//!   Der Rahmen geht nur auf, wenn beide Grips fast gleichzeitig (GRAB_WINDOW)
-//!   gedrückt wurden. Kommt beim Halten ein Trigger/Knopf dazwischen oder greift
-//!   eine Hand viel später → Blocked, bis ein Grip losgelassen wird.
-//! 🖐 `Config::enabled` aus = Geste komplett aus (offener Rahmen geht zu).
+//! 🖐 Modus (`Config::mode`, aus layer.json "gesture_mode"):
+//!   On   = wie immer
+//!   Off  = Geste komplett aus (offener Rahmen geht zu)
+//!   Auto = 🔫 Waffen-Schutz: erkennt Zwei-Hand-Waffen → Blocked, bis ein Grip
+//!          losgelassen wird. Waffe heißt (solange der Rahmen noch zu ist):
+//!          · Hände hintereinander statt nebeneinander (wie an einem Gewehr)
+//!          · ein Schuss (Trigger ganz durch) bei gehaltenen Grips
+//!          · zweite Hand greift viel später zu (> GRAB_WINDOW)
+//!          Kleinigkeiten (Hände noch nah, Trigger leicht berührt) blockieren NICHT.
 //!
 //! Welche Trigger was tun, steht in `Buttons` (aus layer.json):
 //! links / rechts / beide. Ist irgendwo "beide" eingestellt, wartet ein
@@ -29,8 +33,28 @@ pub const COMBO_WINDOW: Duration = Duration::from_millis(150);
 /// 🎞 So lange den Auslöser halten, bis aus dem Foto ein GIF wird
 pub const HOLD_TIME: Duration = Duration::from_millis(450);
 
-/// ✋ So weit auseinander dürfen die beiden Grips gedrückt werden (Neu greifen)
-pub const GRAB_WINDOW: Duration = Duration::from_millis(400);
+/// 🔫 So weit auseinander dürfen die beiden Grips gedrückt werden (Auto)
+pub const GRAB_WINDOW: Duration = Duration::from_millis(1000);
+
+/// 🖐 Rahmen-Geste: an / aus / automatisch mit Waffen-Schutz
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Mode {
+    #[default]
+    On,
+    Off,
+    Auto,
+}
+
+/// 🔫 Warum der Rahmen gerade gesperrt ist (fürs Log)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Block {
+    /// Hände hintereinander wie an einer Waffe
+    InLine,
+    /// Trigger ganz gedrückt, bevor der Rahmen da war
+    Shot,
+    /// Zweite Hand kam zu spät dazu
+    LateGrab,
+}
 
 /// Tastenbelegung für den offenen Rahmen
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,6 +87,9 @@ pub struct Inputs {
     pub buttons: bool,
     /// Abstand der Hände in Metern (None = unbekannt)
     pub hand_distance: Option<f32>,
+    /// 🔫 Anteil des Abstands in Zeigerichtung der rechten Hand (0 = nebeneinander,
+    /// 1 = genau hintereinander wie an einem Gewehr). None = unbekannt
+    pub in_line: Option<f32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,8 +104,8 @@ pub enum State {
     /// 🎞 GIF läuft, bis der Auslöser losgelassen wird
     Recording(Combo),
     Cooldown,
-    /// ✋ Grips werden fürs Spiel gehalten (z. B. Waffe) – erst nach Loslassen wieder möglich
-    Blocked,
+    /// 🔫 Grips werden fürs Spiel gehalten (Waffe) – erst nach Loslassen wieder möglich
+    Blocked(Block),
 }
 
 /// Was der Layer nach einem Update tun soll.
@@ -103,10 +130,10 @@ pub struct Config {
     pub trigger_fire: f32,
     pub min_hand_distance: f32,
     pub hold_time: Duration,
-    /// 🖐 Geste an (aus = Rahmen geht nie auf)
-    pub enabled: bool,
-    /// ✋ Neu greifen: beide Grips fast gleichzeitig, sonst erst loslassen
-    pub strict: bool,
+    /// 🖐 an / aus / Auto (🔫 Waffen-Schutz)
+    pub mode: Mode,
+    /// 🔫 Ab diesem `in_line`-Wert gelten die Hände als „hintereinander“
+    pub in_line_max: f32,
 }
 
 impl Default for Config {
@@ -118,8 +145,8 @@ impl Default for Config {
             trigger_fire: 0.8,  // Trigger löst aus
             min_hand_distance: 0.15,
             hold_time: Duration::from_millis(400),
-            enabled: true,
-            strict: false,
+            mode: Mode::On,
+            in_line_max: 0.7,
         }
     }
 }
@@ -127,7 +154,7 @@ impl Default for Config {
 pub struct Gesture {
     pub cfg: Config,
     pub state: State,
-    /// ✋ Wann welcher Grip gedrückt wurde (None = losgelassen)
+    /// 🔫 Wann welcher Grip gedrückt wurde (None = losgelassen)
     pressed_at: [Option<Instant>; 2],
 }
 
@@ -167,15 +194,27 @@ impl Gesture {
         }
     }
 
-    /// ✋ Beide Grips kurz nacheinander gedrückt? (ohne Neu greifen: immer ja)
-    fn grabbed_together(&self) -> bool {
-        match self.pressed_at {
-            [Some(l), Some(r)] => !self.cfg.strict || l.max(r).duration_since(l.min(r)) <= GRAB_WINDOW,
-            _ => !self.cfg.strict,
+    /// 🔫 Sieht das nach einer Waffe aus? (nur im Auto-Modus, nur solange der Rahmen zu ist)
+    fn weapon(&self, i: &Inputs, hands_apart: bool) -> Option<Block> {
+        let c = &self.cfg;
+        if c.mode != Mode::Auto {
+            return None;
         }
+        if i.trigger[0] >= c.trigger_fire || i.trigger[1] >= c.trigger_fire {
+            return Some(Block::Shot);
+        }
+        if let [Some(l), Some(r)] = self.pressed_at {
+            if l.max(r).duration_since(l.min(r)) > GRAB_WINDOW {
+                return Some(Block::LateGrab);
+            }
+        }
+        if hands_apart && i.in_line.is_some_and(|f| f >= c.in_line_max) {
+            return Some(Block::InLine);
+        }
+        None
     }
 
-    /// ✋ Wann ein Grip gedrückt / losgelassen wurde
+    /// 🔫 Wann ein Grip gedrückt / losgelassen wurde
     fn track_grips(&mut self, i: &Inputs, now: Instant) {
         for h in 0..2 {
             if i.grip[h] < self.cfg.grip_off {
@@ -188,13 +227,14 @@ impl Gesture {
 
     pub fn update(&mut self, i: &Inputs, now: Instant, b: &Buttons) -> Event {
         self.track_grips(i, now);
-        let together = self.grabbed_together();
         let c = &self.cfg;
-        let grips_held = c.enabled && i.grip[0] >= c.grip_off && i.grip[1] >= c.grip_off;
+        let grips_held = c.mode != Mode::Off && i.grip[0] >= c.grip_off && i.grip[1] >= c.grip_off;
         let grips_pressed = i.grip[0] >= c.grip_on && i.grip[1] >= c.grip_on;
         let triggers_idle = i.trigger[0] < c.trigger_idle && i.trigger[1] < c.trigger_idle;
         let fired = [i.trigger[0] >= c.trigger_fire, i.trigger[1] >= c.trigger_fire];
         let hands_apart = i.hand_distance.is_none_or(|d| d >= c.min_hand_distance);
+        let weapon = if grips_pressed { self.weapon(i, hands_apart) } else { None };
+        let c = &self.cfg;
 
         // Grips losgelassen → immer zurück zu Idle
         if !grips_held {
@@ -207,19 +247,21 @@ impl Gesture {
         }
 
         match self.state {
+            State::Idle | State::Arming(_) if weapon.is_some() => {
+                // 🔫 Waffe erkannt → erst loslassen und neu greifen
+                self.state = State::Blocked(weapon.unwrap());
+                Event::None
+            }
             State::Idle => {
-                if grips_pressed && triggers_idle && !i.buttons && hands_apart && together {
+                if grips_pressed && triggers_idle && !i.buttons && hands_apart {
                     self.state = State::Arming(now);
-                } else if c.strict && grips_pressed {
-                    // ✋ nicht zusammen gegriffen / Trigger dabei → erst loslassen
-                    self.state = State::Blocked;
                 }
                 Event::None
             }
             State::Arming(since) => {
                 // Während der Haltezeit darf nichts anderes gedrückt werden
                 if !triggers_idle || i.buttons || !hands_apart {
-                    self.state = if c.strict { State::Blocked } else { State::Idle };
+                    self.state = State::Idle;
                     Event::None
                 } else if now.duration_since(since) >= c.hold_time {
                     self.state = State::Active;
@@ -275,7 +317,7 @@ impl Gesture {
                 }
                 Event::None
             }
-            State::Blocked => Event::None,
+            State::Blocked(_) => Event::None,
         }
     }
 }
@@ -285,7 +327,7 @@ mod tests {
     use super::*;
 
     fn inp(grip: f32, trig: [f32; 2], buttons: bool) -> Inputs {
-        Inputs { grip: [grip, grip], trigger: trig, buttons, hand_distance: Some(0.3) }
+        Inputs { grip: [grip, grip], trigger: trig, buttons, hand_distance: Some(0.3), in_line: None }
     }
     const NO: [f32; 2] = [0.0, 0.0];
     const L: [f32; 2] = [1.0, 0.0];
@@ -408,59 +450,89 @@ mod tests {
         assert_eq!(g.state, State::Idle);
     }
 
-    fn strict() -> Gesture {
+    fn auto() -> Gesture {
         let mut g = Gesture::new();
-        g.cfg.strict = true;
+        g.cfg.mode = Mode::Auto;
         g
     }
 
     #[test]
-    fn disabled_never_opens_and_closes_open_frame() {
+    fn off_never_opens_and_closes_open_frame() {
         let b = Buttons::default();
         let (mut g, t) = active(&b);
-        g.cfg.enabled = false;
+        g.cfg.mode = Mode::Off;
         assert_eq!(g.update(&inp(1.0, NO, false), ms(t, 10), &b), Event::FrameClosed);
         assert_eq!(g.update(&inp(1.0, NO, false), ms(t, 2000), &b), Event::None);
         assert_eq!(g.state, State::Idle);
     }
 
     #[test]
-    fn strict_grabbed_together_opens() {
+    fn auto_normal_frame_still_opens() {
         let b = Buttons::default();
-        let mut g = strict();
+        let mut g = auto();
         let t0 = Instant::now();
-        g.update(&inp(1.0, NO, false), t0, &b);
-        assert_eq!(g.update(&inp(1.0, NO, false), ms(t0, 450), &b), Event::FrameActivated);
+        // Grips zu, Hände erst nah, Trigger leicht berührt → kein Block, nur warten
+        let mut i = inp(1.0, [0.3, 0.0], false);
+        i.hand_distance = Some(0.05);
+        i.in_line = Some(0.9);
+        g.update(&i, t0, &b);
+        assert_eq!(g.state, State::Idle);
+        // Hände auseinander, nebeneinander → Rahmen
+        let mut i = inp(1.0, NO, false);
+        i.in_line = Some(0.2);
+        g.update(&i, ms(t0, 300), &b);
+        assert_eq!(g.update(&i, ms(t0, 750), &b), Event::FrameActivated);
     }
 
     #[test]
-    fn strict_second_hand_much_later_is_blocked() {
+    fn auto_hands_in_line_is_weapon() {
         let b = Buttons::default();
-        let mut g = strict();
+        let mut g = auto();
         let t0 = Instant::now();
-        // linke Hand hält schon die Waffe, rechte greift 1 s später dazu
+        let mut i = inp(1.0, NO, false);
+        i.in_line = Some(0.9);
+        g.update(&i, t0, &b);
+        assert_eq!(g.update(&i, ms(t0, 2000), &b), Event::None);
+        assert_eq!(g.state, State::Blocked(Block::InLine));
+        // nebeneinander reicht nicht – erst loslassen
+        i.in_line = Some(0.1);
+        assert_eq!(g.update(&i, ms(t0, 3000), &b), Event::None);
+        g.update(&inp(0.0, NO, false), ms(t0, 3100), &b);
+        g.update(&i, ms(t0, 3200), &b);
+        assert_eq!(g.update(&i, ms(t0, 3700), &b), Event::FrameActivated);
+    }
+
+    #[test]
+    fn auto_shot_blocks_until_regrab() {
+        let b = Buttons::default();
+        let mut g = auto();
+        let t0 = Instant::now();
+        g.update(&inp(1.0, NO, false), t0, &b);
+        g.update(&inp(1.0, R, false), ms(t0, 200), &b);
+        assert_eq!(g.state, State::Blocked(Block::Shot));
+        assert_eq!(g.update(&inp(1.0, NO, false), ms(t0, 2000), &b), Event::None);
+    }
+
+    #[test]
+    fn auto_late_second_hand_is_weapon() {
+        let b = Buttons::default();
+        let mut g = auto();
+        let t0 = Instant::now();
         let mut i = inp(1.0, NO, false);
         i.grip = [1.0, 0.0];
         g.update(&i, t0, &b);
-        g.update(&inp(1.0, NO, false), ms(t0, 1000), &b);
-        assert_eq!(g.update(&inp(1.0, NO, false), ms(t0, 3000), &b), Event::None);
-        assert_eq!(g.state, State::Blocked);
+        g.update(&inp(1.0, NO, false), ms(t0, 1500), &b);
+        assert_eq!(g.state, State::Blocked(Block::LateGrab));
     }
 
     #[test]
-    fn strict_trigger_while_holding_blocks_until_regrab() {
+    fn auto_shot_in_open_frame_is_photo() {
         let b = Buttons::default();
-        let mut g = strict();
+        let mut g = auto();
         let t0 = Instant::now();
         g.update(&inp(1.0, NO, false), t0, &b);
-        // Schuss während der Haltezeit
-        g.update(&inp(1.0, R, false), ms(t0, 200), &b);
-        assert_eq!(g.state, State::Blocked);
-        assert_eq!(g.update(&inp(1.0, NO, false), ms(t0, 2000), &b), Event::None);
-        // loslassen + neu greifen → geht wieder
-        g.update(&inp(0.0, NO, false), ms(t0, 2100), &b);
-        g.update(&inp(1.0, NO, false), ms(t0, 2200), &b);
-        assert_eq!(g.update(&inp(1.0, NO, false), ms(t0, 2700), &b), Event::FrameActivated);
+        assert_eq!(g.update(&inp(1.0, NO, false), ms(t0, 450), &b), Event::FrameActivated);
+        assert_eq!(g.update(&inp(1.0, R, false), ms(t0, 500), &b), Event::TakePhoto);
     }
 
     #[test]

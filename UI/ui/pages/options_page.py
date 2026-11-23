@@ -353,17 +353,11 @@ class OptionsPage(QWidget):
         """Erkennung (automatisch / manuell in VR) + welche Trigger was tun."""
         card, box = make_card(tr("buttons_title"))
         box.addWidget(dim(tr("buttons_hint")))
-        for key, label in (("gesture", "gesture_on"), ("gesture_strict", "gesture_strict")):
-            check = QCheckBox(tr(label))
-            check.setChecked(bool(self.layer.get(key, layer_config.DEFAULTS[key])))
-            check.toggled.connect(lambda checked, k=key: self.layer_set(k, checked))
-            self.watch(key, check, lambda v, c=check: c.setChecked(bool(v)))
-            box.addWidget(check)
-        box.addWidget(dim(tr("gesture_strict_hint")))
         grid = QGridLayout()
         grid.setHorizontalSpacing(12)
         self.layer_combos = {}
         rows = [
+            ("gesture_mode", tr("gesture_mode"), [(m, tr("gesture_" + m)) for m in layer_config.GESTURE_MODES]),
             ("detect_mode", tr("detect_mode"), [("auto", tr("detect_auto")), ("manual", tr("detect_manual"))]),
             ("shutter", tr("shutter"), [(c, tr("combo_" + c)) for c in layer_config.COMBOS]),
             ("mode_button", tr("mode_button"), [(c, tr("combo_" + c)) for c in layer_config.COMBOS]),
@@ -378,6 +372,7 @@ class OptionsPage(QWidget):
             self.layer_combos[key] = combo
         grid.setColumnStretch(1, 1)
         box.addLayout(grid)
+        box.addWidget(dim(tr("gesture_hint")))
         self.buttons_note = dim("")
         box.addWidget(self.buttons_note)
         lay.addWidget(card)

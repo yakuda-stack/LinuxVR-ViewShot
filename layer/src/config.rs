@@ -12,8 +12,7 @@
 //!                                 "manual" = Typ in VR wählen (Symbol am Rahmen)
 //!   "shutter": "right",           Auslöser: "left" / "right" / "both"
 //!   "mode_button": "left",        Typ wechseln (nur manual): "left" / "right" / "both"
-//!   "gesture": true,              🖐 Rahmen-Geste an (aus = Rahmen geht nie auf, z. B. in Shootern)
-//!   "gesture_strict": true,       ✋ Neu greifen: beide Grips fast gleichzeitig drücken, sonst erst loslassen
+//!   "gesture_mode": "on",         🖐 Rahmen-Geste: "on" / "off" (nie) / "auto" (🔫 Waffen-Schutz)
 //!   "aspect": "free",             📐 Seitenverhältnis des Fotos: "free" / "1:1" / "16:9"
 //!   "gif_hold": true,             🎞 Auslöser gedrückt halten = GIF aufnehmen (max. gif_max_s)
 //!   "gif_max_s": 15,              längste GIF-Aufnahme in Sekunden (1–15)
@@ -130,10 +129,8 @@ pub struct LayerConfig {
     pub detect_mode: DetectMode,
     pub shutter: Combo,
     pub mode_button: Combo,
-    /// 🖐 Rahmen-Geste an
-    pub gesture: bool,
-    /// ✋ Neu greifen (gegen Zwei-Hand-Waffen): Grips fast gleichzeitig, Trigger dazwischen = erst loslassen
-    pub gesture_strict: bool,
+    /// 🖐 Rahmen-Geste: "on" / "off" / "auto" (🔫 Waffen-Schutz)
+    pub gesture_mode: String,
     pub icon_position: IconPosition,
     /// 📐 Seitenverhältnis (frei / 1:1 / 16:9)
     pub aspect: Aspect,
@@ -177,8 +174,7 @@ impl Default for LayerConfig {
             detect_mode: DetectMode::Auto,
             shutter: Combo::Right,
             mode_button: Combo::Left,
-            gesture: true,
-            gesture_strict: true,
+            gesture_mode: "on".into(),
             icon_position: IconPosition::BottomLeft,
             aspect: Aspect::Free,
             gif_hold: true,
@@ -220,6 +216,15 @@ impl LayerConfig {
     pub fn buttons(&self) -> crate::gesture::Buttons {
         let mode = (self.mode_button != self.shutter).then_some(self.mode_button);
         crate::gesture::Buttons { shutter: self.shutter, mode, hold: self.gif_hold }
+    }
+
+    /// 🖐 Modus für die Geste (Unbekanntes = an)
+    pub fn gesture_mode(&self) -> crate::gesture::Mode {
+        match self.gesture_mode.as_str() {
+            "off" => crate::gesture::Mode::Off,
+            "auto" => crate::gesture::Mode::Auto,
+            _ => crate::gesture::Mode::On,
+        }
     }
 
     pub fn manual(&self) -> bool {
@@ -400,11 +405,13 @@ mod tests {
     }
 
     #[test]
-    fn gesture_switches_default_on() {
-        let c = LayerConfig::default();
-        assert!(c.gesture && c.gesture_strict);
-        let c: LayerConfig = serde_json::from_str(r#"{"gesture": false, "gesture_strict": false}"#).unwrap();
-        assert!(!c.gesture && !c.gesture_strict);
+    fn gesture_mode_from_json() {
+        use crate::gesture::Mode;
+        assert_eq!(LayerConfig::default().gesture_mode(), Mode::On);
+        let c: LayerConfig = serde_json::from_str(r#"{"gesture_mode": "auto"}"#).unwrap();
+        assert_eq!(c.gesture_mode(), Mode::Auto);
+        let c: LayerConfig = serde_json::from_str(r#"{"gesture_mode": "off"}"#).unwrap();
+        assert_eq!(c.gesture_mode(), Mode::Off);
     }
 
     #[test]

@@ -62,7 +62,7 @@ cd LinuxVR-ViewShot && ./install.sh          # ./install.sh uninstall
 </details>
 
 ### 🙌 How it works
-1. Press **grip on both controllers** at (almost) the same time – don't touch trigger, A/B/X/Y or thumbstick
+1. Hold **grip on both controllers** – don't touch trigger, A/B/X/Y or thumbstick
 2. Hands at least ~15 cm apart for 0.4 s → short vibration, **red frame** appears
 3. Press the **shutter trigger** (default: right) → **photo!** The frame flashes white
 4. The area between your hands lands as PNG in `~/Pictures/LinuxVR-ViewShot/`
@@ -123,7 +123,7 @@ cd LinuxVR-ViewShot && ./install.sh          # ./install.sh uninstall
 
 ### 💡 Tips
 - Turn it off for one game: `DISABLE_LINUXVR_VIEWSHOT=1 %command%`
-- Two-handed weapons (e.g. VRChat shooters): **✋ Re-grab** (on by default) stops the frame from popping up while you hold a weapon – or switch the gesture off completely with **🖐 Frame gesture** (Options → Shot → *Detection & buttons*, also in the VR panel ⚙)
+- Two-handed weapons (e.g. VRChat shooters): set **Frame gesture** to **🔫 Auto** – it notices a weapon (hands one behind the other, a shot, or the second hand grabs later) and keeps the frame closed until you let go. Or **Off** (Options → Shot → *Detection & buttons*, also in the VR panel ⚙)
 - Excluded apps (default `wayvr`): Options → Shot → *Exceptions*
 - Log file: `~/.local/state/linuxvr-viewshot/layer.log` · settings: `~/.config/linuxvr-viewshot/`
 
@@ -171,7 +171,7 @@ cd LinuxVR-ViewShot && ./install.sh          # ./install.sh uninstall
 </details>
 
 ### 🙌 So funktioniert's
-1. **Grip an beiden Controllern** (fast) gleichzeitig drücken – Trigger, A/B/X/Y und Stick nicht anfassen
+1. **Grip an beiden Controllern** halten – Trigger, A/B/X/Y und Stick nicht anfassen
 2. Hände mind. ~15 cm auseinander, 0,4 s halten → kurzes Vibrieren, **roter Rahmen** erscheint
 3. **Auslöser-Trigger** drücken (Standard: rechts) → **Foto!** Der Rahmen blitzt weiß
 4. Der Bereich zwischen den Händen landet als PNG in `~/Bilder/LinuxVR-ViewShot/`
@@ -232,7 +232,7 @@ cd LinuxVR-ViewShot && ./install.sh          # ./install.sh uninstall
 
 ### 💡 Tipps
 - Für ein Spiel abschalten: `DISABLE_LINUXVR_VIEWSHOT=1 %command%`
-- Zwei-Hand-Waffen (z. B. Shooter in VRChat): **✋ Neu greifen** (Standard an) verhindert, dass der Rahmen beim Waffe-Halten aufgeht – oder die Geste mit **🖐 Rahmen-Geste** ganz ausschalten (Optionen → Shot → *Erkennung & Tasten*, auch im VR-Panel ⚙)
+- Zwei-Hand-Waffen (z. B. Shooter in VRChat): **Rahmen-Geste** auf **🔫 Auto** stellen – erkennt eine Waffe (Hände hintereinander, Schuss, oder zweite Hand greift später zu) und lässt den Rahmen zu, bis du loslässt. Oder **Aus** (Optionen → Shot → *Erkennung & Tasten*, auch im VR-Panel ⚙)
 - Ausgenommene Programme (Standard `wayvr`): Optionen → Shot → *Ausnahmen*
 - Log-Datei: `~/.local/state/linuxvr-viewshot/layer.log` · Einstellungen: `~/.config/linuxvr-viewshot/`
 
