@@ -29,7 +29,7 @@ I18N_KEYS = [
     "tr_photo_only_status",
     "tr_step_ocr", "tr_step_service", "tr_step_classify", "tr_fallback_once",
     "translating", "no_text", "tr_failed", "live_title", "live_status",
-    "panel_opacity", "panel_edit_help", "panel_settings", "panel_size", "panel_size_later",
+    "panel_opacity", "panel_edit_help", "panel_settings", "vr_overlay_short", "vr_gallery_filter", "vr_gallery_cols", "panel_size", "panel_size_later",
     "panel_move", "panel_reset", "panel_anchor", "panel_anchor_short_left", "panel_anchor_short_right",
     "panel_anchor_short_head", "panel_anchor_short_world", "buttons_title", "detect_short_auto",
     "detect_short_manual", "shutter", "mode_button", "combo_short_left", "combo_short_right",
@@ -116,6 +116,10 @@ def build() -> dict:
         prompts.append({"kind": "task", "image": image, "text": PROMPT_TEXT,
                         "prompt": vision.task_prompt(PROMPT_TEXT, image)})
     prompts.append({"kind": "system", "target": "ja", "prompt": vision.system_prompt("ja")})
+    for src in ("", "ja"):
+        for text in (PROMPT_TEXT, ""):
+            prompts.append({"kind": "translategemma", "source": src, "target": "de", "text": text,
+                            "prompt": vision.translategemma_prompt(text, src, "de")})
     keys = []
     for case in KEY_CASES:
         cfg = dict(config.DEFAULTS, **case)

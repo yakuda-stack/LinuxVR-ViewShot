@@ -1,6 +1,26 @@
 # Changelog
 
 
+## [v1.1.3] – 2026-11-26
+- **🎨 New look for the VR panel** – dark with blue lines like the VRChat world menus
+  - **Tabs at the bottom** (🌐 Translation · 🖼 Gallery · ⚙ Settings) instead of ◀ ▶
+  - **🌐 Translation:** photo + translation on the left, service / languages / task in a **side panel on the right** – **›** folds it into a slim *Settings* strip (tap = open again, the photo gets wider). Saved in `layer.json` (`panel_side_closed`)
+  - **Side panel quick switches:** frame gesture (On / 🔫 Auto / Off) and 🥽 Overlay on/off
+  - **🖼 ▲ / ▼** next to the title: hide the photo → the translation gets the whole panel (`panel_hide_photo`)
+  - **Fixed size:** photo box and translation box always keep their size – a small photo, little or no text, or the photo switched off no longer shrink the panel to a thin strip (the rest of the box just stays empty). With a hand-dragged height the boxes fill that height. The status line now sits at the bottom of the translation box
+  - **🖼 Gallery:** grid on the left, side panel on the right with filter, **columns 3 / 4 / 5** (`gallery_cols`) and ▲ / ▼ pages – folds away like the translation one (`gallery_side_closed`), then the thumbnails get bigger. Gallery is 1000 px wide now too (default 62 cm in VR)
+  - **⚙ Settings:** categories on the left (📸 Shot / 🥽 VR), tap one → its options on the right (no more fold-out groups). Tap 📸 Shot / 🥽 VR to fold their categories away
+  - **Frame gesture: 🔫 Auto is the default for new users** (layer, app and service) – existing `layer.json` files keep their setting
+  - Translation and settings page are wider now (1000 px) → default size in VR 44 / 56 cm. **Already resized your panel? Make it a bit bigger once in VR** (✥ edit mode or ⚙ → 🪟 Panel)
+  - Same in the app and the background service (`UI/ui/vr_panel.py`, `daemon/src/panel.rs`) – **needs a layer + service rebuild** (new gesture default is in the layer too)
+- **🖼 TranslateGemma for the local image LLM** – `translategemma:4b` (~3 GB, fast) and `translategemma:12b` (~8 GB, better) are now in the model list (*Options → Translation*), download with *📥 Load model* like the others. Google's models made only for translation (55 languages), they also see the photo
+  - They get the official TranslateGemma prompt (no system prompt), the OCR lines go along line by line
+  - They can only translate: *Explain context* / *Answer question* and the 🧠 decision fall back to plain translating with these models
+  - Same in the app and the background service (`UI/core/vision.py`, `daemon/src/tr/vision.rs`, `daemon/contract.json`)
+  - Marked in the model list: *⭐ Best for translation* (12B) and *⭐ Good for translation (fast)* (4B)
+  - **Needs a service rebuild**
+
+
 ## [v1.1.2] – 2026-11-23
 - **🖐 Frame gesture: On / 🔫 Auto / Off** – replaces the two switches from v1.1.1 (*Frame gesture* + *Re-grab*). In *Options → Shot → Detection & buttons* and in the VR panel ⚙ (📸 Shot → 🎮). Default *On* (as before v1.1.1)
   - **Fix:** with *Re-grab* on, the frame often didn't open at all (e.g. when you pressed the grips with your hands still close together and then moved them apart)

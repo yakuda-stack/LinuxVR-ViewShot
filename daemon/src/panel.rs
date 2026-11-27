@@ -5,17 +5,26 @@
 //! Seiten: Übersetzung (lang → ▼ / ▲ blättern) · 🖼 Galerie (Raster über die ganze Fläche,
 //! Monats-Trenner, Antippen = Foto groß mit 📋 Kopieren · ☁ Hochladen + Link · ↗ Teilen ·
 //! 🌐 Übersetzen · ⓘ Info · 🗑 Löschen) · Auswahl-Liste (Dienst + Modus 🤖/✋, Von, Nach,
-//! Aufgabe) · ⚙ Einstellungen (eigene Seite): Tabs 📸 Shot | 🥽 VR mit einklappbaren Gruppen –
-//! was drinsteht, kommt aus UI/core/vr_settings.py (über contract.json, „vr_settings“).
-//! Ganz unten: ◀ links, ▶ rechts = Seite wechseln (jede Seite hat ihre eigene Größe in VR,
-//! panel_sizes.json).
+//! Aufgabe) · ⚙ Einstellungen (eigene Seite): links Kategorien (📸 Shot / 🥽 VR), rechts das
+//! Untermenü – was drinsteht, kommt aus UI/core/vr_settings.py (über contract.json, „vr_settings“).
+//! 🌐 Übersetzung: Dienst/Sprachen/Aufgabe im Seitenpanel rechts (einklappbar).
+//! Ganz unten: Tabs = Seite wechseln (jede Seite hat ihre eigene Größe in VR, panel_sizes.json).
 
 use crate::i18n::tr;
 use crate::ocr::Line;
 use crate::render::{line_height, measure, rgba, wrap_lines, Canvas, Fonts, Style};
 use std::path::PathBuf;
 
-pub const WIDTH: f32 = 720.0;
+/// Pixel-Breite des Panel-Bilds (alle Seiten: Seitenpanel / Kategorien rechts bzw. links)
+pub const WIDE: f32 = 1000.0;
+/// 🌐 Seitenpanel rechts: offen / eingeklappt (nur „Einstellungen“ senkrecht)
+const SIDE_W: f32 = 300.0;
+const STRIP_W: f32 = 64.0;
+/// Abstand zwischen zwei Spalten / Innenrand einer Karte
+const COL_GAP: f32 = 14.0;
+const CARD_PAD: f32 = 14.0;
+/// ⚙ Kategorien-Liste links
+const CAT_W: f32 = 360.0;
 const PHOTO_MAX_H: f32 = 360.0;
 const RESULT_MAX_H: f32 = 300.0;
 const MX: f32 = 18.0;
@@ -37,7 +46,8 @@ pub const BUTTON_CM: (i32, i32) = (2, 20);
 pub const BUTTON_COLORS: [&str; 7] = ["#5b8dc9", "#9b6bd6", "#4caf7a", "#e0913a", "#d05a5a", "#6b7280", "#e5e9ef"];
 /// Zeile ganz unten: ◀ links, ▶ rechts (Seite wechseln) – wie NAV_H in vr_panel.py
 const NAV_H: f32 = 52.0;
-const NAV_W: f32 = 230.0;
+/// 🖼 Spalten im Raster zur Auswahl (Standard 4)
+pub const GALLERY_COLS: [usize; 3] = [3, 4, 5];
 pub const GRID_COLS: usize = 4;
 const GRID_GAP: f32 = 8.0;
 const THUMB_RATIO: f32 = 0.75;
@@ -48,17 +58,26 @@ pub const GALLERY_H: f32 = 760.0;
 const GROUP_H: f32 = 52.0;
 const SINGLE_MAX_H: f32 = 360.0;
 /// Breite in VR (m) je Seite, wenn noch keine gemerkt ist (Galerie größer)
-pub const PAGE_SIZE_DEFAULT: [(&str, f64); 3] = [("translate", 0.32), ("gallery", 0.48), ("settings", 0.40)];
+pub const PAGE_SIZE_DEFAULT: [(&str, f64); 3] = [("translate", 0.44), ("gallery", 0.62), ("settings", 0.56)];
 const NUMBERS: &str = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳";
 
-const TEXT: u32 = 0xd7dbe2;
-const DIM: u32 = 0x7a8290;
+const TEXT: u32 = 0xe8ecf4;
+const DIM: u32 = 0x9aa6ba;
 const SECTION: u32 = 0xaeb4bf;
-const BTN_BG: u32 = 0x232833;
-const BTN_BORDER: u32 = 0x333947;
-const BTN_TEXT: u32 = 0xe5e9ef;
-const BLUE: u32 = 0x5b8dc9;
-pub const BG: u32 = 0x161a22;
+const BTN_BG: u32 = 0x121a28;
+const BTN_BORDER: u32 = 0x24324a;
+const BTN_TEXT: u32 = 0xe8ecf4;
+/// Akzent: Linie unter Knöpfen, Schieber, Rand oben
+const BLUE: u32 = 0x3d7fd9;
+/// Überschriften + gewählter Rand
+const HEAD: u32 = 0x5b9bff;
+/// gewählter Knopf / gewählte Kategorie
+const PICKED_BG: u32 = 0x1f3a66;
+const CAT_BG: u32 = 0x16233a;
+/// Karte (Seitenpanel, Untermenü) und Panel-Rand
+const CARD_BG: u32 = 0x0f141d;
+const FRAME: u32 = 0x1d2a40;
+pub const BG: u32 = 0x07090d;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Choice {
@@ -89,18 +108,18 @@ pub enum Action {
     Layer(String, String),
     /// layer.json an/aus (panel_button / gif_hold / rec_video …)
     Toggle(String),
-    /// ⚙ Tab 📸 Shot / 🥽 VR
-    SetTab(String),
-    /// ⚙ Gruppe auf-/zuklappen
+    /// ⚙ Kategorie links antippen → Untermenü rechts
     Group(String),
+    /// ⚙ Überschrift 📸 Shot / 🥽 VR antippen → ihre Kategorien ein-/ausklappen
+    FoldTab(String),
     /// 🪟 Größe: für welche Seite
     SizePage(String),
     /// 🚫 Liste: (Schlüssel, Eintrag) entfernen
     ListRemove(String, String),
     Route(String),
     Page(i32),
-    /// ◀ ▶ ganz unten: Seite wechseln (Übersetzung ↔ Galerie)
-    Nav(i32),
+    /// Tab-Leiste ganz unten: zu dieser Seite
+    Goto(Page),
     /// Galerie: Raster-Seite blättern
     GalPage(i32),
     /// Galerie-Filter: "" = alle, "text" / "qr" / "image" / "gif_vid"
@@ -140,12 +159,6 @@ pub enum Page {
 pub const PAGES: [Page; 3] = [Page::Translate, Page::Gallery, Page::Settings];
 
 impl Page {
-    /// Nächste Seite (step = ±1, im Kreis)
-    pub fn step(self, step: i32) -> Page {
-        let i = PAGES.iter().position(|p| *p == self).unwrap_or(0) as i32;
-        PAGES[(i + step).rem_euclid(PAGES.len() as i32) as usize]
-    }
-
     /// Name in panel_sizes.json ("translate" / "gallery")
     pub fn key(self) -> &'static str {
         match self {
@@ -157,6 +170,14 @@ impl Page {
 
     pub fn from_key(key: &str) -> Page {
         PAGES.into_iter().find(|p| p.key() == key).unwrap_or_default()
+    }
+
+    fn icon(self) -> &'static str {
+        match self {
+            Page::Translate => "🌐",
+            Page::Gallery => "🖼",
+            Page::Settings => "⚙",
+        }
     }
 
     fn title_key(self) -> &'static str {
@@ -226,6 +247,10 @@ pub struct GalleryView {
     pub open: Option<OpenPhoto>,
     /// Filter: "" = alle, "text" / "qr" / "image" / "gif_vid"
     pub filter: String,
+    /// Spalten im Raster (layer.json „gallery_cols“: 3 / 4 / 5)
+    pub cols: usize,
+    /// Seitenpanel rechts eingeklappt (layer.json „gallery_side_closed“)
+    pub side_closed: bool,
 }
 
 /// Fertig verkleinerte Bilder fürs Zeichnen (Foto mit Nummern, Kacheln, großes Foto)
@@ -249,8 +274,10 @@ pub type Hits = Vec<([f32; 4], Action)>;
 pub struct SettingsView {
     /// Tab "shot" / "vr"
     pub tab: String,
-    /// aufgeklappte Gruppe
+    /// gewählte Kategorie (rechts offen)
     pub open: Option<String>,
+    /// eingeklappte Überschriften links ("shot" / "vr")
+    pub folded: Vec<String>,
     /// layer.json (mit Standardwerten)
     pub layer: serde_json::Map<String, serde_json::Value>,
     /// 🪟 Größe: gewählte Seite + ihre Breite (cm, None = Panel war noch nie in VR)
@@ -289,6 +316,13 @@ pub struct View {
     /// ⚙ Einstellungs-Seite (nur wenn sie offen ist)
     pub settings: Option<SettingsView>,
     pub fixed_height: Option<f32>,
+    /// 🌐 Seitenpanel rechts eingeklappt (layer.json „panel_side_closed“)
+    pub side_closed: bool,
+    /// 🌐 Foto ausgeblendet → Übersetzung nutzt die ganze Fläche (layer.json „panel_hide_photo“)
+    pub hide_photo: bool,
+    /// 🖐 Rahmen-Geste on / auto / off und 🥽 Overlay – schnell im Seitenpanel umschaltbar
+    pub gesture_mode: String,
+    pub overlay: bool,
     /// Hauptseite: Übersetzung / Galerie
     pub page: Page,
     pub gallery: Option<GalleryView>,
@@ -321,16 +355,17 @@ struct Layout<'a> {
     c: Option<&'a mut Canvas>,
     hits: Vec<([f32; 4], Action)>,
     pages: usize,
-    /// linker Rand des Inhalts (mit ◀ ▶ am Rand breiter)
+    /// linker Rand und Breite der Spalte, in die gerade gezeichnet wird
     mx: f32,
+    w: f32,
 }
 
 impl Layout<'_> {
     /// Ausgegrauter Knopf (z. B. ‹ beim ersten Foto) – sichtbar, aber ohne Klick-Fläche
     fn dead_button(&mut self, text: &str, x: f32, y: f32, w: f32) {
         if let Some(c) = self.c.as_deref_mut() {
-            c.rounded(x + 0.5, y + 0.5, w - 1.0, BTN_H - 1.0, 8.0, Some(rgba(0x1b1f28, 255)), Some((rgba(0x262b35, 255), 1.0)));
-            let st = Style::new(20.0, true, 0x3a4050);
+            c.rounded(x + 0.5, y + 0.5, w - 1.0, BTN_H - 1.0, 6.0, Some(rgba(0x0d121b, 255)), Some((rgba(0x1a2436, 255), 1.0)));
+            let st = Style::new(20.0, true, 0x3a4560);
             let (tw, th) = measure(self.f, text, None, st);
             c.text(self.f, text, x + ((w - tw) / 2.0).max(8.0), y + (BTN_H - th) / 2.0, Some(w - 16.0), st);
         }
@@ -338,15 +373,28 @@ impl Layout<'_> {
 
     fn button(&mut self, text: &str, x: f32, y: f32, w: f32, primary: bool, action: Action) {
         if let Some(c) = self.c.as_deref_mut() {
-            let (bg, border, fg) = if primary { (BLUE, BLUE, 0xffffff) } else { (BTN_BG, BTN_BORDER, BTN_TEXT) };
-            c.rounded(x + 0.5, y + 0.5, w - 1.0, BTN_H - 1.0, 8.0, Some(rgba(bg, 255)), Some((rgba(border, 255), 1.0)));
+            let (bg, border, fg) = if primary { (PICKED_BG, HEAD, 0xffffff) } else { (BTN_BG, BTN_BORDER, BTN_TEXT) };
+            c.rounded(x + 0.5, y + 0.5, w - 1.0, BTN_H - 1.0, 6.0, Some(rgba(bg, 255)), Some((rgba(border, 255), 1.0)));
+            // blaue Linie unten (wie die Welt-Menüs in VRChat)
+            c.rounded(x + 1.0, y + BTN_H - 3.0, w - 2.0, 2.0, 1.0, Some(rgba(if primary { HEAD } else { BLUE }, 255)), None);
             // zu lang für den Knopf → etwas kleiner statt umbrechen
             let mut st = Style::new(20.0, true, fg);
             while st.size > 14.0 && measure(self.f, text, None, st).0 > w - 16.0 {
                 st = Style::new(st.size - 1.0, true, fg);
             }
-            let (tw, th) = measure(self.f, text, None, st);
-            c.text(self.f, text, x + ((w - tw) / 2.0).max(8.0), y + (BTN_H - th) / 2.0, Some(w - 16.0), st);
+            // immer noch zu lang (schmales Seitenpanel) → vor „  ▸“ mit … kürzen
+            let mut shown = text.to_string();
+            while measure(self.f, &shown, None, st).0 > w - 16.0 && shown.chars().count() > 4 {
+                let (body, tail) = match shown.strip_suffix("  ▸") {
+                    Some(b) => (b.trim_end_matches('…').to_string(), "…  ▸"),
+                    None => (shown.trim_end_matches('…').to_string(), "…"),
+                };
+                let mut chars: Vec<char> = body.chars().collect();
+                chars.pop();
+                shown = format!("{}{tail}", chars.into_iter().collect::<String>().trim_end());
+            }
+            let (tw, th) = measure(self.f, &shown, None, st);
+            c.text(self.f, &shown, x + ((w - tw) / 2.0).max(8.0), y + (BTN_H - th) / 2.0, None, st);
         }
         self.hits.push(([x, y, w, BTN_H], action));
     }
@@ -365,9 +413,28 @@ impl Layout<'_> {
         }
     }
 
+    /// Karte (Seitenpanel / Untermenü): eigener Grund, Rand, blaue Linie oben
+    fn card(&mut self, x: f32, y: f32, w: f32, h: f32) {
+        if let Some(c) = self.c.as_deref_mut() {
+            c.rounded(x + 0.5, y + 0.5, w - 1.0, h - 1.0, 10.0, Some(rgba(CARD_BG, 255)), Some((rgba(FRAME, 255), 1.0)));
+            c.rounded(x + 8.0, y + 1.0, w - 16.0, 3.0, 1.5, Some(rgba(BLUE, 255)), None);
+        }
+    }
+
+    /// Nur messen (nichts zeichnen, keine Klick-Flächen) – gibt die Unterkante von `draw` zurück
+    fn measure_with(&mut self, draw: impl FnOnce(&mut Self) -> f32) -> f32 {
+        let c = self.c.take();
+        let (n, pages) = (self.hits.len(), self.pages);
+        let y = draw(self);
+        self.hits.truncate(n);
+        self.pages = pages;
+        self.c = c;
+        y
+    }
+
     /// Nebeneinander liegende Knöpfe, der gewählte ist blau. Gibt die Unterkante zurück.
     fn choices(&mut self, y: f32, items: &[(String, String)], chosen: &str, make: impl Fn(&str) -> Action) -> f32 {
-        let inner = WIDTH - 2.0 * self.mx;
+        let inner = self.w;
         let gap = 6.0;
         let w = (inner - gap * (items.len() as f32 - 1.0)) / items.len() as f32;
         for (i, (value, text)) in items.iter().enumerate() {
@@ -378,7 +445,7 @@ impl Layout<'_> {
 
     /// Wie choices, aber Breite für `cols` Knöpfe (letzte Zeile eines Rasters bleibt gleich breit)
     fn choices_n(&mut self, y: f32, items: &[(String, String)], cols: usize, chosen: &str, make: impl Fn(&str) -> Action) -> f32 {
-        let inner = WIDTH - 2.0 * self.mx;
+        let inner = self.w;
         let gap = 6.0;
         let w = (inner - gap * (cols as f32 - 1.0)) / cols as f32;
         for (i, (value, text)) in items.iter().enumerate() {
@@ -390,11 +457,11 @@ impl Layout<'_> {
     /// Schieber (Klick irgendwo auf die Leiste = dieser Wert)
     fn bar(&mut self, y: f32, frac: f32, enabled: bool, action: Action) -> f32 {
         let mx = self.mx;
-        let inner = WIDTH - 2.0 * mx;
+        let inner = self.w;
         if let Some(c) = self.c.as_deref_mut() {
             let (x, w) = (mx + BAR_PAD, inner - 2.0 * BAR_PAD);
             let cy = y + BAR_H / 2.0;
-            c.rounded(x, cy - 5.0, w, 10.0, 5.0, Some(rgba(0x2c313c, 255)), None);
+            c.rounded(x, cy - 5.0, w, 10.0, 5.0, Some(rgba(0x1d2a40, 255)), None);
             if enabled {
                 c.rounded(x, cy - 5.0, (w * frac).max(10.0), 10.0, 5.0, Some(rgba(BLUE, 255)), None);
                 c.circle(x + w * frac, cy, 14.0, rgba(0xe8ecf2, 255));
@@ -445,8 +512,9 @@ pub fn photo_with_numbers(f: &mut Fonts, photo: &std::path::Path, lines: &[Line]
 pub fn render(f: &mut Fonts, v: &View, pics: &Pics) -> Option<(Canvas, Hits, usize)> {
     // 1. Durchgang: Höhe messen, 2.: zeichnen
     let nav = shows_nav(v);
+    let pw = page_width(v.page);
     let height = {
-        let mut l = Layout { f, c: None, hits: Vec::new(), pages: 1, mx: MX };
+        let mut l = Layout { f, c: None, hits: Vec::new(), pages: 1, mx: MX, w: pw - 2.0 * MX };
         content(&mut l, v, pics) + if nav { GAP + NAV_H } else { 0.0 }
     };
     let gallery_grid = nav && v.page == Page::Gallery;
@@ -454,10 +522,11 @@ pub fn render(f: &mut Fonts, v: &View, pics: &Pics) -> Option<(Canvas, Hits, usi
     // ⚙ Einstellungen: immer so hoch wie der Inhalt (Gruppen klappen auf und zu)
     let fixed = if v.settings.is_some() { None } else { v.fixed_height };
     let h = fixed.unwrap_or(auto_h).round();
-    let mut canvas = Canvas::new(WIDTH as u32, h as u32)?;
-    canvas.rounded(1.0, 1.0, WIDTH - 2.0, h - 2.0, 16.0, Some(rgba(BG, 255)), Some((rgba(0x2b3240, 255), 2.0)));
+    let mut canvas = Canvas::new(pw as u32, h as u32)?;
+    canvas.rounded(1.0, 1.0, pw - 2.0, h - 2.0, 16.0, Some(rgba(BG, 255)), Some((rgba(FRAME, 255), 2.0)));
+    canvas.rounded(16.0, 1.0, pw - 32.0, 4.0, 2.0, Some(rgba(BLUE, 255)), None);
     let (hits, pages) = {
-        let mut l = Layout { f, c: Some(&mut canvas), hits: Vec::new(), pages: 1, mx: MX };
+        let mut l = Layout { f, c: Some(&mut canvas), hits: Vec::new(), pages: 1, mx: MX, w: pw - 2.0 * MX };
         content(&mut l, v, pics);
         if nav {
             nav_row(&mut l, v, h - MY - NAV_H);
@@ -471,10 +540,9 @@ pub fn render(f: &mut Fonts, v: &View, pics: &Pics) -> Option<(Canvas, Hits, usi
 /// Inhalt – gibt die Unterkante zurück
 fn content(l: &mut Layout, v: &View, pics: &Pics) -> f32 {
     let lang = v.lang.as_str();
-    let inner = WIDTH - 2.0 * MX;
+    let inner = l.w;
     let mut y = MY;
-    let title = Style::new(24.0, true, TEXT);
-    l.mx = MX;
+    let title = Style::new(24.0, true, HEAD);
     if let Some((which, title_text, items)) = &v.choosing {
         let back = format!("←  {}", tr(lang, "back", &[]));
         let bw = l.btn_width(&back);
@@ -503,7 +571,7 @@ fn content(l: &mut Layout, v: &View, pics: &Pics) -> f32 {
             let shown = format!("{}{text}", if *chosen { "✔  " } else { "     " });
             if let Some(c) = l.c.as_deref_mut() {
                 if *chosen {
-                    c.rounded(MX, y, inner, ITEM_H, 6.0, Some(rgba(0x2a2f3a, 255)), None);
+                    c.rounded(MX, y, inner, ITEM_H, 6.0, Some(rgba(CAT_BG, 255)), None);
                 }
                 let th = measure(l.f, &shown, None, st).1;
                 c.text(l.f, &shown, MX + 10.0, y + (ITEM_H - th) / 2.0, Some(inner - 20.0), st);
@@ -530,52 +598,69 @@ fn shows_nav(v: &View) -> bool {
     v.choosing.is_none() && !v.gallery.as_ref().is_some_and(|g| g.open.is_some())
 }
 
-/// Ganz unten: [◀ Galerie]   ● ○   [Galerie ▶]
+/// Ganz unten: Tab-Leiste [🌐 Übersetzung] [🖼 Galerie] [⚙ Einstellungen] – offene Seite blau
 fn nav_row(l: &mut Layout, v: &View, y: f32) {
     let lang = v.lang.as_str();
-    let (prev, next) = (v.page.step(-1), v.page.step(1));
-    for (text, x, step) in [
-        (format!("◀  {}", tr(lang, prev.title_key(), &[])), MX, -1),
-        (format!("{}  ▶", tr(lang, next.title_key(), &[])), WIDTH - MX - NAV_W, 1),
-    ] {
+    let n = PAGES.len() as f32;
+    let tw = (l.w - 8.0 * (n - 1.0)) / n;
+    for (i, p) in PAGES.iter().enumerate() {
+        let x = MX + i as f32 * (tw + 8.0);
+        let on = *p == v.page;
+        let text = format!("{}  {}", p.icon(), tr(lang, p.title_key(), &[]));
         if let Some(c) = l.c.as_deref_mut() {
-            c.rounded(x + 0.5, y + 0.5, NAV_W - 1.0, NAV_H - 1.0, 12.0, Some(rgba(BTN_BG, 255)), Some((rgba(0x3a4252, 255), 1.0)));
-            let st = Style::new(21.0, true, BTN_TEXT);
-            let (tw, th) = measure(l.f, &text, None, st);
-            c.text(l.f, &text, x + (NAV_W - tw) / 2.0, y + (NAV_H - th) / 2.0, None, st);
+            c.rounded(x + 0.5, y + 0.5, tw - 1.0, NAV_H - 1.0, 8.0, Some(rgba(if on { CAT_BG } else { BTN_BG }, 255)), Some((rgba(BTN_BORDER, 255), 1.0)));
+            c.rounded(x + 6.0, y + 1.0, tw - 12.0, 3.0, 1.5, Some(rgba(if on { HEAD } else { 0x2c3d5c }, 255)), None);
+            let st = Style::new(20.0, true, if on { 0x8fb6ff } else { 0xc9d3e3 });
+            let (tx, th) = measure(l.f, &text, None, st);
+            c.text(l.f, &text, x + ((tw - tx) / 2.0).max(8.0), y + (NAV_H - th) / 2.0, Some(tw - 16.0), st);
         }
-        l.hits.push(([x, y, NAV_W, NAV_H], Action::Nav(step)));
-    }
-    if let Some(c) = l.c.as_deref_mut() {
-        // ● ○ – welche Seite gerade offen ist
-        let n = PAGES.len() as f32;
-        let x0 = WIDTH / 2.0 - (n - 1.0) * 16.0;
-        for (i, p) in PAGES.iter().enumerate() {
-            let cx = x0 + i as f32 * 32.0;
-            let cy = y + NAV_H / 2.0;
-            c.circle(cx, cy, 7.0, rgba(BLUE, 255));
-            if *p != v.page {
-                c.circle(cx, cy, 5.0, rgba(BG, 255));
-            }
-        }
+        l.hits.push(([x, y, tw, NAV_H], Action::Goto(*p)));
     }
 }
 
-/// 🌐 Übersetzungs-Seite – gibt die Unterkante zurück
+/// 🌐 Übersetzungs-Seite: links Foto + Übersetzung, rechts das Seitenpanel (ein-/ausklappbar).
+/// Gibt die Unterkante zurück.
 fn translate_content(l: &mut Layout, v: &View, photo: Option<&image::RgbaImage>) -> f32 {
-    let (mx, lang) = (l.mx, v.lang.as_str());
-    let inner = WIDTH - 2.0 * mx;
-    let mut y = MY;
-    let title = Style::new(24.0, true, TEXT);
+    let (x0, inner) = (l.mx, l.w);
+    let side_w = side_w(v.side_closed);
+    let main_w = inner - side_w - COL_GAP;
+    let side_x = x0 + main_w + COL_GAP;
+    l.w = main_w;
+    let main_bottom = translate_main(l, v, photo);
+    l.mx = side_x;
+    l.w = side_w;
+    let bottom = if v.side_closed {
+        side_strip(l, v, main_bottom, Action::Toggle("panel_side_closed".into()))
+    } else {
+        let side_bottom = l.measure_with(|l| side_panel(l, v));
+        let bottom = main_bottom.max(side_bottom);
+        l.card(side_x, MY, side_w, bottom - MY + CARD_PAD);
+        side_panel(l, v);
+        bottom + CARD_PAD
+    };
+    l.mx = x0;
+    l.w = inner;
+    bottom
+}
 
-    // Kopf: 🌐 ViewShot  [🎞 GIF / 🎬 VID] [⚙]
-    l.button("⚙", mx + inner - TIP_W, y, TIP_W, false, Action::Settings);
+/// Linke Spalte: Kopf, Foto mit ①②③, Übersetzung (▼ / ▲), Status
+fn translate_main(l: &mut Layout, v: &View, photo: Option<&image::RgbaImage>) -> f32 {
+    let (mx, lang) = (l.mx, v.lang.as_str());
+    let inner = l.w;
+    let mut y = MY;
+    let title = Style::new(26.0, true, HEAD);
+
+    // Kopf: 🌐 Übersetzung  [i] [🖼 ▲/▼] [🎞 GIF / 🎬 VID]
     let rec = if v.rec_video { "🎬 VID" } else { "🎞 GIF" };
-    let rec_w = REC_W;
-    let rec_x = mx + inner - TIP_W - 8.0 - rec_w;
-    l.button(rec, rec_x, y, rec_w, false, Action::Toggle("rec_video".into()));
+    let rec_x = mx + inner - REC_W;
+    l.button(rec, rec_x, y, REC_W, false, Action::Toggle("rec_video".into()));
+    // 🖼 ▲ = Foto ausblenden (Übersetzung bekommt die ganze Fläche), 🖼 ▼ = wieder zeigen
+    let pic_w = 84.0;
+    let pic_x = rec_x - 8.0 - pic_w;
+    l.button(if v.hide_photo { "🖼 ▼" } else { "🖼 ▲" }, pic_x, y, pic_w, v.hide_photo, Action::Toggle("panel_hide_photo".into()));
+    let rec_x = pic_x;
     // 🟠 i: Layer passt nicht zum Dienst → antippen klappt den Hinweis auf
-    let mut used = TIP_W + rec_w + 16.0;
+    let mut used = REC_W + pic_w + 16.0;
     if v.layer_old.is_some() {
         let d = BTN_H;
         let x = rec_x - 8.0 - d;
@@ -588,151 +673,238 @@ fn translate_content(l: &mut Layout, v: &View, photo: Option<&image::RgbaImage>)
         l.hits.push(([x, y, d, d], Action::OldNote));
         used += d + 8.0;
     }
-    let th = measure(l.f, "🌐  ViewShot", None, title).1;
-    l.label("🌐  ViewShot", mx, y + (BTN_H - th) / 2.0, inner - used, title);
+    let head = format!("🌐  {}", tr(lang, "vr_page_translate", &[]));
+    let th = measure(l.f, &head, None, title).1;
+    l.label(&head, mx, y + (BTN_H - th) / 2.0, inner - used, title);
     y += BTN_H + GAP;
     if let (Some(note), true) = (&v.layer_old, v.old_open) {
         y += l.label(note, mx, y, inner, Style::new(19.0, false, WARN)) + GAP;
     }
-
-    // [Dienst ▸] [↻]
-    let rw = l.btn_width("↻");
-    l.button(&format!("{}  ▸", v.method_label), mx, y, inner - rw - 8.0, false, Action::Choose(Choice::Method));
-    l.button("↻", mx + inner - rw, y, rw, false, Action::Redo);
-    y += BTN_H + GAP;
-
-    // [Von ▸] → [Nach ▸]
-    let arrow = Style::new(20.0, false, TEXT);
-    let aw = measure(l.f, "→", None, arrow).0 + 16.0;
-    let half = (inner - aw) / 2.0;
-    l.button(&format!("{}  ▸", v.source_label), mx, y, half, false, Action::Choose(Choice::Source));
-    l.label("→", mx + half + 8.0, y + 12.0, aw, arrow);
-    l.button(&format!("{}  ▸", v.target_label), mx + half + aw, y, half, false, Action::Choose(Choice::Target));
-    y += BTN_H + GAP;
-
-    if let Some(mode) = &v.mode_label {
-        l.button(&format!("{mode}  ▸"), mx, y, inner, false, Action::Choose(Choice::Mode));
-        y += BTN_H + GAP;
-    }
     let dim = Style::new(16.0, false, DIM);
-    let last = format!("{}:  {}", tr(lang, "tr_last_ai", &[]), v.last_ai);
-    y += l.label(&last, mx, y, inner, dim) + GAP;
     if v.edit {
         y += l.label(&format!("✥  {}", tr(lang, "panel_edit_help", &[])), mx, y, inner, dim) + GAP;
     }
 
-    if let Some(img) = photo {
+    // Foto-Kasten + Übersetzungs-Kasten haben eine feste Größe – auch mit kleinem Foto,
+    // wenig Text oder ohne Foto bleibt das Panel gleich groß (Rest = leerer Kasten)
+    let bottom = match v.fixed_height {
+        Some(fh) => (fh - MY - NAV_H - GAP).max(y + 2.0 * BTN_H),
+        None => y + translate_area_h(),
+    };
+    if !v.hide_photo {
+        let photo_h = PHOTO_MAX_H.min(((bottom - y - GAP) * 0.55).floor());
         if let Some(c) = l.c.as_deref_mut() {
-            c.image(img, (mx + (inner - img.width() as f32) / 2.0).round() as i32, y as i32);
+            c.rounded(mx + 0.5, y + 0.5, inner - 1.0, photo_h - 1.0, 8.0, Some(rgba(CARD_BG, 255)), Some((rgba(BTN_BORDER, 255), 1.0)));
+            if let Some(img) = photo {
+                // von Hand kleiner gezogen → Foto passend verkleinern
+                let small;
+                let img = if img.height() as f32 > photo_h - 2.0 {
+                    let k = (photo_h - 2.0) / img.height() as f32;
+                    let w = (img.width() as f32 * k).round().max(1.0) as u32;
+                    small = image::imageops::resize(img, w, (photo_h - 2.0).max(1.0) as u32, image::imageops::FilterType::Triangle);
+                    &small
+                } else {
+                    img
+                };
+                let x = (mx + (inner - img.width() as f32) / 2.0).round();
+                let iy = (y + (photo_h - img.height() as f32) / 2.0).round();
+                c.image(img, x as i32, iy as i32);
+            }
         }
-        y += img.height() as f32 + GAP;
+        y += photo_h + GAP;
     }
+
+    // Übersetzung im Kasten (blaue Linie unten), Status unten im Kasten; lang → Seiten (▼ / ▲) darunter
     let result = numbered(&v.lines, &v.result);
     let result = if result.is_empty() && v.status.starts_with('⏳') { "…".to_string() } else { result };
-    if !result.is_empty() {
-        // lange Übersetzung → Seiten (▼ / ▲)
-        let st = Style::new(22.0, false, TEXT);
-        let lh = line_height(st);
-        let status_h = if v.status.is_empty() { 0.0 } else { measure(l.f, &v.status, Some(inner), dim).1 + GAP };
-        let max_h = match v.fixed_height {
-            Some(fh) => (fh - MY - y - status_h - BTN_H - GAP - (NAV_H + GAP)).max(lh * 2.0),
-            None => RESULT_MAX_H,
-        };
-        let lines = wrap_lines(l.f, &result, inner, st);
-        let pages = paginate(&lines, (max_h / lh).floor().max(1.0) as usize);
-        l.pages = pages.len();
-        let page = v.result_page.min(pages.len() - 1);
-        y += l.label(&pages[page], mx, y, inner, st) + GAP;
-        if pages.len() > 1 {
-            let bw = (inner - 90.0 - 16.0) / 2.0;
-            if page > 0 {
-                l.button("▲", mx, y, bw, false, Action::Page(-1));
-            } else {
-                l.dead_button("▲", mx, y, bw);
-            }
-            let info = format!("{} / {}", page + 1, pages.len());
-            let (iw, ih) = measure(l.f, &info, None, dim);
-            l.label(&info, mx + bw + 8.0 + (90.0 - iw) / 2.0, y + (BTN_H - ih) / 2.0, 90.0, dim);
-            if page + 1 < pages.len() {
-                l.button("▼", mx + inner - bw, y, bw, false, Action::Page(1));
-            } else {
-                l.dead_button("▼", mx + inner - bw, y, bw);
-            }
-            y += BTN_H + GAP;
+    let st = Style::new(22.0, false, TEXT);
+    let lh = line_height(st);
+    let text_w = inner - 24.0;
+    let status_h = if v.status.is_empty() { 0.0 } else { measure(l.f, &v.status, Some(text_w), dim).1 + 8.0 };
+    let lines = wrap_lines(l.f, &result, text_w, st);
+    let per_page = |box_h: f32| (((box_h - 24.0 - status_h) / lh).floor().max(1.0)) as usize;
+    let mut box_h = bottom - y;
+    let mut pages = paginate(&lines, per_page(box_h));
+    if pages.len() > 1 {
+        box_h -= BTN_H + GAP;
+        pages = paginate(&lines, per_page(box_h));
+    }
+    l.pages = pages.len();
+    let page = v.result_page.min(pages.len() - 1);
+    if let Some(c) = l.c.as_deref_mut() {
+        c.rounded(mx + 0.5, y + 0.5, inner - 1.0, box_h - 1.0, 8.0, Some(rgba(CARD_BG, 255)), Some((rgba(BTN_BORDER, 255), 1.0)));
+        c.rounded(mx + 1.0, y + box_h - 3.5, inner - 2.0, 3.0, 1.5, Some(rgba(BLUE, 255)), None);
+    }
+    l.label(&pages[page], mx + 12.0, y + 12.0, text_w, st);
+    if status_h > 0.0 {
+        l.label(&v.status, mx + 12.0, y + box_h - 12.0 - status_h + 8.0, text_w, dim);
+    }
+    y += box_h + GAP;
+    if pages.len() > 1 {
+        let bw = (inner - 90.0 - 16.0) / 2.0;
+        if page > 0 {
+            l.button("▲", mx, y, bw, false, Action::Page(-1));
+        } else {
+            l.dead_button("▲", mx, y, bw);
+        }
+        let info = format!("{} / {}", page + 1, pages.len());
+        let (iw, ih) = measure(l.f, &info, None, dim);
+        l.label(&info, mx + bw + 8.0 + (90.0 - iw) / 2.0, y + (BTN_H - ih) / 2.0, 90.0, dim);
+        if page + 1 < pages.len() {
+            l.button("▼", mx + inner - bw, y, bw, false, Action::Page(1));
+        } else {
+            l.dead_button("▼", mx + inner - bw, y, bw);
         }
     }
-    let sh = l.label(&v.status, mx, y, inner, dim);
-    if sh > 0.0 {
-        y += sh;
+    bottom
+}
+
+/// 🌐 Feste Höhe für Foto-Kasten + Übersetzungs-Kasten + ▲ ▼-Zeile (ohne von Hand gezogene Höhe)
+fn translate_area_h() -> f32 {
+    PHOTO_MAX_H + GAP + RESULT_MAX_H + BTN_H + GAP
+}
+
+/// Seitenpanel rechts (offen): ⚙ Einstellungen [›] · Dienst [↻] · Von · → Nach · Aufgabe · Letzte KI
+fn side_panel(l: &mut Layout, v: &View) -> f32 {
+    let lang = v.lang.as_str();
+    let x = l.mx + CARD_PAD;
+    let w = l.w - 2.0 * CARD_PAD;
+    let mut y = MY + CARD_PAD;
+    let title = Style::new(22.0, true, HEAD);
+    let head = format!("⚙  {}", tr(lang, "panel_settings", &[]));
+    let th = measure(l.f, &head, None, title).1;
+    l.label(&head, x, y + (BTN_H - th) / 2.0, w - BTN_H - 8.0, title);
+    l.button("›", x + w - BTN_H, y, BTN_H, false, Action::Toggle("panel_side_closed".into()));
+    y += BTN_H + GAP;
+    let rw = BTN_H;
+    l.button(&format!("{}  ▸", v.method_label), x, y, w - rw - 8.0, false, Action::Choose(Choice::Method));
+    l.button("↻", x + w - rw, y, rw, false, Action::Redo);
+    y += BTN_H + GAP;
+    l.button(&format!("{}  ▸", v.source_label), x, y, w, false, Action::Choose(Choice::Source));
+    y += BTN_H + 6.0;
+    l.button(&format!("→  {}  ▸", v.target_label), x, y, w, false, Action::Choose(Choice::Target));
+    y += BTN_H + GAP;
+    if let Some(mode) = &v.mode_label {
+        l.button(&format!("{mode}  ▸"), x, y, w, false, Action::Choose(Choice::Mode));
+        y += BTN_H + GAP;
     }
-    y
+    let dim = Style::new(16.0, false, DIM);
+    let last = format!("{}:  {}", tr(lang, "tr_last_ai", &[]), v.last_ai);
+    y += l.label(&last, x, y, w, dim) + GAP + 4.0;
+
+    // 🖐 Rahmen-Geste (🔫 Auto = Waffen-Schutz) und 🥽 Overlay – schnell umschalten
+    let section = Style::new(16.0, false, SECTION);
+    y += l.label(&tr(lang, "gesture_mode", &[]), x, y, w, section) + 4.0;
+    let options: Vec<(String, String)> = spec_item("gesture_mode")
+        .and_then(|i| i["options"].as_array())
+        .into_iter()
+        .flatten()
+        .map(|o| (o[0].as_str().unwrap_or("").to_string(), spec_text(lang, o[1].as_str().unwrap_or(""))))
+        .collect();
+    let (mx, mw) = (l.mx, l.w);
+    l.mx = x;
+    l.w = w;
+    y = l.choices(y, &options, &v.gesture_mode, |m| Action::Layer("gesture_mode".into(), m.to_string())) + GAP;
+    l.mx = mx;
+    l.w = mw;
+    let text = format!("{}  {}", if v.overlay { "✔" } else { "✕" }, tr(lang, "vr_overlay_short", &[]));
+    l.button(&text, x, y, w, v.overlay, Action::Toggle("overlay".into()));
+    y + BTN_H
+}
+
+/// Seitenpanel eingeklappt: schmale Leiste mit ‹ und „Einstellungen“ senkrecht – antippen klappt auf
+fn side_strip(l: &mut Layout, v: &View, bottom: f32, action: Action) -> f32 {
+    let (x, w) = (l.mx, l.w);
+    let h = (bottom - MY).max(260.0);
+    l.card(x, MY, w, h);
+    let text = tr(&v.lang, "panel_settings", &[]);
+    if let Some(c) = l.c.as_deref_mut() {
+        let st = Style::new(26.0, true, HEAD);
+        let (aw, ah) = measure(l.f, "‹", None, st);
+        c.text(l.f, "‹", x + (w - aw) / 2.0, MY + 18.0, None, st);
+        vertical_text(c, l.f, &text, x + w / 2.0, MY + 18.0 + ah + (h - 18.0 - ah) / 2.0, Style::new(22.0, true, HEAD));
+    }
+    l.hits.push(([x, MY, w, h], action));
+    MY + h
+}
+
+/// Text um 90° gedreht (von unten nach oben lesbar), Mitte bei cx / cy
+fn vertical_text(c: &mut Canvas, f: &mut Fonts, text: &str, cx: f32, cy: f32, st: Style) {
+    let (tw, th) = measure(f, text, None, st);
+    let Some(mut tmp) = Canvas::new(tw.ceil() as u32 + 2, th.ceil() as u32 + 2) else { return };
+    tmp.text(f, text, 1.0, 1.0, None, st);
+    let (w, h) = (tmp.pix.width(), tmp.pix.height());
+    let mut img = image::RgbaImage::new(w, h);
+    for (i, px) in tmp.pix.pixels().iter().enumerate() {
+        let d = px.demultiply();
+        img.put_pixel(i as u32 % w, i as u32 / w, image::Rgba([d.red(), d.green(), d.blue(), d.alpha()]));
+    }
+    let img = image::imageops::rotate270(&img);
+    c.image(&img, (cx - img.width() as f32 / 2.0).round() as i32, (cy - img.height() as f32 / 2.0).round() as i32);
 }
 
 /// Kopfzeile: Titel … [extra] [⚙] – gibt die x-Position links von ⚙ zurück
 fn head_row(l: &mut Layout, title: &str, y: f32) -> f32 {
-    let inner = WIDTH - 2.0 * MX;
-    let st = Style::new(24.0, true, TEXT);
-    l.button("⚙", MX + inner - TIP_W, y, TIP_W, false, Action::Settings);
+    let (mx, inner) = (l.mx, l.w);
+    let st = Style::new(24.0, true, HEAD);
+    l.button("⚙", mx + inner - TIP_W, y, TIP_W, false, Action::Settings);
     let th = measure(l.f, title, None, st).1;
-    l.label(title, MX, y + (BTN_H - th) / 2.0, inner - TIP_W - 8.0, st);
-    MX + inner - TIP_W - 8.0
+    l.label(title, mx, y + (BTN_H - th) / 2.0, inner - TIP_W - 8.0, st);
+    mx + inner - TIP_W - 8.0
 }
 
 /// Monats-Trenner „──── 2026 Oktober ────“
 fn month_row(l: &mut Layout, text: &str, y: f32) {
-    let inner = WIDTH - 2.0 * MX;
+    let (mx, inner) = (l.mx, l.w);
     let st = Style::new(18.0, true, 0xc7cdd6);
     let (tw, th) = measure(l.f, text, None, st);
     if let Some(c) = l.c.as_deref_mut() {
-        let tx = MX + (inner - tw) / 2.0;
+        let tx = mx + (inner - tw) / 2.0;
         let cy = y + MONTH_H / 2.0;
-        c.rounded(MX, cy - 1.0, (tx - MX - 12.0).max(0.0), 2.0, 1.0, Some(rgba(0x333947, 255)), None);
-        c.rounded(tx + tw + 12.0, cy - 1.0, (MX + inner - tx - tw - 12.0).max(0.0), 2.0, 1.0, Some(rgba(0x333947, 255)), None);
+        c.rounded(mx, cy - 1.0, (tx - mx - 12.0).max(0.0), 2.0, 1.0, Some(rgba(BTN_BORDER, 255)), None);
+        c.rounded(tx + tw + 12.0, cy - 1.0, (mx + inner - tx - tw - 12.0).max(0.0), 2.0, 1.0, Some(rgba(BTN_BORDER, 255)), None);
         c.text(l.f, text, tx, y + (MONTH_H - th) / 2.0, None, st);
     }
 }
 
-/// 🖼 Galerie-Seite: Raster mit Monats-Trennern über die ganze Fläche – gibt die Unterkante zurück
+/// 🖼 Galerie-Seite: links das Raster mit Monats-Trennern, rechts das Seitenpanel
+/// (Filter, Spalten, Blättern – einklappbar wie bei der Übersetzung). Gibt die Unterkante zurück.
 fn gallery_content(l: &mut Layout, v: &View, pics: &Pics) -> f32 {
+    let Some(g) = &v.gallery else { return MY + BTN_H + GAP };
+    let (x0, inner) = (l.mx, l.w);
+    let side_w = side_w(g.side_closed);
+    let side_x = x0 + inner - side_w;
+    l.w = inner - side_w - COL_GAP;
+    let grid_bottom = gallery_grid(l, v, g, pics);
+    // Seitenpanel bis ganz unten (über den Tabs), die Galerie ist immer gleich hoch
+    let bottom = v.fixed_height.unwrap_or(GALLERY_H) - MY - NAV_H - GAP;
+    l.mx = side_x;
+    l.w = side_w;
+    if g.side_closed {
+        side_strip(l, v, bottom, Action::Toggle("gallery_side_closed".into()));
+    } else {
+        l.card(side_x, MY, side_w, bottom - MY);
+        gallery_side(l, v, g);
+    }
+    l.mx = x0;
+    l.w = inner;
+    grid_bottom.max(bottom)
+}
+
+/// Linke Spalte der Galerie: Titel, Raster (Kacheln + Monats-Trenner)
+fn gallery_grid(l: &mut Layout, v: &View, g: &GalleryView, pics: &Pics) -> f32 {
     let lang = v.lang.as_str();
-    let inner = WIDTH - 2.0 * MX;
+    let (mx, inner) = (l.mx, l.w);
     let mut y = MY;
-    let left = head_row(l, &format!("🖼  {}", tr(lang, "nav_gallery", &[])), y);
-    let Some(g) = &v.gallery else { return y + BTN_H + GAP };
-    // viele Fotos: [▲] 1 / 3 [▼] oben neben ⚙ – unten bleibt frei für ◀ ▶
-    if g.pages > 1 {
-        let dim = Style::new(16.0, false, DIM);
-        let info = format!("{} / {}", g.page + 1, g.pages);
-        let iw = 70.0;
-        let down_x = left - TIP_W;
-        let info_x = down_x - 8.0 - iw;
-        let up_x = info_x - 8.0 - TIP_W;
-        if g.page > 0 {
-            l.button("▲", up_x, y, TIP_W, false, Action::GalPage(-1));
-        } else {
-            l.dead_button("▲", up_x, y, TIP_W);
-        }
-        let (tw, th) = measure(l.f, &info, None, dim);
-        l.label(&info, info_x + (iw - tw) / 2.0, y + (BTN_H - th) / 2.0, iw, dim);
-        if g.page + 1 < g.pages {
-            l.button("▼", down_x, y, TIP_W, false, Action::GalPage(1));
-        } else {
-            l.dead_button("▼", down_x, y, TIP_W);
-        }
-    }
-    y += BTN_H + GAP;
-    // Filter: Alle · 📝 · 🔳 · 🖼 · 🎞 GIF/VID (wie in der Desktop-Galerie)
-    let gif_vid = format!("🎞 {}", tr(lang, "tag_gif_vid", &[]));
-    let filters = [("", tr(lang, "filter_all", &[])), ("text", "📝".into()), ("qr", "🔳".into()), ("image", "🖼".into()), ("gif_vid", gif_vid)];
-    let fw = (inner - 6.0 * (filters.len() as f32 - 1.0)) / filters.len() as f32;
-    for (k, (key, text)) in filters.iter().enumerate() {
-        l.button(text, MX + k as f32 * (fw + 6.0), y, fw, g.filter == *key, Action::GalFilter(key.to_string()));
-    }
+    let title = Style::new(26.0, true, HEAD);
+    let head = format!("🖼  {}", tr(lang, "nav_gallery", &[]));
+    let th = measure(l.f, &head, None, title).1;
+    l.label(&head, mx, y + (BTN_H - th) / 2.0, inner, title);
     y += BTN_H + GAP;
     if g.total == 0 {
-        return y + l.label(&tr(lang, "no_photo", &[]), MX, y, inner, Style::new(16.0, false, DIM));
+        return y + l.label(&tr(lang, "no_photo", &[]), mx, y, inner, Style::new(16.0, false, DIM));
     }
-    let (cw, ch) = tile_size();
+    let (cw, ch) = tile_size(g.side_closed, g.cols);
     let (cw, ch) = (cw as f32, ch as f32);
     let mut n = 0;
     for row in &g.rows {
@@ -743,9 +915,9 @@ fn gallery_content(l: &mut Layout, v: &View, pics: &Pics) -> f32 {
             }
             GRow::Tiles(indices) => {
                 for (c, index) in indices.iter().enumerate() {
-                    let x = MX + c as f32 * (cw + GRID_GAP);
+                    let x = mx + c as f32 * (cw + GRID_GAP);
                     if let Some(canvas) = l.c.as_deref_mut() {
-                        canvas.rounded(x + 1.0, y + 1.0, cw - 2.0, ch - 2.0, 8.0, Some(rgba(0x14161c, 255)), Some((rgba(0x2b3240, 255), 2.0)));
+                        canvas.rounded(x + 1.0, y + 1.0, cw - 2.0, ch - 2.0, 8.0, Some(rgba(CARD_BG, 255)), Some((rgba(BTN_BORDER, 255), 2.0)));
                         if let Some(Some(img)) = pics.thumbs.get(n) {
                             canvas.image(img, (x + 2.0) as i32, (y + 2.0) as i32);
                         }
@@ -760,11 +932,69 @@ fn gallery_content(l: &mut Layout, v: &View, pics: &Pics) -> f32 {
     y
 }
 
+/// Seitenpanel der Galerie: ⚙ Einstellungen [›] · Filter · Spalten 3/4/5 · [▲] 1 / 3 [▼]
+fn gallery_side(l: &mut Layout, v: &View, g: &GalleryView) {
+    let lang = v.lang.as_str();
+    let t = |k: &str| tr(lang, k, &[]);
+    let (mx, mw) = (l.mx, l.w);
+    let x = mx + CARD_PAD;
+    let w = mw - 2.0 * CARD_PAD;
+    let mut y = MY + CARD_PAD;
+    let title = Style::new(22.0, true, HEAD);
+    let head = format!("⚙  {}", t("panel_settings"));
+    let th = measure(l.f, &head, None, title).1;
+    l.label(&head, x, y + (BTN_H - th) / 2.0, w - BTN_H - 8.0, title);
+    l.button("›", x + w - BTN_H, y, BTN_H, false, Action::Toggle("gallery_side_closed".into()));
+    y += BTN_H + GAP;
+    l.mx = x;
+    l.w = w;
+    // Filter: Alle · 📝 Text · 🔳 QR-Code · 🖼 Bild · 🎞 GIF/VID (wie in der Desktop-Galerie)
+    let section = Style::new(16.0, false, SECTION);
+    y += l.label(&t("vr_gallery_filter"), x, y, w, section) + 4.0;
+    let filters: Vec<(String, String)> = [
+        ("", t("filter_all")),
+        ("text", format!("📝 {}", t("tag_text"))),
+        ("qr", format!("🔳 {}", t("tag_qr"))),
+        ("image", format!("🖼 {}", t("tag_image"))),
+        ("gif_vid", format!("🎞 {}", t("tag_gif_vid"))),
+    ]
+    .into_iter()
+    .map(|(k, text)| (k.to_string(), text))
+    .collect();
+    for row in filters.chunks(2) {
+        y = l.choices_n(y, row, 2, &g.filter, |k| Action::GalFilter(k.to_string())) + 6.0;
+    }
+    y += GAP - 6.0;
+    // Spalten im Raster
+    y += l.label(&t("vr_gallery_cols"), x, y, w, section) + 4.0;
+    let cols: Vec<(String, String)> = GALLERY_COLS.iter().map(|c| (c.to_string(), c.to_string())).collect();
+    y = l.choices(y, &cols, &g.cols.to_string(), |c| Action::Layer("gallery_cols".into(), c.to_string())) + GAP;
+    // Blättern
+    let dim = Style::new(16.0, false, DIM);
+    let iw = 64.0;
+    let bw = (w - iw - 16.0) / 2.0;
+    if g.page > 0 {
+        l.button("▲", x, y, bw, false, Action::GalPage(-1));
+    } else {
+        l.dead_button("▲", x, y, bw);
+    }
+    let info = format!("{} / {}", g.page + 1, g.pages.max(1));
+    let (tw, th) = measure(l.f, &info, None, dim);
+    l.label(&info, x + bw + 8.0 + (iw - tw) / 2.0, y + (BTN_H - th) / 2.0, iw, dim);
+    if g.page + 1 < g.pages {
+        l.button("▼", x + w - bw, y, bw, false, Action::GalPage(1));
+    } else {
+        l.dead_button("▼", x + w - bw, y, bw);
+    }
+    l.mx = mx;
+    l.w = mw;
+}
+
 /// Ein Foto groß – mit allen Aktionen wie in der Desktop-Galerie; gibt die Unterkante zurück
 fn single_content(l: &mut Layout, v: &View, pics: &Pics) -> f32 {
     let lang = v.lang.as_str();
     let t = |k: &str| tr(lang, k, &[]);
-    let inner = WIDTH - 2.0 * MX;
+    let inner = l.w;
     let mut y = MY;
     let (Some(g), true) = (&v.gallery, v.page == Page::Gallery) else { return y };
     let Some(open) = &g.open else { return y };
@@ -863,32 +1093,61 @@ fn single_content(l: &mut Layout, v: &View, pics: &Pics) -> f32 {
     y + BTN_H
 }
 
-/// Breite des Inhalts
+/// Breite des Inhalts (🖼 Foto groß)
 pub fn content_w() -> f32 {
-    WIDTH - 2.0 * MX
+    WIDE - 2.0 * MX
+}
+
+/// Breite des Seitenpanels rechts (offen / eingeklappt)
+fn side_w(closed: bool) -> f32 {
+    if closed {
+        STRIP_W
+    } else {
+        SIDE_W
+    }
+}
+
+/// Linke Spalte neben dem Seitenpanel (🌐 Foto, 🖼 Raster)
+pub fn main_w(side_closed: bool) -> f32 {
+    WIDE - 2.0 * MX - COL_GAP - side_w(side_closed)
+}
+
+/// 🖼 Spalten aus layer.json („gallery_cols“) – nur 3 / 4 / 5, sonst 4
+pub fn gallery_cols(value: f64) -> usize {
+    GALLERY_COLS.into_iter().find(|c| *c as f64 == value.round()).unwrap_or(GRID_COLS)
+}
+
+/// Pixel-Breite des Panel-Bilds je Seite (🌐 / ⚙ breiter, 🖼 Galerie wie bisher)
+pub fn page_width(_page: Page) -> f32 {
+    WIDE
+}
+
+/// 🌐 So breit darf das Foto links neben dem Seitenpanel sein
+pub fn photo_w(side_closed: bool) -> f32 {
+    main_w(side_closed)
 }
 
 /// Größe einer Kachel im Galerie-Raster (außen, mit Rand) – wie VRPanel.tile_size
-pub fn tile_size() -> (u32, u32) {
-    let w = ((content_w() - (GRID_COLS as f32 - 1.0) * GRID_GAP) / GRID_COLS as f32).floor();
+pub fn tile_size(side_closed: bool, cols: usize) -> (u32, u32) {
+    let cols = cols.max(1) as f32;
+    let w = ((main_w(side_closed) - (cols - 1.0) * GRID_GAP) / cols).floor();
     (w as u32, (w * THUMB_RATIO).round() as u32)
 }
 
-/// Platz für das Raster: Panel-Höhe minus Rand, Kopf, Filter-Zeile und ◀ ▶-Zeile (wie VRPanel.grid_height)
-pub fn grid_room(fixed_height: Option<f32>) -> f32 {
-    let ch = tile_size().1 as f32;
-    (fixed_height.unwrap_or(GALLERY_H) - 2.0 * MY - 2.0 * (BTN_H + GAP) - (NAV_H + GAP)).max(MONTH_H + ch)
+/// Platz für das Raster: Panel-Höhe minus Rand, Kopf und Tab-Leiste (wie VRPanel.grid_height)
+pub fn grid_room(fixed_height: Option<f32>, tile_h: u32) -> f32 {
+    (fixed_height.unwrap_or(GALLERY_H) - 2.0 * MY - (BTN_H + GAP) - (NAV_H + GAP)).max(MONTH_H + tile_h as f32)
 }
 
 /// Fotos (Monat je Foto, neueste zuerst) → Raster-Seiten wie VRPanel.gallery_pages:
 /// Zeilen mit bis zu GRID_COLS Fotos desselben Monats, ein Trenner je Monat; geht ein
 /// Monat auf der nächsten Seite weiter, steht sein Trenner dort nochmal oben.
-pub fn gallery_pages(months: &[(i32, u32)], titles: impl Fn(i32, u32) -> String, room: f32) -> Vec<Vec<GRow>> {
-    let ch = tile_size().1 as f32;
+pub fn gallery_pages(months: &[(i32, u32)], titles: impl Fn(i32, u32) -> String, room: f32, cols: usize, tile_h: u32) -> Vec<Vec<GRow>> {
+    let ch = tile_h as f32;
     let mut rows: Vec<((i32, u32), Vec<usize>)> = Vec::new();
     for (i, ym) in months.iter().enumerate() {
         match rows.last_mut() {
-            Some((m, cur)) if m == ym && cur.len() < GRID_COLS => cur.push(i),
+            Some((m, cur)) if m == ym && cur.len() < cols => cur.push(i),
             _ => rows.push((*ym, vec![i])),
         }
     }
@@ -1077,54 +1336,103 @@ pub fn spec_item(key: &str) -> Option<&'static serde_json::Value> {
         .find(|i| i["key"].as_str() == Some(key))
 }
 
-/// ⚙ Einstellungs-Seite: Kopf, Tabs 📸 Shot | 🥽 VR, Gruppen (▸ zu / ▾ offen)
+/// ⚙ Einstellungs-Seite: links die Kategorien (📸 Shot / 🥽 VR mit ihren Gruppen),
+/// rechts das Untermenü der gewählten Kategorie – wie die Welt-Menüs in VRChat
 fn settings_content(l: &mut Layout, v: &View, s: &SettingsView) -> f32 {
     let lang = v.lang.as_str();
-    let inner = WIDTH - 2.0 * MX;
+    let (x0, inner) = (l.mx, l.w);
     let mut y = MY;
-    let title = Style::new(24.0, true, TEXT);
+    let title = Style::new(26.0, true, HEAD);
     let head = format!("⚙  {}", tr(lang, "panel_settings", &[]));
     let th = measure(l.f, &head, None, title).1;
-    l.label(&head, MX, y + (BTN_H - th) / 2.0, inner, title);
-    y += BTN_H + 8.0;
+    l.label(&head, x0, y + (BTN_H - th) / 2.0, inner, title);
+    y += BTN_H + GAP;
+    let top = y;
     let spec = crate::i18n::vr_settings();
     let tabs = spec["tabs"].as_array().cloned().unwrap_or_default();
-    let items: Vec<(String, String)> = tabs
-        .iter()
-        .map(|t| (t["id"].as_str().unwrap_or("").to_string(), tr(lang, t["label"].as_str().unwrap_or(""), &[])))
-        .collect();
-    y = l.choices(y, &items, &s.tab, |t| Action::SetTab(t.to_string())) + 8.0;
-    let Some(tab) = tabs.iter().find(|t| t["id"].as_str() == Some(s.tab.as_str())) else { return y };
-    let head_st = Style::new(20.0, true, BTN_TEXT);
-    for group in tab["groups"].as_array().into_iter().flatten() {
-        let gid = group["id"].as_str().unwrap_or("");
-        let opened = s.open.as_deref() == Some(gid);
+    let groups: Vec<&serde_json::Value> = tabs.iter().flat_map(|t| t["groups"].as_array().into_iter().flatten()).collect();
+    let chosen = s
+        .open
+        .as_deref()
+        .and_then(|id| groups.iter().find(|g| g["id"].as_str() == Some(id)))
+        .or(groups.first())
+        .copied();
+
+    // links: Kategorien
+    let section = Style::new(18.0, true, SECTION);
+    for tab in &tabs {
+        // Überschrift ▾ 📸 Shot / ▸ 🥽 VR – antippen klappt ihre Kategorien ein/aus
+        let tid = tab["id"].as_str().unwrap_or("");
+        let folded = s.folded.iter().any(|f| f == tid);
+        let head = format!("{}  {}", if folded { "▸" } else { "▾" }, tr(lang, tab["label"].as_str().unwrap_or(""), &[]));
+        let hh = 40.0;
+        let th = measure(l.f, &head, None, section).1;
+        l.label(&head, x0 + 6.0, y + (hh - th) / 2.0, CAT_W, section);
+        l.hits.push(([x0, y, CAT_W, hh], Action::FoldTab(tid.to_string())));
+        y += hh + 4.0;
+        if folded {
+            continue;
+        }
+        for group in tab["groups"].as_array().into_iter().flatten() {
+            let gid = group["id"].as_str().unwrap_or("");
+            let on = chosen.is_some_and(|c| c["id"].as_str() == Some(gid));
+            let icon = group["icon"].as_str().unwrap_or("");
+            let name = tr(lang, group["title"].as_str().unwrap_or(""), &[]);
+            let text = if icon.is_empty() { name } else { format!("{icon}  {name}") };
+            if let Some(c) = l.c.as_deref_mut() {
+                c.rounded(x0 + 0.5, y + 0.5, CAT_W - 1.0, GROUP_H - 1.0, 6.0, Some(rgba(if on { CAT_BG } else { BTN_BG }, 255)), Some((rgba(BTN_BORDER, 255), 1.0)));
+                c.rounded(x0 + 1.0, y + GROUP_H - 3.0, CAT_W - 2.0, 2.0, 1.0, Some(rgba(if on { HEAD } else { BLUE }, 255)), None);
+                // zu lang → etwas kleiner statt umbrechen
+                let fg = if on { 0x8fb6ff } else { BTN_TEXT };
+                let mut st = Style::new(20.0, true, fg);
+                while st.size > 12.0 && measure(l.f, &text, None, st).0 > CAT_W - 48.0 {
+                    st = Style::new(st.size - 1.0, true, fg);
+                }
+                let th = measure(l.f, &text, None, st).1;
+                c.text(l.f, &text, x0 + 14.0, y + (GROUP_H - th) / 2.0, None, st);
+                if on {
+                    let ast = Style::new(26.0, true, HEAD);
+                    let (aw, ah) = measure(l.f, "›", None, ast);
+                    c.text(l.f, "›", x0 + CAT_W - 14.0 - aw, y + (GROUP_H - ah) / 2.0, None, ast);
+                }
+            }
+            l.hits.push(([x0, y, CAT_W, GROUP_H], Action::Group(gid.to_string())));
+            y += GROUP_H + 6.0;
+        }
+        y += 6.0;
+    }
+    let left_bottom = y - 12.0;
+
+    // rechts: Untermenü der gewählten Kategorie (als Karte)
+    let Some(group) = chosen else { return left_bottom };
+    let rx = x0 + CAT_W + COL_GAP;
+    let rw = inner - CAT_W - COL_GAP;
+    let sub = |l: &mut Layout| {
+        let mut y = top + CARD_PAD;
         let icon = group["icon"].as_str().unwrap_or("");
         let name = tr(lang, group["title"].as_str().unwrap_or(""), &[]);
-        let text = format!("{}  {}{name}", if opened { "▾" } else { "▸" }, if icon.is_empty() { String::new() } else { format!("{icon}  ") });
-        if let Some(c) = l.c.as_deref_mut() {
-            let (bg, border) = if opened { (BLUE, BLUE) } else { (BTN_BG, BTN_BORDER) };
-            let fg = if opened { 0xffffff } else { BTN_TEXT };
-            c.rounded(MX + 0.5, y + 0.5, inner - 1.0, GROUP_H - 1.0, 8.0, Some(rgba(bg, 255)), Some((rgba(border, 255), 1.0)));
-            let st = Style::new(head_st.size, true, fg);
-            let th = measure(l.f, &text, None, st).1;
-            c.text(l.f, &text, MX + 16.0, y + (GROUP_H - th) / 2.0, Some(inner - 32.0), st);
+        let text = if icon.is_empty() { name } else { format!("{icon}  {name}") };
+        y += l.label(&text, l.mx, y, l.w, Style::new(22.0, true, HEAD)) + GAP;
+        for item in group["items"].as_array().into_iter().flatten() {
+            y = setting_item(l, v, s, item, y) + 10.0;
         }
-        l.hits.push(([MX, y, inner, GROUP_H], Action::Group(gid.to_string())));
-        y += GROUP_H + 8.0;
-        if opened {
-            for item in group["items"].as_array().into_iter().flatten() {
-                y = setting_item(l, v, s, item, y) + 8.0;
-            }
-        }
-    }
-    y - 8.0
+        y - 10.0
+    };
+    l.mx = rx + CARD_PAD;
+    l.w = rw - 2.0 * CARD_PAD;
+    let right_bottom = l.measure_with(sub) + CARD_PAD;
+    let bottom = left_bottom.max(right_bottom);
+    l.card(rx, top, rw, bottom - top);
+    sub(l);
+    l.mx = x0;
+    l.w = inner;
+    bottom
 }
 
 /// Ein Eintrag der Einstellungs-Liste – gibt die Unterkante zurück
 fn setting_item(l: &mut Layout, v: &View, s: &SettingsView, item: &serde_json::Value, mut y: f32) -> f32 {
     let lang = v.lang.as_str();
-    let inner = WIDTH - 2.0 * MX;
+    let (mx, inner) = (l.mx, l.w);
     let section = Style::new(17.0, false, SECTION);
     let t = |k: &str| tr(lang, k, &[]);
     let key = item["key"].as_str().unwrap_or("");
@@ -1133,12 +1441,12 @@ fn setting_item(l: &mut Layout, v: &View, s: &SettingsView, item: &serde_json::V
         "toggle" => {
             let on = layer_num(&s.layer, key) != 0;
             let text = format!("{}  {}", if on { "✔" } else { "✕" }, t(label));
-            l.button(&text, MX, y, inner, on, Action::Toggle(key.to_string()));
+            l.button(&text, mx, y, inner, on, Action::Toggle(key.to_string()));
             y + BTN_H
         }
         "choice" => {
             if !label.is_empty() {
-                y += l.label(&t(label), MX, y, inner, section) + 4.0;
+                y += l.label(&t(label), mx, y, inner, section) + 4.0;
             }
             let options: Vec<(String, String)> = item["options"]
                 .as_array()
@@ -1171,7 +1479,7 @@ fn setting_item(l: &mut Layout, v: &View, s: &SettingsView, item: &serde_json::V
                 (Some(c), Some(fmt)) => tr(lang, fmt, &[("v", &c.to_string()), ("inv", &(lo + hi - c).to_string())]),
                 (Some(c), None) => format!("{}:  {c}{}", t(label), item["unit"].as_str().unwrap_or("")),
             };
-            y += l.label(&text, MX, y, inner, section) + 4.0;
+            y += l.label(&text, mx, y, inner, section) + 4.0;
             let frac = (current.unwrap_or(lo) - lo) as f32 / (hi - lo).max(1) as f32;
             l.bar(y, frac.clamp(0.0, 1.0), current.is_some(), Action::Slider(key.to_string()))
         }
@@ -1187,7 +1495,7 @@ fn setting_item(l: &mut Layout, v: &View, s: &SettingsView, item: &serde_json::V
                 Some(cm) => format!("{} · {name}:  {cm} cm", t("panel_size")),
                 None => format!("{} · {name}  {}", t("panel_size"), t("panel_size_later")),
             };
-            y += l.label(&text, MX, y, inner, section) + 4.0;
+            y += l.label(&text, mx, y, inner, section) + 4.0;
             y = l.choices(y, &pages, s.size_page.key(), |p| Action::SizePage(p.to_string())) + 4.0;
             let default = PAGE_SIZE_DEFAULT.iter().find(|d| d.0 == s.size_page.key()).map(|d| (d.1 * 100.0) as i32).unwrap_or(32);
             let cm = s.size_cm.unwrap_or(default);
@@ -1199,7 +1507,7 @@ fn setting_item(l: &mut Layout, v: &View, s: &SettingsView, item: &serde_json::V
             let n = actions.len().max(1) as f32;
             let w = (inner - 8.0 * (n - 1.0)) / n;
             for (i, a) in actions.iter().enumerate() {
-                let x = MX + i as f32 * (w + 8.0);
+                let x = mx + i as f32 * (w + 8.0);
                 let text = t(a[1].as_str().unwrap_or(""));
                 if a[0].as_str() == Some("move") {
                     l.button(&format!("{}  {text}", if v.edit { "✔" } else { "✥" }), x, y, w, v.edit, Action::Move);
@@ -1214,7 +1522,7 @@ fn setting_item(l: &mut Layout, v: &View, s: &SettingsView, item: &serde_json::V
             let gap = 6.0;
             let sw = (inner - gap * (BUTTON_COLORS.len() as f32 - 1.0)) / BUTTON_COLORS.len() as f32;
             for (i, color) in BUTTON_COLORS.iter().enumerate() {
-                let x = MX + i as f32 * (sw + gap);
+                let x = mx + i as f32 * (sw + gap);
                 let hex = u32::from_str_radix(color.trim_start_matches('#'), 16).unwrap_or(BLUE);
                 let chosen = current.eq_ignore_ascii_case(color);
                 if let Some(c) = l.c.as_deref_mut() {
@@ -1232,7 +1540,7 @@ fn setting_item(l: &mut Layout, v: &View, s: &SettingsView, item: &serde_json::V
         }
         "list" => {
             let dim = Style::new(16.0, false, SECTION);
-            y += l.label(&t(item["hint"].as_str().unwrap_or("")), MX, y, inner, dim) + 6.0;
+            y += l.label(&t(item["hint"].as_str().unwrap_or("")), mx, y, inner, dim) + 6.0;
             let entries: Vec<String> = s
                 .layer
                 .get(key)
@@ -1240,10 +1548,10 @@ fn setting_item(l: &mut Layout, v: &View, s: &SettingsView, item: &serde_json::V
                 .map(|a| a.iter().filter_map(|e| e.as_str().map(String::from)).collect())
                 .unwrap_or_default();
             if entries.is_empty() {
-                return y + l.label(&t(item["empty"].as_str().unwrap_or("")), MX, y, inner, section);
+                return y + l.label(&t(item["empty"].as_str().unwrap_or("")), mx, y, inner, section);
             }
             for name in entries {
-                l.button(&format!("✕  {name}"), MX, y, inner, false, Action::ListRemove(key.to_string(), name.clone()));
+                l.button(&format!("✕  {name}"), mx, y, inner, false, Action::ListRemove(key.to_string(), name.clone()));
                 y += BTN_H + 6.0;
             }
             y - 6.0
@@ -1354,8 +1662,8 @@ pub fn width_cm() -> Option<i32> {
     Some((v["width"].as_f64()? * 100.0).round() as i32)
 }
 
-/// Von Hand gezogene Höhe (panel_pose.json) → Pixel-Höhe
-pub fn fixed_height() -> Option<f32> {
+/// Von Hand gezogene Höhe (panel_pose.json) → Pixel-Höhe (bei dieser Seiten-Breite)
+pub fn fixed_height(page: Page) -> Option<f32> {
     let text = std::fs::read_to_string(crate::paths::panel_pose_file()).ok()?;
     let v: serde_json::Value = serde_json::from_str(&text).ok()?;
     let width = v["width"].as_f64()?;
@@ -1363,7 +1671,7 @@ pub fn fixed_height() -> Option<f32> {
     if width <= 0.0 || height <= 0.0 {
         return None;
     }
-    Some((WIDTH as f64 * height / width).round().max(160.0) as f32)
+    Some((page_width(page) as f64 * height / width).round().max(160.0) as f32)
 }
 
 #[cfg(test)]
@@ -1388,7 +1696,7 @@ mod tests {
     fn view() -> View {
         View {
             lang: "de".into(),
-            method_label: "Lingva".into(),
+            method_label: "Lingva (anonym, kein Konto nötig)".into(),
             source_label: "Auto".into(),
             target_label: "Deutsch".into(),
             mode_label: Some("🤖 Auto".into()),
@@ -1408,23 +1716,54 @@ mod tests {
         let (c, hits, pages) = render(&mut f, &v, &Pics::default()).unwrap();
         assert!(pages > 1, "langer Text → mehrere Seiten");
         let size = (c.pix.width(), c.pix.height());
-        let y = (MY + BTN_H + GAP + BTN_H / 2.0) / size.1 as f32;
-        assert_eq!(hit(&hits, size, 0.2, y).map(|h| h.0), Some(Action::Choose(Choice::Method)));
-        let y = (MY + BTN_H / 2.0) / size.1 as f32;
-        assert_eq!(hit(&hits, size, 0.95, y).map(|h| h.0), Some(Action::Settings));
-        let x = (WIDTH - MX - TIP_W - 8.0 - REC_W / 2.0) / size.0 as f32;
-        assert_eq!(hit(&hits, size, x, y).map(|h| h.0), Some(Action::Toggle("rec_video".into())));
+        assert_eq!(size.0 as f32, WIDE);
+        // Seitenpanel rechts: Dienst, Von, Nach, Aufgabe, einklappen
+        let (r, _) = hits.iter().find(|h| h.1 == Action::Choose(Choice::Method)).unwrap();
+        assert!(r[0] > WIDE - MX - SIDE_W, "Dienst steht rechts im Seitenpanel");
+        let (u, y) = ((r[0] + 20.0) / size.0 as f32, (r[1] + 20.0) / size.1 as f32);
+        assert_eq!(hit(&hits, size, u, y).map(|h| h.0), Some(Action::Choose(Choice::Method)));
+        for a in [Action::Choose(Choice::Source), Action::Choose(Choice::Target), Action::Choose(Choice::Mode), Action::Redo,
+                  Action::Toggle("panel_side_closed".into()), Action::Toggle("rec_video".into()),
+                  Action::Toggle("panel_hide_photo".into()), Action::Toggle("overlay".into()),
+                  Action::Layer("gesture_mode".into(), "auto".into())] {
+            assert!(hits.iter().any(|h| h.1 == a), "{a:?} fehlt");
+        }
+        // eingeklappt: nur die Leiste „Einstellungen“ – antippen klappt wieder auf
+        let (c_closed, hits_closed, _) = render(&mut f, &View { side_closed: true, ..view() }, &Pics::default()).unwrap();
+        assert_eq!(c_closed.pix.width(), c.pix.width(), "Breite bleibt gleich");
+        assert!(!hits_closed.iter().any(|h| h.1 == Action::Choose(Choice::Method)));
+        let (r, _) = hits_closed.iter().find(|h| h.1 == Action::Toggle("panel_side_closed".into())).unwrap();
+        assert!(r[2] <= STRIP_W + 0.5 && r[0] > WIDE / 2.0);
+        assert!(photo_w(true) > photo_w(false), "eingeklappt → Foto breiter");
+        if let Some(out) = std::env::var_os("PANEL_OUT_CLOSED") {
+            c_closed.save(std::path::Path::new(&out), &[]).unwrap();
+        }
+        // feste Größe: wenig / kein Text, Foto aus → Panel bleibt gleich hoch
+        let mut h = |v: View| render(&mut f, &v, &Pics::default()).unwrap().0.pix.height();
+        let full = h(view());
+        assert_eq!(h(View { result: "kurz".into(), lines: Vec::new(), ..view() }), full);
+        assert_eq!(h(View { result: String::new(), status: String::new(), lines: Vec::new(), ..view() }), full);
+        assert_eq!(h(View { hide_photo: true, result: "kurz".into(), lines: Vec::new(), ..view() }), full);
+        if let Some(out) = std::env::var_os("PANEL_OUT_EMPTY") {
+            let (c, _, _) = render(&mut f, &View { hide_photo: true, result: "Hallo".into(), lines: Vec::new(), ..view() }, &Pics::default()).unwrap();
+            c.save(std::path::Path::new(&out), &[]).unwrap();
+        }
+        // 🖼 ▲: Foto weg → mehr Zeilen pro Seite
+        let (_, _, pages_full) = render(&mut f, &View { hide_photo: true, ..view() }, &Pics::default()).unwrap();
+        assert!(pages_full < pages, "ohne Foto passt mehr Text auf eine Seite");
         // 🟠 Layer veraltet: i-Knopf oben, angetippt erscheint der Hinweis darunter
         assert!(!hits.iter().any(|h| h.1 == Action::OldNote));
         let old = View { layer_old: Some("⚠ Layer veraltet".into()), ..view() };
         let (_, hits_old, _) = render(&mut f, &old, &Pics::default()).unwrap();
         let (r, _) = hits_old.iter().find(|h| h.1 == Action::OldNote).unwrap();
         assert!(r[1] < MY + 1.0);
-        let method_y = |h: &Hits| h.iter().find(|x| x.1 == Action::Choose(Choice::Method)).unwrap().0[1];
+        let down_y = |h: &Hits| h.iter().find(|x| x.1 == Action::Page(1)).unwrap().0[1];
         let (_, hits_open, _) = render(&mut f, &View { old_open: true, ..old }, &Pics::default()).unwrap();
-        assert!(method_y(&hits_open) > method_y(&hits_old), "Hinweis schiebt den Rest nach unten");
+        assert!(down_y(&hits_open) > down_y(&hits_old), "Hinweis schiebt den Rest nach unten");
         assert!(hits.iter().any(|h| h.1 == Action::Page(1)) && !hits.iter().any(|h| h.1 == Action::Page(-1)));
-        assert!(hits.iter().any(|h| h.1 == Action::Nav(-1)) && hits.iter().any(|h| h.1 == Action::Nav(1)));
+        for p in PAGES {
+            assert!(hits.iter().any(|h| h.1 == Action::Goto(p)), "Tab {p:?} fehlt");
+        }
         if let Some(out) = std::env::var_os("PANEL_OUT") {
             c.save(std::path::Path::new(&out), &[]).unwrap();
         }
@@ -1432,10 +1771,12 @@ mod tests {
         let layer: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(crate::settings::LAYER_DEFAULTS).unwrap();
         let settings = |tab: &str, open: Option<&str>| View {
+            lang: "de".into(),
             page: Page::Settings,
             settings: Some(SettingsView {
                 tab: tab.into(),
                 open: open.map(String::from),
+                folded: Vec::new(),
                 layer: layer.clone(),
                 size_page: Page::Translate,
                 size_cm: Some(32),
@@ -1446,11 +1787,25 @@ mod tests {
         };
         let (c, hits, _) = render(&mut f, &settings("shot", None), &Pics::default()).unwrap();
         assert!(c.pix.height() > 300, "⚙ Seite ignoriert die von Hand gezogene Höhe");
-        for a in [Action::SetTab("shot".into()), Action::SetTab("vr".into()), Action::Group("gif".into()),
-                  Action::Group("excluded".into()), Action::Nav(1)] {
+        // links alle Kategorien beider Tabs, rechts die erste (🎞 GIF) aufgeklappt
+        for a in [Action::Group("gif".into()), Action::Group("excluded".into()), Action::Group("panel".into()),
+                  Action::Group("overlay".into()), Action::Goto(Page::Translate)] {
             assert!(hits.iter().any(|h| h.1 == a), "{a:?} fehlt");
         }
-        assert!(!hits.iter().any(|h| matches!(h.1, Action::Slider(_))), "alles zugeklappt");
+        let (r, _) = hits.iter().find(|h| h.1 == Action::Slider("gif_max_s".into())).unwrap();
+        assert!(r[0] > MX + CAT_W, "Untermenü rechts neben den Kategorien");
+        assert!(hits.iter().any(|h| h.1 == Action::FoldTab("shot".into())) && hits.iter().any(|h| h.1 == Action::FoldTab("vr".into())));
+        // 📸 Shot eingeklappt → seine Kategorien weg, 🥽 VR bleibt
+        let mut folded = settings("shot", None);
+        folded.settings.as_mut().unwrap().folded = vec!["shot".into()];
+        let (c_fold, hits_f, _) = render(&mut f, &folded, &Pics::default()).unwrap();
+        assert!(!hits_f.iter().any(|h| h.1 == Action::Group("eye".into())) && hits_f.iter().any(|h| h.1 == Action::Group("panel".into())));
+        if let Some(out) = std::env::var_os("PANEL_OUT_FOLD") {
+            c_fold.save(std::path::Path::new(&out), &[]).unwrap();
+        }
+        if let Some(out) = std::env::var_os("PANEL_OUT_SET") {
+            c.save(std::path::Path::new(&out), &[]).unwrap();
+        }
         let (_, hits, _) = render(&mut f, &settings("shot", Some("gif")), &Pics::default()).unwrap();
         assert!(hits.iter().any(|h| h.1 == Action::Toggle("gif_hold".into())));
         assert!(hits.iter().any(|h| h.1 == Action::Layer("gif_stabilize".into(), "smooth".into())));
@@ -1478,15 +1833,17 @@ mod tests {
 
     #[test]
     fn tiles_fit_and_pages_switch() {
-        let (w, h) = tile_size();
-        assert!(w as f32 * GRID_COLS as f32 + GRID_GAP * (GRID_COLS as f32 - 1.0) <= content_w() + 0.5);
-        assert_eq!(h, (w as f32 * THUMB_RATIO).round() as u32);
-        assert_eq!(Page::Translate.step(1), Page::Gallery);
-        assert_eq!(Page::Gallery.step(-1), Page::Translate);
+        for (closed, cols) in [(false, 3), (false, 4), (false, 5), (true, 4)] {
+            let (w, h) = tile_size(closed, cols);
+            assert!(w as f32 * cols as f32 + GRID_GAP * (cols as f32 - 1.0) <= main_w(closed) + 0.5);
+            assert_eq!(h, (w as f32 * THUMB_RATIO).round() as u32);
+        }
+        assert!(tile_size(true, 4).0 > tile_size(false, 4).0, "eingeklappt → größere Kacheln");
+        assert_eq!((gallery_cols(5.0), gallery_cols(7.0), gallery_cols(0.0)), (5, 4, 4));
         assert_eq!(Page::from_key("gallery"), Page::Gallery);
         assert_eq!(Page::from_key("?"), Page::Translate);
-        // gleicher Platz fürs Raster wie in vr_panel.py (GALLERY_H − Rand − Kopf − Filter − ◀ ▶)
-        assert_eq!(grid_room(None), 550.0);
+        // gleicher Platz fürs Raster wie in vr_panel.py (GALLERY_H − Rand − Kopf − Tabs)
+        assert_eq!(grid_room(None, 117), 608.0);
     }
 
     fn sample_months() -> Vec<(i32, u32)> {
@@ -1495,41 +1852,59 @@ mod tests {
 
     #[test]
     fn gallery_pages_like_the_app() {
-        // 6 Fotos Oktober + 15 Fotos Juni → wie VRPanel.gallery_pages: [5 Zeilen, 4 Zeilen]
-        let pages = gallery_pages(&sample_months(), |y, m| format!("{y}-{m}"), grid_room(None));
-        assert_eq!(pages.iter().map(Vec::len).collect::<Vec<_>>(), [5, 4]);
+        // 6 Fotos Oktober + 15 Fotos Juni, 4 Spalten → wie VRPanel.gallery_pages: [6 Zeilen, 3 Zeilen]
+        let th = tile_size(false, 4).1;
+        let pages = gallery_pages(&sample_months(), |y, m| format!("{y}-{m}"), grid_room(None, th), 4, th);
+        assert_eq!(pages.iter().map(Vec::len).collect::<Vec<_>>(), [6, 3]);
         assert_eq!(pages[0][0], GRow::Month("2026-10".into()));
         assert_eq!(pages[0][1], GRow::Tiles(vec![0, 1, 2, 3]));
         assert_eq!(pages[0][2], GRow::Tiles(vec![4, 5]));
         assert_eq!(pages[0][3], GRow::Month("2026-6".into()));
         // Juni geht auf Seite 2 weiter → Trenner dort nochmal oben
         assert_eq!(pages[1][0], GRow::Month("2026-6".into()));
-        assert!(gallery_pages(&[], |_, _| String::new(), 600.0)[0].is_empty());
+        assert!(gallery_pages(&[], |_, _| String::new(), 600.0, 4, th)[0].is_empty());
+        // 3 Spalten → Oktober in zwei vollen Zeilen
+        let th3 = tile_size(false, 3).1;
+        let pages3 = gallery_pages(&sample_months(), |y, m| format!("{y}-{m}"), grid_room(None, th3), 3, th3);
+        assert_eq!(pages3[0][1..3], [GRow::Tiles(vec![0, 1, 2]), GRow::Tiles(vec![3, 4, 5])]);
     }
 
     #[test]
     fn gallery_nav_and_single_view() {
         let mut f = Fonts::new();
-        let pages = gallery_pages(&sample_months(), |y, m| format!("{y} {m}"), grid_room(None));
+        let (tw, th) = tile_size(false, 4);
+        let pages = gallery_pages(&sample_months(), |y, m| format!("{y} {m}"), grid_room(None, th), 4, th);
         let tile_of = |i: usize| Tile { index: i, path: PathBuf::from(format!("/x/ViewShot_{i}.png")), mtime: None };
         let tiles: Vec<Tile> =
             pages[0].iter().flat_map(|r| if let GRow::Tiles(t) = r { t.clone() } else { vec![] }).map(tile_of).collect();
-        let g = GalleryView { total: 21, page: 0, pages: 2, rows: pages[0].clone(), tiles: tiles.clone(), open: None, filter: String::new() };
-        let (tw, th) = tile_size();
+        let g = GalleryView {
+            total: 21,
+            page: 0,
+            pages: 2,
+            rows: pages[0].clone(),
+            tiles: tiles.clone(),
+            open: None,
+            filter: String::new(),
+            cols: 4,
+            side_closed: false,
+        };
         let thumb_img = image::RgbaImage::from_pixel(tw - 4, th - 4, image::Rgba([200, 80, 160, 255]));
         let pics = Pics { thumbs: vec![Some(&thumb_img); tiles.len()], ..Pics::default() };
         let v = View { page: Page::Gallery, gallery: Some(g.clone()), ..view() };
         let (c, hits, _) = render(&mut f, &v, &pics).unwrap();
         let size = (c.pix.width(), c.pix.height());
         assert_eq!(size.1 as f32, GALLERY_H, "Galerie nutzt die ganze Fläche");
-        // ◀ ▶ ganz unten, ⚙ oben, Filter-Zeile, 10 Kacheln (6 Okt + 4 Juni), nur ▼ (erste Seite)
-        let (r, _) = hits.iter().find(|h| h.1 == Action::Nav(-1)).unwrap();
-        assert!(r[1] + r[3] > size.1 as f32 - MY - 1.0 && r[0] < WIDTH / 2.0);
-        let (r, _) = hits.iter().find(|h| h.1 == Action::Nav(1)).unwrap();
-        assert!(r[0] > WIDTH / 2.0);
-        assert!(hits.iter().any(|h| h.1 == Action::Settings));
-        assert_eq!(hits.iter().filter(|h| matches!(h.1, Action::GalOpen(_))).count(), 10);
-        assert!(hits.iter().any(|h| h.1 == Action::GalFilter("gif_vid".into())));
+        // Tabs ganz unten, 14 Kacheln (6 Okt + 8 Juni), rechts Seitenpanel: Filter, Spalten, nur ▼ (erste Seite)
+        let (r, _) = hits.iter().find(|h| h.1 == Action::Goto(Page::Translate)).unwrap();
+        assert!(r[1] + r[3] > size.1 as f32 - MY - 1.0 && r[0] < WIDE / 2.0);
+        let (r, _) = hits.iter().find(|h| h.1 == Action::Goto(Page::Settings)).unwrap();
+        assert!(r[0] > WIDE / 2.0);
+        assert_eq!(hits.iter().filter(|h| matches!(h.1, Action::GalOpen(_))).count(), 14);
+        for a in [Action::GalFilter("gif_vid".into()), Action::GalFilter("text".into()), Action::Layer("gallery_cols".into(), "5".into()),
+                  Action::Toggle("gallery_side_closed".into())] {
+            let (r, _) = hits.iter().find(|h| h.1 == a).unwrap_or_else(|| panic!("{a:?} fehlt"));
+            assert!(r[0] > WIDE - MX - SIDE_W - 1.0, "{a:?} steht im Seitenpanel rechts");
+        }
         assert!(hits.iter().any(|h| h.1 == Action::GalPage(1)) && !hits.iter().any(|h| h.1 == Action::GalPage(-1)));
         let (r, _) = hits.iter().find(|h| h.1 == Action::GalOpen(4)).unwrap();
         let (u, w) = ((r[0] + r[2] / 2.0) / size.0 as f32, (r[1] + r[3] / 2.0) / size.1 as f32);
@@ -1537,9 +1912,18 @@ mod tests {
         if let Some(out) = std::env::var_os("PANEL_OUT3") {
             c.save(std::path::Path::new(&out), &[]).unwrap();
         }
-        // Übersetzungs-Seite hat die ◀ ▶-Zeile auch
+        // eingeklappt: nur die Leiste, Raster breiter
+        let closed = View { gallery: Some(GalleryView { side_closed: true, ..g.clone() }), ..v.clone() };
+        let (c, hits, _) = render(&mut f, &closed, &pics).unwrap();
+        assert!(!hits.iter().any(|h| matches!(h.1, Action::GalFilter(_))));
+        let (r, _) = hits.iter().find(|h| h.1 == Action::Toggle("gallery_side_closed".into())).unwrap();
+        assert!(r[2] <= STRIP_W + 0.5);
+        if let Some(out) = std::env::var_os("PANEL_OUT3C") {
+            c.save(std::path::Path::new(&out), &[]).unwrap();
+        }
+        // Übersetzungs-Seite hat die Tab-Leiste auch
         let (_, hits, _) = render(&mut f, &view(), &Pics::default()).unwrap();
-        assert!(hits.iter().any(|h| h.1 == Action::Nav(1)));
+        assert!(hits.iter().any(|h| h.1 == Action::Goto(Page::Gallery)));
         // Einzelansicht: keine ◀ ▶, dafür alle Aktionen
         let open = OpenPhoto {
             index: 3,
@@ -1555,7 +1939,7 @@ mod tests {
         let with = |o: OpenPhoto| View { gallery: Some(GalleryView { open: Some(o), ..g.clone() }), ..v.clone() };
         let big = image::RgbaImage::from_pixel(600, 338, image::Rgba([40, 120, 200, 255]));
         let (c, hits, _) = render(&mut f, &with(open.clone()), &Pics { big: Some(&big), ..Pics::default() }).unwrap();
-        assert!(!hits.iter().any(|h| matches!(h.1, Action::Nav(_))));
+        assert!(!hits.iter().any(|h| matches!(h.1, Action::Goto(_))));
         for a in [
             Action::GalBack,
             Action::GalStep(-1),
@@ -1601,7 +1985,7 @@ mod tests {
         assert_ne!(c1.pix.data(), c2.pix.data());
         // leere Galerie: Kopf + Hinweis, ◀ ▶ bleiben
         let (_, hits, _) = render(&mut f, &View { gallery: Some(GalleryView::default()), ..v }, &Pics::default()).unwrap();
-        assert!(!hits.iter().any(|h| matches!(h.1, Action::GalOpen(_))) && hits.iter().any(|h| h.1 == Action::Nav(1)));
+        assert!(!hits.iter().any(|h| matches!(h.1, Action::GalOpen(_))) && hits.iter().any(|h| h.1 == Action::Goto(Page::Settings)));
     }
 
     #[test]
@@ -1611,21 +1995,21 @@ mod tests {
         std::fs::create_dir_all(dir.join("linuxvr-viewshot")).unwrap();
         std::env::set_var("XDG_CONFIG_HOME", &dir);
         let pose = crate::paths::panel_pose_file();
-        std::fs::write(&pose, r#"{"anchor":"left","width":0.32,"height":0.2}"#).unwrap();
+        std::fs::write(&pose, r#"{"anchor":"left","width":0.44,"height":0.2}"#).unwrap();
         switch_page_size(Page::Translate, Page::Gallery);
         let p: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&pose).unwrap()).unwrap();
-        assert_eq!(p["width"], 0.48);
+        assert_eq!(p["width"], 0.62);
         assert!(p.get("height").is_none(), "Galerie: Höhe automatisch");
         assert_eq!(current_page(), Page::Gallery);
         switch_page_size(Page::Gallery, Page::Translate);
         let p: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&pose).unwrap()).unwrap();
-        assert_eq!((p["width"].as_f64(), p["height"].as_f64()), (Some(0.32), Some(0.2)), "alte Größe zurück");
+        assert_eq!((p["width"].as_f64(), p["height"].as_f64()), (Some(0.44), Some(0.2)), "alte Größe zurück");
         assert_eq!(p["anchor"], "left", "Rest der Pose bleibt");
         // ⚙ 🪟 Größe für eine andere Seite: gemerkt, wirkt beim Wechsel
-        assert_eq!(page_width_cm(Page::Gallery), Some(48));
-        assert_eq!(page_width_cm(Page::Settings), Some(40), "Standard");
+        assert_eq!(page_width_cm(Page::Gallery), Some(62));
+        assert_eq!(page_width_cm(Page::Settings), Some(56), "Standard");
         assert!(set_page_width_cm(Page::Settings, 55));
-        assert_eq!((page_width_cm(Page::Settings), width_cm()), (Some(55), Some(32)), "offene Seite bleibt");
+        assert_eq!((page_width_cm(Page::Settings), width_cm()), (Some(55), Some(44)), "offene Seite bleibt");
         switch_page_size(Page::Translate, Page::Settings);
         assert_eq!(width_cm(), Some(55));
         assert!(set_page_width_cm(Page::Settings, 60) && width_cm() == Some(60), "offene Seite sofort");

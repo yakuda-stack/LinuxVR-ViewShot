@@ -121,6 +121,21 @@
    "en": "Settings",
    "fr": "Réglages"
   },
+  "vr_overlay_short": {
+   "de": "🥽 Overlay",
+   "en": "🥽 Overlay",
+   "fr": "🥽 Overlay"
+  },
+  "vr_gallery_filter": {
+   "de": "Filter",
+   "en": "Filter",
+   "fr": "Filtre"
+  },
+  "vr_gallery_cols": {
+   "de": "Spalten",
+   "en": "Columns",
+   "fr": "Colonnes"
+  },
   "panel_size": {
    "de": "Größe",
    "en": "Size",
@@ -842,7 +857,7 @@
    "gif_max_s": 15,
    "gif_stabilize": "off",
    "pin_lock": true,
-   "gesture_mode": "on",
+   "gesture_mode": "auto",
    "icon_position": "bottom_left",
    "aspect": "free",
    "frame_inset_cm": 7,
@@ -1795,6 +1810,34 @@
    "kind": "system",
    "target": "ja",
    "prompt": "You help a player inside a VR game (e.g. VRChat). ALWAYS write your reply in Japanese. Only quote text in its original language when it is a button or option the player has to click. Plain text, no Markdown, short."
+  },
+  {
+   "kind": "translategemma",
+   "source": "",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "You are a professional translator into German (de). Your goal is to accurately convey the meaning and nuances of the original text while adhering to German grammar, vocabulary, and cultural sensitivities.\nProduce only the German translation, without any additional explanations or commentary. Please translate the following text into German:\n\n\n鬼の居ぬ間の○○\nせんたく\nすいじ"
+  },
+  {
+   "kind": "translategemma",
+   "source": "",
+   "target": "de",
+   "text": "",
+   "prompt": "You are a professional translator into German (de). Your goal is to accurately convey the meaning and nuances of the original text while adhering to German grammar, vocabulary, and cultural sensitivities.\nProduce only the German translation, without any additional explanations or commentary. Please translate the text in the image into German."
+  },
+  {
+   "kind": "translategemma",
+   "source": "ja",
+   "target": "de",
+   "text": "鬼の居ぬ間の○○\nせんたく\nすいじ",
+   "prompt": "You are a professional Japanese (ja) to German (de) translator. Your goal is to accurately convey the meaning and nuances of the original Japanese text while adhering to German grammar, vocabulary, and cultural sensitivities.\nProduce only the German translation, without any additional explanations or commentary. Please translate the following Japanese text into German:\n\n\n鬼の居ぬ間の○○\nせんたく\nすいじ"
+  },
+  {
+   "kind": "translategemma",
+   "source": "ja",
+   "target": "de",
+   "text": "",
+   "prompt": "You are a professional Japanese (ja) to German (de) translator. Your goal is to accurately convey the meaning and nuances of the original Japanese text while adhering to German grammar, vocabulary, and cultural sensitivities.\nProduce only the German translation, without any additional explanations or commentary. Please translate the Japanese text in the image into German."
   }
  ]
 }

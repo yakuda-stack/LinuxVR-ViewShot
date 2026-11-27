@@ -25,7 +25,11 @@ import urllib.request
 DEFAULT_URL = "http://127.0.0.1:11434"
 DEFAULT_MODEL = "qwen2.5vl:7b"
 # Vorschläge im Dropdown (installierte Bild-Modelle kommen automatisch dazu)
-SUGGESTED = ["qwen2.5vl:7b", "qwen2.5vl:3b", "gemma3:4b", "gemma3:12b", "llama3.2-vision"]
+SUGGESTED = ["qwen2.5vl:7b", "qwen2.5vl:3b", "gemma3:4b", "gemma3:12b", "llama3.2-vision",
+             "translategemma:4b", "translategemma:12b"]
+# Empfohlene Modelle bekommen im Dropdown einen Hinweis (i18n-Schlüssel)
+RECOMMENDED = {"translategemma:12b": "tr_model_best_translate",
+               "translategemma:4b": "tr_model_good_translate"}
 # Wie lange Ollama das Modell nach der letzten Anfrage im Grafikspeicher behält.
 # Kurz = VR hat den Speicher schnell wieder, lang = nächste Anfrage schneller.
 KEEP_ALIVE = ["30s", "2m", "10m", "-1"]  # -1 = immer
@@ -138,6 +142,16 @@ def model_list(url: str = DEFAULT_URL) -> list[str]:
     return installed + [m for m in SUGGESTED if m not in installed]
 
 
+def badge_key(model: str) -> str:
+    """i18n-Schlüssel des Hinweises für ein empfohlenes Modell ("" = keiner).
+    Tags mit Quantisierung dahinter (translategemma:12b-it-q8_0) zählen mit."""
+    low = (model or "").strip().lower()
+    for name, key in RECOMMENDED.items():
+        if low == name or low.startswith(name + "-"):
+            return key
+    return ""
+
+
 def image_b64(path) -> str:
     """Foto als Base64 – große Bilder vorher verkleinern."""
     from PyQt6.QtCore import QBuffer, QByteArray, QIODevice, Qt
@@ -196,6 +210,32 @@ def build_prompt(text: str, source: str, target: str, mode: str, has_image: bool
             f"If a line is already in {tgt} or is a name, repeat it unchanged.")
 
 
+def is_translategemma(model: str) -> bool:
+    """TranslateGemma (Google) kann NUR übersetzen – eigener Prompt, kein System-Prompt."""
+    return "translategemma" in (model or "").lower()
+
+
+def translategemma_prompt(text: str, source: str, target: str) -> str:
+    """Fester Prompt von TranslateGemma (zwei Leerzeilen vor dem Text sind wichtig).
+    Ohne Ausgangssprache (auto) fällt sie in den Sätzen einfach weg."""
+    from core import llm_translator as L
+    tgt = L._NAMES.get((target or "").lower(), target)
+    tcode = (target or "").strip()
+    scode = (source or "").strip()
+    has_src = bool(scode) and scode != "auto"
+    src = L._NAMES.get(scode.lower(), scode) if has_src else ""
+    role = (f"You are a professional {src} ({scode}) to {tgt} ({tcode}) translator." if has_src
+            else f"You are a professional translator into {tgt} ({tcode}).")
+    frm = f"{src} " if has_src else ""
+    lines = "\n".join(t for t in text.splitlines() if t.strip())
+    task = (f"Please translate the following {frm}text into {tgt}:\n\n\n{lines}" if lines
+            else f"Please translate the {frm}text in the image into {tgt}.")
+    return (f"{role} Your goal is to accurately convey the meaning and nuances of the original "
+            f"{frm}text while adhering to {tgt} grammar, vocabulary, and cultural sensitivities.\n"
+            f"Produce only the {tgt} translation, without any additional explanations or "
+            f"commentary. {task}")
+
+
 def classify_prompt(text: str, has_image: bool) -> str:
     """Schritt 1 bei „Frage beantworten“: nur JA/NEIN – das schafft auch ein kleines Modell."""
     where = "the image and the OCR text" if has_image else "the OCR text"
@@ -233,6 +273,8 @@ def classify(cfg: dict, text: str, image=None, timeout: float = 60) -> str:
     """🤖 Auto mit dem lokalen Bild-LLM: kurze Ein-Wort-Frage → Aufgabe."""
     from core import llm_translator as L
     model = L.model_of(L.METHOD_VISION, cfg)
+    if is_translategemma(model):
+        return L.MODE_TRANSLATE  # kann nur übersetzen – keine Anfrage nötig
     payload = {"model": model, "system": system_prompt(cfg.get("tr_target", "")),
                "keep_alive": cfg.get("tr_vision_keep_alive") or "2m",
                "prompt": task_prompt(text, image is not None), "stream": False,
@@ -286,10 +328,17 @@ def translate(cfg: dict, text: str, source: str, target: str, image=None, on_par
     }
     if image is not None:
         base["images"] = [image_b64(image)]
+    tg = is_translategemma(model)
+    if tg:
+        # nur Übersetzen, und TranslateGemma erwartet EINE Nachricht ohne System-Prompt
+        mode = L.MODE_TRANSLATE
+        base.pop("system")
     # „Frage beantworten“ von Hand gewählt: erst „Quiz?“ (bei 🤖 Auto schon entschieden)
     if mode == L.MODE_ANSWER and not cfg.get("_routed") and not is_quiz(cfg, text, image, timeout):
         mode = L.MODE_TRANSLATE  # kein Quiz → einfach Zeile für Zeile übersetzen
-    payload = dict(base, prompt=build_prompt(text, source, target, mode, image is not None), stream=True)
+    prompt = (translategemma_prompt(text, source, target) if tg
+              else build_prompt(text, source, target, mode, image is not None))
+    payload = dict(base, prompt=prompt, stream=True)
     out = _generate(url, model, payload, lambda s: on_partial(clean_answer(s, mode) or s.strip())
                     if on_partial is not None else None, timeout)
     result = clean_answer(out, mode)

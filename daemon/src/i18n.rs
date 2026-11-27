@@ -106,6 +106,7 @@ mod tests {
                 "vision" => vision::build_prompt(&s("text"), &s("target"), &s("mode"), image),
                 "classify" => vision::classify_prompt(&s("text"), image),
                 "task" => vision::task_prompt(&s("text"), image),
+                "translategemma" => vision::translategemma_prompt(&s("text"), &s("source"), &s("target")),
                 _ => vision::system_prompt(&s("target")),
             };
             assert_eq!(got, s("prompt"), "Prompt {p}");

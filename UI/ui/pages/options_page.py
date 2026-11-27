@@ -80,7 +80,8 @@ def fill_model_combo(combo: QComboBox, method: str, current: str):
     combo.clear()
     combo.setProperty("llm_method", method)
     for model in models:
-        combo.addItem(model, model)
+        badge = vision.badge_key(model)
+        combo.addItem(model + (f"   {tr(badge)}" if badge else ""), model)
     combo.addItem("✏  " + tr("tr_model_other"), CUSTOM_MODEL)
     combo.setCurrentIndex(max(0, combo.findData(current)))
     combo.setProperty("llm_model", combo.currentData())

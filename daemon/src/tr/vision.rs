@@ -47,6 +47,35 @@ pub fn build_prompt(text: &str, target: &str, mode: &str, has_image: bool) -> St
     )
 }
 
+/// TranslateGemma (Google) kann NUR übersetzen – eigener Prompt, kein System-Prompt
+pub fn is_translategemma(model: &str) -> bool {
+    model.to_lowercase().contains("translategemma")
+}
+
+/// Fester Prompt von TranslateGemma (zwei Leerzeilen vor dem Text sind wichtig) – wie in der App
+pub fn translategemma_prompt(text: &str, source: &str, target: &str) -> String {
+    let tgt = lang_name(target);
+    let tcode = target.trim();
+    let scode = source.trim();
+    let has_src = !scode.is_empty() && scode != "auto";
+    let src = if has_src { lang_name(scode) } else { String::new() };
+    let role = if has_src {
+        format!("You are a professional {src} ({scode}) to {tgt} ({tcode}) translator.")
+    } else {
+        format!("You are a professional translator into {tgt} ({tcode}).")
+    };
+    let frm = if has_src { format!("{src} ") } else { String::new() };
+    let lines = crate::ocr::splitlines(text).into_iter().filter(|t| !t.trim().is_empty()).collect::<Vec<_>>().join("\n");
+    let task = if lines.is_empty() {
+        format!("Please translate the {frm}text in the image into {tgt}.")
+    } else {
+        format!("Please translate the following {frm}text into {tgt}:\n\n\n{lines}")
+    };
+    format!(
+        "{role} Your goal is to accurately convey the meaning and nuances of the original {frm}text while adhering to {tgt} grammar, vocabulary, and cultural sensitivities.\nProduce only the {tgt} translation, without any additional explanations or commentary. {task}"
+    )
+}
+
 pub fn classify_prompt(text: &str, has_image: bool) -> String {
     let where_ = if has_image { "the image and the OCR text" } else { "the OCR text" };
     let ocr = if text.trim().is_empty() { "(nothing found – look at the image)".to_string() } else { text.trim().to_string() };
@@ -151,6 +180,9 @@ fn generate(cfg: &Cfg, mut payload: Value, timeout: u64) -> Result<String, Strin
 
 /// 🤖 Auto mit dem Bild-LLM: Ein-Wort-Frage → Aufgabe
 pub fn classify(cfg: &Cfg, text: &str, image: Option<&Path>) -> Result<&'static str, String> {
+    if is_translategemma(&llm::model_of(llm::VISION, cfg)) {
+        return Ok(MODE_TRANSLATE);
+    }
     let mut p = base(cfg, &cfg.s("tr_target"), image)?;
     p["prompt"] = Value::from(task_prompt(text, image.is_some()));
     p["options"] = json!({"temperature": 0.0, "num_predict": 4});
@@ -165,9 +197,18 @@ pub fn is_quiz(cfg: &Cfg, text: &str, image: Option<&Path>) -> Result<bool, Stri
     Ok(v.contains("YES") || v.contains("JA"))
 }
 
-pub fn translate(cfg: &Cfg, text: &str, _source: &str, target: &str, image: Option<&Path>) -> Result<String, String> {
+pub fn translate(cfg: &Cfg, text: &str, source: &str, target: &str, image: Option<&Path>) -> Result<String, String> {
     let mut mode = { let m = cfg.s("tr_llm_mode"); if m.is_empty() { MODE_TRANSLATE.to_string() } else { m } };
     let mut p = base(cfg, target, image)?;
+    if is_translategemma(&llm::model_of(llm::VISION, cfg)) {
+        // nur Übersetzen, und TranslateGemma erwartet EINE Nachricht ohne System-Prompt
+        if let Some(o) = p.as_object_mut() {
+            o.remove("system");
+        }
+        p["prompt"] = Value::from(translategemma_prompt(text, source, target));
+        p["options"] = json!({"temperature": 0.2});
+        return Ok(clean_answer(&generate(cfg, p, 300)?, MODE_TRANSLATE));
+    }
     // „Frage beantworten“ von Hand gewählt: erst „Quiz?“ (bei 🤖 Auto schon entschieden)
     if mode == MODE_ANSWER && !cfg.b("_routed") && !is_quiz(cfg, text, image)? {
         mode = MODE_TRANSLATE.to_string();

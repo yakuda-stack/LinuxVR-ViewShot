@@ -23,7 +23,7 @@ DEFAULTS = {
     "detect_mode": "auto",        # "auto" = App erkennt Text/QR/Bild, "manual" = in VR wählen
     "shutter": "right",           # Auslöser: "left" / "right" / "both"
     "mode_button": "left",        # Typ wechseln (auto: 🪄↔🔁, manual: 🖼📝🔳🔁): "left" / "right" / "both"
-    "gesture_mode": "on",         # 🖐 Rahmen-Geste, siehe GESTURE_MODES ("auto" = 🔫 Waffen-Schutz)
+    "gesture_mode": "auto",       # 🖐 Rahmen-Geste, siehe GESTURE_MODES ("auto" = 🔫 Waffen-Schutz, Standard)
     "icon_position": "bottom_left",  # Ecke des Typ-Symbols, siehe ICON_POSITIONS
     "aspect": "free",             # 📐 Seitenverhältnis des Fotos, siehe ASPECTS
     "gif_hold": True,             # 🎞 Auslöser gedrückt halten = GIF aufnehmen (Foto dann beim Loslassen)

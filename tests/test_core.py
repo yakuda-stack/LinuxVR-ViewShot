@@ -577,6 +577,27 @@ def test_vision_translates_line_by_line_with_photo(fake_ollama, tmp_path):
     assert "1) Welcome to the hotel" in seen["prompt"] and "EXACTLY 2 lines" in seen["prompt"]
 
 
+def test_translategemma_only_translates_with_its_own_prompt(fake_ollama):
+    from core import llm_translator as L
+    from core import vision
+    url, seen = fake_ollama
+    assert "translategemma:4b" in vision.SUGGESTED and "translategemma:12b" in vision.SUGGESTED
+    cfg = {"tr_vision_url": url, "tr_llm_vision_model": "translategemma:12b",
+           "tr_llm_mode": L.MODE_ANSWER}
+    out = L.translate(L.METHOD_VISION, cfg, "Welcome to the hotel\nPlease do not touch", "en", "de")
+    assert out == "Willkommen im Hotel\nBitte nicht anfassen"
+    assert len(seen["all"]) == 1                                   # keine Quiz-Frage vorher
+    assert "system" not in seen["all"][0]
+    p = seen["prompt"]
+    assert p.startswith("You are a professional English (en) to German (de) translator.")
+    assert p.endswith("into German:\n\n\nWelcome to the hotel\nPlease do not touch")
+    assert vision.classify({"tr_llm_vision_model": "translategemma:4b"}, "x") == L.MODE_TRANSLATE
+    assert "translator into German (de)." in vision.translategemma_prompt("x", "auto", "de")
+    assert vision.badge_key("translategemma:12b") == "tr_model_best_translate"
+    assert vision.badge_key("translategemma:4b-it-q8_0") == "tr_model_good_translate"
+    assert vision.badge_key("qwen2.5vl:7b") == ""
+
+
 def test_vision_errors_are_readable(fake_ollama):
     from core import llm_translator as L
     url, _ = fake_ollama
@@ -800,16 +821,14 @@ def test_panel_click_from_vr_presses_button(tmp_path, monkeypatch):
     def find(text):  # Knopf auf der ⚙ Seite (wird bei jedem Zeichnen neu gebaut)
         return next(b for b in pw.findChildren(QPushButton) if b.isVisible() and text in b.text())
 
-    tap(find("⚙"))                                     # ⚙ → Einstellungs-Seite (3. Seite)
+    tap(pw.nav_tabs["settings"])                       # Tab ⚙ unten → Einstellungs-Seite
     assert pw.mode == "settings" and pw.stack.currentIndex() == vr_panel.PAGE_SETTINGS
-    assert pw.nav.isVisible()
-    tap(find(tr("vr_tab_vr")))                         # Tab 🥽 VR
-    tap(find(tr("vr_panel_group")))                    # ▸ Panel aufklappen
+    assert pw.nav.isVisible() and pw.width() == vr_panel.WIDE
+    tap(find(tr("vr_panel_group")))                    # Kategorie 🪟 Panel → Untermenü rechts
     assert pw.set_open == "panel"
     tap(find(tr("panel_move")))
     assert layer_config.load()["panel_edit"] is True
-    tap(find(tr("vr_tab_shot")))                       # Tab 📸 Shot
-    tap(find(tr("buttons_title").replace("&", "&&")))  # ▸ Erkennung & Tasten (&& = echtes &)
+    tap(find(tr("buttons_title").replace("&", "&&")))  # Kategorie Erkennung & Tasten (&& = echtes &)
     shutter_left = [b for b in pw.findChildren(QPushButton)
                     if b.isVisible() and b.text() == tr("combo_short_left")][0]  # erste Zeile = Auslöser
     tap(shutter_left)                                  # Auslöser links → Typ-Taste weicht aus
@@ -838,7 +857,7 @@ def test_panel_click_from_vr_presses_button(tmp_path, monkeypatch):
 
 
 def test_panel_gallery_nav_months_and_photo_view(tmp_path, monkeypatch):
-    """◀ ▶ unten wechseln Übersetzung ↔ Galerie (je eigene Größe) · Monats-Trenner ·
+    """Tabs unten wechseln Übersetzung ↔ Galerie (je eigene Größe) · Monats-Trenner ·
     weiterer Ordner mit Unterordnern · Kachel → Foto groß · 🗑 zweimal · 📋 · 🌐."""
     import json
     import os
@@ -893,16 +912,33 @@ def test_panel_gallery_nav_months_and_photo_view(tmp_path, monkeypatch):
         return [w for w in items if w is not None and w.objectName() == "thumb"]
 
     assert pw.nav.isVisible()
-    tap(pw.nav_next)                                                 # ▶ → Galerie, größer
+    tap(pw.nav_tabs["gallery"])                                      # Tab 🖼 → Galerie, größer
     assert pw.mode == "gallery" and pw.stack.currentIndex() == V.PAGE_GALLERY
     assert json.loads((tmp_path / "panel_pose.json").read_text())["width"] == V.PAGE_SIZE_DEFAULT["gallery"]
     assert len(paths.gallery_photos(win.cfg)) == 21                  # Foto-Ordner + VRChat/2026-06
     first = [v for k, v in pw.gal_pages_cache[0] if k == "month"]
     assert first[0] == "2026 " + ("Oktober" if V.tr("month_10") == "Oktober" else "October")
-    assert len(pw.gal_pages_cache) == 2 and pw.gal_down.isVisible()
+    assert len(pw.gal_pages_cache) == 2 and pw.gal_down.isVisible() and pw.gal_side.isVisible()
     tap(pw.gal_down)
     assert pw.gal_page == 1 and pw.gal_pages_cache[1][0][0] == "month"  # neuer Monat-Trenner oben
     tap(pw.gal_up)
+    pw.refresh(force=True)
+    small = thumbs()[0].width()
+    tap(pw.gal_cols_btns["3"])                                       # Spalten 3 → größere Kacheln
+    pw.refresh(force=True)
+    assert layer_config.load()["gallery_cols"] == "3" and thumbs()[0].width() > small
+    tap(pw.gal_filter_btns["text"])
+    pw.refresh(force=True)
+    assert pw.gal_filter == "text"
+    tap(pw.gal_filter_btns[""])
+    pw.refresh(force=True)
+    fold = next(b for b in pw.gal_side.findChildren(V.QPushButton) if b.text() == "›")
+    tap(fold)                                                        # Seitenpanel einklappen
+    pw.refresh(force=True)
+    assert pw.gal_strip.isVisible() and not pw.gal_side.isVisible()
+    tap(pw.gal_strip)
+    pw.refresh(force=True)
+    assert pw.gal_side.isVisible()
     tap(thumbs()[0])                                                 # neuestes Foto
     assert pw.gal_open.name == "ViewShot_05.png" and not pw.nav.isVisible()
     tap(pw.single_copy)
@@ -914,6 +950,7 @@ def test_panel_gallery_nav_months_and_photo_view(tmp_path, monkeypatch):
     tap(pw.single_info_btn)
     assert pw.stack.currentIndex() == V.PAGE_INFO
     pw.back_to_single()
+    pw.refresh(force=True)                                           # wie nach einem echten Klick
     tap(pw.single_translate)                                         # 🌐 → Übersetzung, kleiner
     assert pw.mode == "translate" and pw.stack.currentIndex() == V.PAGE_MAIN
     assert json.loads((tmp_path / "panel_pose.json").read_text())["width"] == 0.32
@@ -941,6 +978,61 @@ def test_gallery_folders_scan(tmp_path, monkeypatch):
     cfg["gallery_main_subfolders"] = True
     cfg["gallery_folders"][0]["subfolders"] = True
     assert names() == ["a.png", "b.jpg", "c.png", "e.PNG"]
+
+
+def test_panel_side_folds(tmp_path, monkeypatch):
+    """🌐 Seitenpanel rechts: › klappt ein (nur „Einstellungen“ senkrecht), antippen klappt auf –
+    Breite des Panels bleibt, das Foto links wird breiter."""
+    import os
+    monkeypatch.setenv("VIEWSHOT_OUTPUT_DIR", str(tmp_path))
+    from PyQt6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])  # noqa: F841
+    from core import layer_config
+    monkeypatch.setattr(layer_config, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(layer_config, "LAYER_FILE", tmp_path / "layer.json")
+    from ui import vr_panel as V
+    monkeypatch.setattr(V, "sizes_file", lambda: tmp_path / "panel_sizes.json")
+    from ui.mainwindow import MainWindow
+    w = MainWindow()
+    pw = w.main_page.vr_panel
+    pw.mode = "translate"
+    pw.stack.setCurrentIndex(V.PAGE_MAIN)
+    pw.refresh(force=True)
+
+    def tap(widget):
+        c = widget.mapTo(pw, widget.rect().center())
+        pw.click(c.x() / pw.width(), c.y() / pw.height())
+        pw.refresh(force=True)
+
+    assert pw.width() == V.WIDE and pw.side.isVisible() and not pw.strip.isVisible()
+    open_w = pw.content_w(V.PAGE_MAIN)
+    fold = next(b for b in pw.side.findChildren(V.QPushButton) if b.text() == "›")
+    tap(fold)
+    assert layer_config.load()["panel_side_closed"] is True
+    assert pw.strip.isVisible() and not pw.side.isVisible() and pw.width() == V.WIDE
+    assert pw.content_w(V.PAGE_MAIN) > open_w
+    tap(pw.strip)
+    assert layer_config.load()["panel_side_closed"] is False and pw.side.isVisible()
+    tap(pw.gesture_btns["auto"])                        # 🔫 Auto direkt im Seitenpanel
+    assert layer_config.load()["gesture_mode"] == "auto"
+    tap(pw.overlay_btn)
+    assert layer_config.load()["overlay"] is True
+    pw.render()
+    h_photo = pw.height()
+    tap(pw.pic_btn)                                     # 🖼 ▲ → Foto weg
+    assert layer_config.load()["panel_hide_photo"] is True and not pw.photo.isVisible()
+    pw.render()
+    assert pw.height() == h_photo, "feste Größe: ohne Foto bleibt das Panel gleich hoch"
+    assert pw.result_box.height() > V.RESULT_MAX_H + V.PHOTO_MAX_H     # Übersetzung bekommt die ganze Fläche
+    pw.go_page("settings")
+    pw.refresh(force=True)
+    pw.fold_tab("shot")
+    pw.refresh(force=True)
+    texts = [b.text() for b in pw.findChildren(V.QPushButton) if b.isVisible()]
+    assert not any(V.tr("eye") in t for t in texts) and any(V.tr("vr_panel_group") in t for t in texts)
+    if os.environ.get("PANEL_SHOT"):
+        pw.render().save(os.environ["PANEL_SHOT"])
+    os.environ.pop("VIEWSHOT_OUTPUT_DIR", None)
 
 
 def test_panel_long_text_pages():
@@ -979,7 +1071,8 @@ def test_panel_fixed_height_from_vr(tmp_path, monkeypatch):
     (tmp_path / "panel_pose.json").write_text(json.dumps({"width": 0.4}))
     assert vr_panel.fixed_height_px() is None                       # Höhe nicht gezogen
     (tmp_path / "panel_pose.json").write_text(json.dumps({"width": 0.4, "height": 0.3}))
-    assert vr_panel.fixed_height_px() == 540                        # 720 × 0.3 / 0.4
+    assert vr_panel.fixed_height_px("gallery") == 750               # 1000 × 0.3 / 0.4
+    assert vr_panel.fixed_height_px("translate") == 750             # 🌐 breiter: 1000 × 0.3 / 0.4
 
 
 # ------------------------------------------------------ ⚙ Hintergrund-Dienst

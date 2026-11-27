@@ -14,10 +14,11 @@ Inhalt: Foto mit Nummern ①②③ auf den Textzeilen · darunter die Übersetzu
 (Auswahl als Liste im Panel, keine Dropdowns – deren Klapplisten wären eigene
 Fenster und nicht im Bild) · ↻ · ⚙ springt auf die Einstellungs-Seite.
 
-Seiten: 🌐 Übersetzung, 🖼 Galerie und ⚙ Einstellungen. Unten eine Zeile: ◀ links,
-▶ rechts wechseln die Seite. Jede Seite hat ihre eigene Größe in VR (panel_sizes.json) –
-die Galerie ist standardmäßig größer.
-⚙ Einstellungen: Tabs 📸 Shot | 🥽 VR, darin einklappbare Gruppen (immer nur eine offen) –
+Seiten: 🌐 Übersetzung, 🖼 Galerie und ⚙ Einstellungen – Tabs ganz unten wechseln die Seite.
+Jede Seite hat ihre eigene Größe in VR (panel_sizes.json) – die Galerie ist standardmäßig größer.
+🌐 Übersetzung: links Foto + Übersetzung, rechts ein Seitenpanel (Dienst, Sprachen, Aufgabe),
+mit › einklappbar (dann nur „Einstellungen“ senkrecht, layer.json „panel_side_closed“).
+⚙ Einstellungen: links Kategorien (📸 Shot / 🥽 VR), rechts das Untermenü der gewählten –
 was drinsteht, kommt aus core/vr_settings.py (gleiche Liste nutzt der Rust-Dienst).
 Galerie = Raster mit Vorschaubildern über die
 ganze Fläche, Monats-Trenner („── 2026 Oktober ──“); Antippen öffnet das Foto groß mit
@@ -47,7 +48,11 @@ from core.i18n import month_title, tr
 from ui.style import STYLE
 from ui.widgets import WARN_COLOR, draw_play_badge
 
-WIDTH = 720              # Pixel-Breite des Panel-Bilds (Höhe ergibt sich aus dem Inhalt)
+WIDE = 1000              # Pixel-Breite des Panel-Bilds, alle Seiten (Höhe ergibt sich aus dem Inhalt)
+SIDE_W = 300             # 🌐 Seitenpanel rechts (offen)
+STRIP_W = 64             # 🌐 Seitenpanel eingeklappt: nur „Einstellungen“ senkrecht
+COL_GAP = 14             # Abstand zwischen zwei Spalten
+CAT_W = 360              # ⚙ Kategorien-Liste links
 PHOTO_MAX_H = 360        # so hoch darf das Foto im Panel höchstens werden
 CHECK_MS = 400           # so oft schauen, ob sich etwas geändert hat
 RESULT_MAX_H = 300       # Übersetzung höher → blättern (▼ / ▲)
@@ -56,7 +61,8 @@ BUTTON_CM = (2, 20)      # 🔘 Knopf-Durchmesser in VR (Schieber „Knopf-Grö�
 # 🔘 Knopf-Farben zum Antippen in VR (passend zu Hand-Overlays wie WayVR)
 BUTTON_COLORS = ("#5b8dc9", "#9b6bd6", "#4caf7a", "#e0913a", "#d05a5a", "#6b7280", "#e5e9ef")
 NAV_H = 52               # Zeile ganz unten: ◀ links, ▶ rechts (Seite wechseln)
-GRID_COLS = 4            # Galerie: Vorschaubilder nebeneinander
+GRID_COLS = 4            # Galerie: Vorschaubilder nebeneinander (Standard)
+GALLERY_COLS = (3, 4, 5) # 🖼 zur Auswahl im Seitenpanel (layer.json „gallery_cols“)
 GRID_GAP = 8
 THUMB_RATIO = 0.75       # Höhe/Breite einer Kachel
 MONTH_H = 34             # Höhe eines Monats-Trenners im Raster
@@ -64,10 +70,12 @@ GALLERY_H = 760          # Galerie ohne von Hand gezogene Höhe: so hoch wird da
 SINGLE_MAX_H = 360       # Einzelansicht: so hoch darf das Foto höchstens werden
 GIF_MIN_FRAME_S = 0.125  # 🎞 GIF in VR: höchstens so oft ein neues Panel-Bild (der Layer schaut alle 80 ms)
 PAGES = ("translate", "gallery", "settings")
-PAGE_SIZE_DEFAULT = {"translate": 0.32, "gallery": 0.48, "settings": 0.40}  # Breite in VR (m) je Seite
+PAGE_SIZE_DEFAULT = {"translate": 0.44, "gallery": 0.62, "settings": 0.56}  # Breite in VR (m) je Seite
+PAGE_WIDTH = {"translate": WIDE, "gallery": WIDE, "settings": WIDE}  # Pixel-Breite je Seite
+PAGE_ICONS = {"translate": "🌐", "gallery": "🖼", "settings": "⚙"}
 # Stapel-Seiten im Panel
 PAGE_MAIN, PAGE_PICK, PAGE_SETTINGS, PAGE_GALLERY, PAGE_SINGLE, PAGE_SHARE, PAGE_INFO = range(7)
-NAV_PAGES = (PAGE_MAIN, PAGE_GALLERY, PAGE_SETTINGS)  # nur hier ist die ◀ ▶-Zeile unten zu sehen
+NAV_PAGES = (PAGE_MAIN, PAGE_GALLERY, PAGE_SETTINGS)  # nur hier ist die Tab-Leiste unten zu sehen
 BADGE = QColor(70, 150, 255)
 NUMBERS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
 
@@ -96,8 +104,27 @@ def enabled() -> bool:
     return bool(layer_config.load().get("panel", True))
 
 
-def fixed_height_px() -> int | None:
-    """Höhe von Hand gezogen (Ecke oben links in VR)? → Pixel-Höhe passend dazu."""
+def side_closed() -> bool:
+    """🌐 Seitenpanel rechts eingeklappt? (layer.json – gilt auch für den ⚙ Dienst)"""
+    return bool(layer_config.load().get("panel_side_closed"))
+
+
+def gallery_cols() -> int:
+    """🖼 Spalten im Raster (layer.json „gallery_cols“) – nur 3 / 4 / 5, sonst 4."""
+    try:
+        cols = round(float(layer_config.load().get("gallery_cols") or GRID_COLS))
+    except (TypeError, ValueError):
+        cols = GRID_COLS
+    return cols if cols in GALLERY_COLS else GRID_COLS
+
+
+def main_w(closed: bool) -> int:
+    """Linke Spalte neben dem Seitenpanel (🌐 Foto, 🖼 Raster)."""
+    return WIDE - 36 - COL_GAP - (STRIP_W if closed else SIDE_W)
+
+
+def fixed_height_px(page: str = "translate") -> int | None:
+    """Höhe von Hand gezogen (Ecke oben links in VR)? → Pixel-Höhe passend dazu (bei der Breite der Seite)."""
     try:
         data = json.loads(pose_file().read_text(encoding="utf-8"))
         width, height = float(data["width"]), data.get("height")
@@ -105,7 +132,7 @@ def fixed_height_px() -> int | None:
         return None
     if not height or width <= 0:
         return None
-    return max(160, round(WIDTH * float(height) / width))
+    return max(160, round(PAGE_WIDTH.get(page, WIDE) * float(height) / width))
 
 
 def opacity() -> float:
@@ -231,6 +258,39 @@ def clear_layout(lay) -> None:
         elif item.layout() is not None:
             clear_layout(item.layout())
             item.layout().deleteLater()
+
+
+def vertical_pixmap(text: str) -> QPixmap:
+    """🌐 eingeklapptes Seitenpanel: ‹ oben, darunter der Text senkrecht (von unten nach oben lesbar)."""
+    font = QFont()
+    font.setPixelSize(22)
+    font.setBold(True)
+    fm = QFontMetrics(font)
+    tw, th = fm.horizontalAdvance(text), fm.height()
+    arrow_h = 40
+    pix = QPixmap(th + 4, tw + arrow_h + 8)
+    pix.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pix)
+    painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+    painter.setPen(QColor("#5b9bff"))
+    big = QFont(font)
+    big.setPixelSize(26)
+    painter.setFont(big)
+    painter.drawText(QRectF(0, 0, pix.width(), arrow_h), Qt.AlignmentFlag.AlignCenter, "‹")
+    painter.setFont(font)
+    painter.translate(pix.width() / 2 + fm.ascent() / 2 - 2, arrow_h + tw + 4)
+    painter.rotate(-90)
+    painter.drawText(0, 0, text)
+    painter.end()
+    return pix
+
+
+def elide(text: str, width: int, px: int = 20) -> str:
+    """Knopf-Text zu lang fürs schmale Seitenpanel → hinten mit … kürzen."""
+    font = QFont()
+    font.setPixelSize(px)
+    font.setBold(True)
+    return QFontMetrics(font).elidedText(text, Qt.TextElideMode.ElideRight, width)
 
 
 def wrap_lines(text: str, font: QFont, width: int) -> list[str]:
@@ -388,37 +448,61 @@ class VRPanel(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)  # nie auf dem Desktop
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(STYLE + """
-            #vrpanel { background: #161a22; border: 2px solid #2b3240; border-radius: 16px; }
+            #vrpanel { background: #07090d; border: 2px solid #1d2a40; border-top: 4px solid #3d7fd9;
+                       border-radius: 16px; }
+            #vrpanel QStackedWidget, #vrpanel QStackedWidget > QWidget { background: #07090d; }
             #vrpanel QPushButton { font-size: 20px; min-height: 48px; padding: 4px 14px; }
-            #vrpanel QLabel { font-size: 20px; }
-            #vrpanel QLabel#vrtitle { font-size: 24px; font-weight: bold; }
-            #vrpanel QLabel#vrresult { font-size: 22px; }
+            #vrpanel QPushButton#linkbtn { background: #121a28; color: #e8ecf4; border: 1px solid #24324a;
+                                           border-bottom: 2px solid #3d7fd9; border-radius: 6px; }
+            #vrpanel QPushButton#sendbtn { background: #1f3a66; color: #ffffff; border: 1px solid #5b9bff;
+                                           border-bottom: 2px solid #5b9bff; border-radius: 6px; }
+            #vrpanel QLabel { font-size: 20px; color: #e8ecf4; }
+            #vrpanel QLabel#vrtitle { font-size: 26px; font-weight: bold; color: #5b9bff; }
+            #vrpanel QLabel#vrsubtitle { font-size: 22px; font-weight: bold; color: #5b9bff; }
+            #vrpanel QFrame#vrphotobox { background: #0f141d; border: 1px solid #24324a; border-radius: 8px; }
+            #vrpanel QFrame#vrresultbox { background: #0f141d; border: 1px solid #24324a;
+                                          border-bottom: 3px solid #3d7fd9; border-radius: 8px; }
+            #vrpanel QLabel#vrresult { font-size: 22px; background: transparent; border: none; }
+            #vrpanel QFrame#vrresultbox QLabel#dim { background: transparent; border: none; }
             #vrpanel QLabel#vrsection { font-size: 17px; color: #aeb4bf; }
-            #vrpanel QLabel#dim { font-size: 16px; }
-            #vrpanel QPushButton#navbtn { font-size: 21px; font-weight: bold; min-height: 52px; max-height: 52px;
-                                          border-radius: 12px; background: #232833; border: 1px solid #3a4252;
-                                          color: #e5e9ef; padding: 0 18px; }
-            #vrpanel QPushButton#navbtn:hover { background: #2f3542; border-color: #5b8dc9; }
-            #vrpanel QPushButton#linkbtn:disabled { color: #3a4050; border-color: #262b35; background: #1b1f28; }
-            #vrpanel QLabel#navdots { font-size: 18px; color: #5b8dc9; }
+            #vrpanel QPushButton#cathead { font-size: 18px; font-weight: bold; color: #aeb4bf; background: transparent;
+                                           border: none; text-align: left; padding: 0 6px; min-height: 40px;
+                                           max-height: 40px; }
+            #vrpanel QLabel#dim { font-size: 16px; color: #9aa6ba; }
+            #vrpanel QFrame#vrcard { background: #0f141d; border: 1px solid #1d2a40; border-top: 3px solid #3d7fd9;
+                                     border-radius: 10px; }
+            #vrpanel QPushButton#cat, #vrpanel QPushButton#catOn {
+                text-align: left; padding: 0 14px; min-height: 52px; max-height: 52px; border-radius: 6px;
+                font-weight: bold; background: #121a28; color: #e8ecf4; border: 1px solid #24324a;
+                border-bottom: 2px solid #3d7fd9; }
+            #vrpanel QPushButton#catOn { background: #16233a; color: #8fb6ff; border-bottom-color: #5b9bff; }
+            #vrpanel QLabel#catarrow { font-size: 26px; font-weight: bold; color: #5b9bff; background: transparent; }
+            #vrpanel QPushButton#tab, #vrpanel QPushButton#tabOn {
+                font-size: 20px; font-weight: bold; min-height: 52px; max-height: 52px; border-radius: 8px;
+                background: #121a28; color: #c9d3e3; border: 1px solid #24324a; border-top: 3px solid #2c3d5c; }
+            #vrpanel QPushButton#tabOn { background: #16233a; color: #8fb6ff; border-top-color: #5b9bff; }
+            #vrpanel QPushButton#strip { background: #0f141d; border: 1px solid #1d2a40; border-top: 3px solid #3d7fd9;
+                                         border-radius: 10px; padding: 0; }
+            #vrpanel QPushButton#linkbtn:disabled { color: #3a4560; border-color: #1a2436; background: #0d121b; }
             #vrpanel QLabel#month { font-size: 18px; font-weight: bold; color: #c7cdd6; }
-            #vrpanel QFrame#monthline { background: #333947; }
+            #vrpanel QFrame#monthline { background: #24324a; }
             #vrpanel QLabel#vrtoast { font-size: 18px; font-weight: bold; color: #6fae72; }
             #vrpanel QLabel#infokey { font-size: 17px; color: #aeb4bf; }
             #vrpanel QLabel#infoval { font-size: 19px; }
-            #vrpanel QPushButton#thumb { padding: 0; min-height: 0; border: 2px solid #2b3240;
-                                         border-radius: 8px; background: #14161c; }
+            #vrpanel QPushButton#thumb { padding: 0; min-height: 0; border: 2px solid #24324a;
+                                         border-radius: 8px; background: #0f141d; }
             #vrpanel QListWidget { font-size: 22px; }
             #vrpanel QListWidget::item { min-height: 54px; }
         """)
-        self.setFixedWidth(WIDTH)
+        self.setFixedWidth(PAGE_WIDTH.get(current_page(), WIDE))
         self.last_sig = None
         self.choosing = None     # welches Auswahl-Menü ist offen ("tr_method", …)
         self.result_full = ""    # ganze Übersetzung …
         self.result_page = 0     # … angezeigte Seite (▼ / ▲)
         self.mode = current_page()  # Hauptseite: "translate" / "gallery" / "settings" (wie zuletzt)
         self.set_tab = vr_settings.TABS[0]["id"]  # ⚙ Einstellungen: Tab "shot" / "vr"
-        self.set_open = None     # ⚙ aufgeklappte Gruppe (nur eine) oder None
+        self.set_open = None     # ⚙ gewählte Kategorie (rechts offen) oder None = die erste
+        self.set_folded = set()  # ⚙ eingeklappte Überschriften links ("shot" / "vr")
         self.size_page = "translate"  # 🪟 Größe: für welche Seite
         self.old_open = False    # 🟠 Hinweis „Layer veraltet“ aufgeklappt?
         self.gal_page = 0        # Galerie: Seite im Raster
@@ -439,34 +523,33 @@ class VRPanel(QWidget):
         lay.setSpacing(10)
         self.stack = QStackedWidget()
         lay.addWidget(self.stack, 1)  # nimmt den Platz → ◀ ▶ bleiben ganz unten
-        # ganz unten: [◀ Galerie]   ● ○   [Galerie ▶] – Seite wechseln
+        # ganz unten: Tab-Leiste [🌐 Übersetzung] [🖼 Galerie] [⚙ Einstellungen] – offene Seite blau
         self.nav = QWidget()
         nrow = QHBoxLayout(self.nav)
         nrow.setContentsMargins(0, 0, 0, 0)
-        nrow.setSpacing(10)
-        self.nav_prev = self.button("", lambda: self.step_page(-1))
-        self.nav_prev.setObjectName("navbtn")
-        self.nav_prev.setMinimumWidth(230)
-        nrow.addWidget(self.nav_prev)
-        self.nav_dots = QLabel()
-        self.nav_dots.setObjectName("navdots")
-        self.nav_dots.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        nrow.addWidget(self.nav_dots, 1)
-        self.nav_next = self.button("", lambda: self.step_page(1))
-        self.nav_next.setObjectName("navbtn")
-        self.nav_next.setMinimumWidth(230)
-        nrow.addWidget(self.nav_next)
+        nrow.setSpacing(8)
+        self.nav_tabs = {}
+        for name in PAGES:
+            btn = self.button(PAGE_ICONS[name] + "  " + self.page_name(name), lambda n=name: self.go_page(n))
+            btn.setObjectName("tab")
+            nrow.addWidget(btn, 1)
+            self.nav_tabs[name] = btn
         lay.addWidget(self.nav)
         # Höhe richtet sich nur nach der sichtbaren Seite
         self.stack.currentChanged.connect(self.shrink_to_page)
 
-        # ---------- Seite 0: Übersetzung ----------
+        # ---------- Seite 0: Übersetzung (links Foto + Übersetzung, rechts Seitenpanel) ----------
         main = QWidget()
-        col = QVBoxLayout(main)
+        mrow = QHBoxLayout(main)
+        mrow.setContentsMargins(0, 0, 0, 0)
+        mrow.setSpacing(COL_GAP)
+        self.main_left = QWidget()
+        col = QVBoxLayout(self.main_left)
         col.setContentsMargins(0, 0, 0, 0)
         col.setSpacing(10)
+        mrow.addWidget(self.main_left, 1, Qt.AlignmentFlag.AlignTop)
         head = QHBoxLayout()
-        title = QLabel("🌐  ViewShot")
+        title = QLabel("🌐  " + tr("vr_page_translate"))
         title.setObjectName("vrtitle")
         head.addWidget(title, 1)
         # 🟠 i: Layer passt nicht zur App → antippen klappt den Hinweis auf
@@ -475,47 +558,54 @@ class VRPanel(QWidget):
         self.old_btn.setStyleSheet(f"background: {WARN_COLOR}; color: #161a22; border: none; "
                                    "border-radius: 24px; font-weight: bold; font-size: 24px; padding: 0;")
         head.addWidget(self.old_btn)
+        # 🖼 ▲ = Foto ausblenden (Übersetzung bekommt die ganze Fläche), 🖼 ▼ = wieder zeigen
+        self.pic_btn = self.button("", self.toggle_photo)
+        self.pic_btn.setFixedWidth(84)
+        self.pic_btn.setStyleSheet("padding: 0;")
+        head.addWidget(self.pic_btn)
         # 🎞 GIF / 🎬 VID umschalten (wie auf der Main-Seite)
         self.rec_btn = self.button("", self.toggle_rec)
         self.rec_btn.setMinimumWidth(120)
         head.addWidget(self.rec_btn)
-        head.addWidget(self.button("⚙", self.go_settings, tip=True))
         col.addLayout(head)
         self.old_note = QLabel()
         self.old_note.setWordWrap(True)
         self.old_note.setStyleSheet(f"color: {WARN_COLOR}; font-size: 19px;")
         col.addWidget(self.old_note)
 
-        row = QHBoxLayout()
-        self.method_btn = self.button("", lambda: self.choose("tr_method"))
-        row.addWidget(self.method_btn, 1)
-        self.redo_btn = self.button("↻", lambda: self.page.start_translation(force=True))
-        row.addWidget(self.redo_btn)
-        col.addLayout(row)
-        row = QHBoxLayout()
-        self.src_btn = self.button("", lambda: self.choose("tr_source"))
-        row.addWidget(self.src_btn, 1)
-        row.addWidget(QLabel("→"))
-        self.dst_btn = self.button("", lambda: self.choose("tr_target"))
-        row.addWidget(self.dst_btn, 1)
-        col.addLayout(row)
-        self.mode_btn = self.button("", lambda: self.choose("tr_llm_mode"))
-        col.addWidget(self.mode_btn)
-        self.last_ai = QLabel()  # „Letzte KI: …“ wie auf der Main-Seite
-        self.last_ai.setObjectName("dim")
-        col.addWidget(self.last_ai)
         # ✥ Verschieben an: kurze Anleitung (gelber Rand zeichnet der Layer)
         self.edit_help = QLabel("✥  " + tr("panel_edit_help"))
         self.edit_help.setObjectName("dim")
         self.edit_help.setWordWrap(True)
         col.addWidget(self.edit_help)
+        # Foto-Kasten + Übersetzungs-Kasten haben eine feste Größe (fill_pages) – auch mit kleinem
+        # Foto, wenig Text oder ohne Foto bleibt das Panel gleich groß (Rest = leerer Kasten)
+        self.photo_box = QFrame()
+        self.photo_box.setObjectName("vrphotobox")
+        pbox = QVBoxLayout(self.photo_box)
+        pbox.setContentsMargins(1, 1, 1, 1)
         self.photo = QLabel()
         self.photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        col.addWidget(self.photo)
+        self.photo.setStyleSheet("background: transparent; border: none;")
+        pbox.addWidget(self.photo)
+        col.addWidget(self.photo_box)
+        self.photo_pix = None
+        self.result_box = QFrame()
+        self.result_box.setObjectName("vrresultbox")
+        rbox = QVBoxLayout(self.result_box)
+        rbox.setContentsMargins(12, 12, 12, 12)
+        rbox.setSpacing(8)
         self.result = QLabel()
         self.result.setObjectName("vrresult")
         self.result.setTextFormat(Qt.TextFormat.PlainText)
-        col.addWidget(self.result)
+        self.result.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        rbox.addWidget(self.result)
+        rbox.addStretch(1)
+        self.status = QLabel()  # Status unten im Kasten
+        self.status.setObjectName("dim")
+        self.status.setWordWrap(True)
+        rbox.addWidget(self.status)
+        col.addWidget(self.result_box)
         # lange Übersetzung: ▲ 2/3 ▼
         self.page_row = QWidget()
         prow = QHBoxLayout(self.page_row)
@@ -530,10 +620,64 @@ class VRPanel(QWidget):
         self.down_btn = self.button("▼", lambda: self.turn_page(1))
         prow.addWidget(self.down_btn, 1)
         col.addWidget(self.page_row)
-        self.status = QLabel()
-        self.status.setObjectName("dim")
-        self.status.setWordWrap(True)
-        col.addWidget(self.status)
+
+        # Seitenpanel rechts: ⚙ Einstellungen [›] · Dienst [↻] · Von · → Nach · Aufgabe · Letzte KI
+        self.side = QFrame()
+        self.side.setObjectName("vrcard")
+        self.side.setFixedWidth(SIDE_W)
+        scol = QVBoxLayout(self.side)
+        scol.setContentsMargins(14, 14, 14, 14)
+        scol.setSpacing(10)
+        row = QHBoxLayout()
+        side_title = QLabel("⚙  " + tr("panel_settings"))
+        side_title.setObjectName("vrsubtitle")
+        row.addWidget(side_title, 1)
+        fold = self.button("›", self.toggle_side)
+        fold.setFixedWidth(48)
+        fold.setStyleSheet("padding: 0;")
+        row.addWidget(fold)
+        scol.addLayout(row)
+        row = QHBoxLayout()
+        self.method_btn = self.button("", lambda: self.choose("tr_method"))
+        row.addWidget(self.method_btn, 1)
+        self.redo_btn = self.button("↻", lambda: self.page.start_translation(force=True))
+        self.redo_btn.setFixedWidth(48)
+        self.redo_btn.setStyleSheet("padding: 0;")
+        row.addWidget(self.redo_btn)
+        scol.addLayout(row)
+        self.src_btn = self.button("", lambda: self.choose("tr_source"))
+        scol.addWidget(self.src_btn)
+        self.dst_btn = self.button("", lambda: self.choose("tr_target"))
+        scol.addWidget(self.dst_btn)
+        self.mode_btn = self.button("", lambda: self.choose("tr_llm_mode"))
+        scol.addWidget(self.mode_btn)
+        self.last_ai = QLabel()  # „Letzte KI: …“ wie auf der Main-Seite
+        self.last_ai.setObjectName("dim")
+        self.last_ai.setWordWrap(True)
+        scol.addWidget(self.last_ai)
+        # 🖐 Rahmen-Geste (🔫 Auto = Waffen-Schutz) und 🥽 Overlay – schnell umschalten
+        scol.addSpacing(4)
+        gesture = QLabel(tr("gesture_mode"))
+        gesture.setObjectName("vrsection")
+        scol.addWidget(gesture)
+        self.gesture_row, self.gesture_btns = self.choice_row(
+            [(v, tr(t)) for v, t in vr_settings.find("gesture_mode")["options"]],
+            lambda v: self.set_choice("gesture_mode", v))
+        scol.addWidget(self.gesture_row)
+        self.overlay_btn = self.button("", lambda: self.set_toggle("overlay"))
+        scol.addWidget(self.overlay_btn)
+        scol.addStretch(1)
+        mrow.addWidget(self.side)
+        # eingeklappt: schmale Leiste mit ‹ und „Einstellungen“ senkrecht – antippen klappt auf
+        self.strip = self.button("", self.toggle_side)
+        self.strip.setObjectName("strip")
+        self.strip.setFixedWidth(STRIP_W)
+        self.strip.setMinimumHeight(260)
+        self.strip.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        strip_pix = vertical_pixmap(tr("panel_settings"))
+        self.strip.setIcon(QIcon(strip_pix))
+        self.strip.setIconSize(strip_pix.size())
+        mrow.addWidget(self.strip)
         self.stack.addWidget(main)
 
         # ---------- Seite 1: Auswahl (statt Dropdown) ----------
@@ -581,39 +725,88 @@ class VRPanel(QWidget):
 
     # ------------------------------------------------------------ ⚙ Einstellungs-Seite
     def build_settings(self) -> QWidget:
-        """Kopf + Tabs 📸 Shot | 🥽 VR – die Gruppen darunter baut fill_settings() jedes Mal neu."""
+        """Links die Kategorien (📸 Shot / 🥽 VR mit ihren Gruppen), rechts das Untermenü der
+        gewählten Kategorie – wie die Welt-Menüs in VRChat. Inhalt baut fill_settings() jedes Mal neu."""
         page = QWidget()
         col = QVBoxLayout(page)
         col.setContentsMargins(0, 0, 0, 0)
-        col.setSpacing(8)
+        col.setSpacing(10)
         title = QLabel("⚙  " + tr("panel_settings"))
         title.setObjectName("vrtitle")
         col.addWidget(title)
-        row, self.set_tab_btns = self.choice_row(
-            [(t["id"], tr(t["label"])) for t in vr_settings.TABS], self.set_settings_tab)
-        col.addWidget(row)
+        row = QHBoxLayout()
+        row.setSpacing(COL_GAP)
+        cats = QWidget()
+        cats.setFixedWidth(CAT_W)
+        self.set_cats = QVBoxLayout(cats)
+        self.set_cats.setContentsMargins(0, 0, 0, 0)
+        self.set_cats.setSpacing(6)
+        row.addWidget(cats, 0, Qt.AlignmentFlag.AlignTop)
+        card = QFrame()
+        card.setObjectName("vrcard")
+        ccol = QVBoxLayout(card)
+        ccol.setContentsMargins(14, 14, 14, 14)
+        ccol.setSpacing(10)
+        self.set_sub_title = QLabel()
+        self.set_sub_title.setObjectName("vrsubtitle")
+        ccol.addWidget(self.set_sub_title)
         self.set_body = QVBoxLayout()
-        self.set_body.setSpacing(8)
-        col.addLayout(self.set_body)
-        col.addStretch(1)
+        self.set_body.setSpacing(10)
+        ccol.addLayout(self.set_body)
+        ccol.addStretch(1)
+        row.addWidget(card, 1)
+        col.addLayout(row)
         return page
 
+    def chosen_group(self) -> dict:
+        """⚙ Gewählte Kategorie (noch keine → die erste)."""
+        groups = [g for t in vr_settings.TABS for g in t["groups"]]
+        return next((g for g in groups if g["id"] == self.set_open), groups[0])
+
     def fill_settings(self):
-        """Gruppen des Tabs zeichnen: ▸ zu / ▾ offen (dann mit den Einträgen darunter)."""
+        """Kategorien links (gewählte blau mit ›), Einträge der gewählten rechts."""
+        clear_layout(self.set_cats)
         clear_layout(self.set_body)
         lcfg = layer_config.load()
-        self.mark(self.set_tab_btns, self.set_tab)
-        tab = next(t for t in vr_settings.TABS if t["id"] == self.set_tab)
-        for group in tab["groups"]:
-            opened = group["id"] == self.set_open
-            title = (group["icon"] + "  " if group["icon"] else "") + tr(group["title"]).replace("&", "&&")
-            head = self.button(("▾  " if opened else "▸  ") + title, lambda g=group["id"]: self.toggle_group(g))
-            head.setStyleSheet("text-align: left; padding-left: 16px;")
-            self.mark({True: head}, opened)
-            widgets = [head] + ([self.setting_widget(item, lcfg) for item in group["items"]] if opened else [])
-            for w in widgets:
-                self.set_body.addWidget(w)
-                w.show()  # neu in ein schon sichtbares Fenster → selbst zeigen
+        chosen = self.chosen_group()
+        for tab in vr_settings.TABS:
+            # Überschrift ▾ 📸 Shot / ▸ 🥽 VR – antippen klappt ihre Kategorien ein/aus
+            folded = tab["id"] in self.set_folded
+            head = self.button(("▸  " if folded else "▾  ") + tr(tab["label"]), lambda t=tab["id"]: self.fold_tab(t))
+            head.setObjectName("cathead")
+            self.set_cats.addWidget(head)
+            head.show()
+            if folded:
+                continue
+            for group in tab["groups"]:
+                on = group["id"] == chosen["id"]
+                text = (group["icon"] + "  " if group["icon"] else "") + tr(group["title"]).replace("&", "&&")
+                btn = self.button(text, lambda g=group["id"]: self.toggle_group(g))
+                btn.setObjectName("catOn" if on else "cat")
+                font = QFont(btn.font())
+                font.setBold(True)
+                size = 20  # zu lang → etwas kleiner statt abschneiden
+                font.setPixelSize(size)
+                while size > 12 and QFontMetrics(font).horizontalAdvance(text) > CAT_W - 48:
+                    size -= 1
+                    font.setPixelSize(size)
+                btn.setStyleSheet(f"font-size: {size}px;")
+                if on:
+                    arrow_row = QHBoxLayout(btn)
+                    arrow_row.setContentsMargins(0, 0, 14, 0)
+                    arrow_row.addStretch(1)
+                    arrow = QLabel("›")
+                    arrow.setObjectName("catarrow")
+                    arrow.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)  # Klick geht an den Knopf
+                    arrow_row.addWidget(arrow)
+                self.set_cats.addWidget(btn)
+                btn.show()  # neu in ein schon sichtbares Fenster → selbst zeigen
+            self.set_cats.addSpacing(6)
+        self.set_sub_title.setText((chosen["icon"] + "  " if chosen["icon"] else "") + tr(chosen["title"]))
+        for item in chosen["items"]:
+            w = self.setting_widget(item, lcfg)
+            self.set_body.addWidget(w)
+            w.show()
 
     def setting_widget(self, item: dict, lcfg: dict) -> QWidget:
         """Ein Eintrag aus core/vr_settings.py als Knöpfe / Leiste."""
@@ -714,20 +907,26 @@ class VRPanel(QWidget):
         if self.mode != "settings":
             self.switch_to("settings")
 
-    def set_settings_tab(self, tab: str):
-        if tab != self.set_tab:
-            self.set_tab, self.set_open = tab, None
+    def fold_tab(self, tab: str):
+        """⚙ Überschrift links: Kategorien von 📸 Shot / 🥽 VR ein-/ausklappen."""
+        self.set_folded ^= {tab}
 
     def toggle_group(self, gid: str):
-        self.set_open = None if self.set_open == gid else gid
+        """⚙ Kategorie links antippen → ihr Untermenü rechts."""
+        self.set_open = gid
 
     def set_size_page(self, page: str):
         self.size_page = page
 
     # ------------------------------------------------------------ Seiten (◀ ▶ unten) + 🖼 Galerie
-    def content_w(self, _index: int | None = None) -> int:
-        """Breite des Inhalts (ohne Rand)."""
-        return WIDTH - 36
+    def content_w(self, index: int | None = None) -> int:
+        """Breite des Inhalts (ohne Rand) – PAGE_MAIN: nur die linke Spalte neben dem Seitenpanel."""
+        inner = PAGE_WIDTH.get(self.mode, WIDE) - 36
+        if index == PAGE_MAIN:
+            return main_w(side_closed())
+        if index == PAGE_GALLERY:
+            return main_w(bool(layer_config.load().get("gallery_side_closed")))
+        return inner
 
     def home_index(self) -> int:
         """Stapel-Seite der aktuellen Hauptseite (dahin geht's nach der Auswahl zurück)."""
@@ -737,9 +936,10 @@ class VRPanel(QWidget):
             return PAGE_SETTINGS
         return PAGE_MAIN
 
-    def step_page(self, step: int):
-        """◀ / ▶: andere Seite – mit ihrer eigenen Größe in VR."""
-        self.switch_to(PAGES[(PAGES.index(self.mode) + step) % len(PAGES)])
+    def go_page(self, page: str):
+        """Tab unten: andere Seite – mit ihrer eigenen Größe in VR."""
+        if page != self.mode:
+            self.switch_to(page)
 
     def switch_to(self, new: str):
         old, self.mode = self.mode, new
@@ -752,11 +952,11 @@ class VRPanel(QWidget):
         return tr(dict(vr_settings.SIZE_PAGES)[page])
 
     def fill_nav(self):
-        i = PAGES.index(self.mode)
-        prev, nxt = PAGES[(i - 1) % len(PAGES)], PAGES[(i + 1) % len(PAGES)]
-        self.nav_prev.setText("◀  " + self.page_name(prev))
-        self.nav_next.setText(self.page_name(nxt) + "  ▶")
-        self.nav_dots.setText("   ".join("●" if p == self.mode else "○" for p in PAGES))
+        for name, btn in self.nav_tabs.items():
+            obj = "tabOn" if name == self.mode else "tab"
+            if btn.objectName() != obj:
+                btn.setObjectName(obj)
+                btn.style().polish(btn)
 
     def head(self, title: QLabel, extra=()) -> QHBoxLayout:
         """Kopfzeile: Titel … [extra] [⚙] – ⚙ ist auf jeder Seite oben."""
@@ -769,24 +969,20 @@ class VRPanel(QWidget):
         return row
 
     def build_gallery(self) -> QWidget:
+        """Links das Raster mit Monats-Trennern, rechts das Seitenpanel (Filter, Spalten, Blättern –
+        einklappbar wie bei der Übersetzung)."""
         page = QWidget()
-        col = QVBoxLayout(page)
+        prow = QHBoxLayout(page)
+        prow.setContentsMargins(0, 0, 0, 0)
+        prow.setSpacing(COL_GAP)
+        left = QWidget()
+        col = QVBoxLayout(left)
         col.setContentsMargins(0, 0, 0, 0)
         col.setSpacing(10)
-        # Kopf: 🖼 Galerie   [▲] 1 / 3 [▼]   [⚙]  – Blättern oben, ◀ ▶ bleiben unten frei
-        self.gal_up = self.button("▲", lambda: self.gal_turn(-1), tip=True)
-        self.gal_label = QLabel()
-        self.gal_label.setObjectName("dim")
-        self.gal_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.gal_label.setMinimumWidth(70)
-        self.gal_down = self.button("▼", lambda: self.gal_turn(1), tip=True)
-        col.addLayout(self.head(QLabel("🖼  " + tr("nav_gallery")), (self.gal_up, self.gal_label, self.gal_down)))
-        # Filter: Alle · 📝 · 🔳 · 🖼 · 🎞 GIF/VID (wie in der Desktop-Galerie)
-        self.gal_filter_row, self.gal_filter_btns = self.choice_row(
-            [("", tr("filter_all"))] + [(k, tags.ICONS[k]) for k in tags.ALL]
-            + [(tags.GIF_VID, f"{tags.ICONS[tags.GIF_VID]} {tr('tag_gif_vid')}")],
-            self.set_gal_filter)
-        col.addWidget(self.gal_filter_row)
+        title = QLabel("🖼  " + tr("nav_gallery"))
+        title.setObjectName("vrtitle")
+        title.setMinimumHeight(48)
+        col.addWidget(title)
         self.gal_host = QWidget()
         self.gal_grid = QGridLayout(self.gal_host)
         self.gal_grid.setContentsMargins(0, 0, 0, 0)
@@ -798,6 +994,67 @@ class VRPanel(QWidget):
         self.gal_empty.setWordWrap(True)
         col.addWidget(self.gal_empty)
         col.addStretch(1)
+        prow.addWidget(left, 1)
+
+        # Seitenpanel: ⚙ Einstellungen [›] · Filter · Spalten 3/4/5 · [▲] 1 / 3 [▼]
+        self.gal_side = QFrame()
+        self.gal_side.setObjectName("vrcard")
+        self.gal_side.setFixedWidth(SIDE_W)
+        scol = QVBoxLayout(self.gal_side)
+        scol.setContentsMargins(14, 14, 14, 14)
+        scol.setSpacing(10)
+        row = QHBoxLayout()
+        side_title = QLabel("⚙  " + tr("panel_settings"))
+        side_title.setObjectName("vrsubtitle")
+        row.addWidget(side_title, 1)
+        fold = self.button("›", self.toggle_gal_side)
+        fold.setFixedWidth(48)
+        fold.setStyleSheet("padding: 0;")
+        row.addWidget(fold)
+        scol.addLayout(row)
+        head = QLabel(tr("vr_gallery_filter"))
+        head.setObjectName("vrsection")
+        scol.addWidget(head)
+        # Filter: Alle · 📝 Text · 🔳 QR-Code · 🖼 Bild · 🎞 GIF/VID (wie in der Desktop-Galerie)
+        grid = QGridLayout()
+        grid.setSpacing(6)
+        self.gal_filter_btns = {}
+        items = ([("", tr("filter_all"))] + [(k, f"{tags.ICONS[k]} {tr('tag_' + k)}") for k in tags.ALL]
+                 + [(tags.GIF_VID, f"{tags.ICONS[tags.GIF_VID]} {tr('tag_gif_vid')}")])
+        for i, (value, text) in enumerate(items):
+            btn = self.button(text, lambda v=value: self.set_gal_filter(v))
+            btn.setStyleSheet("padding: 4px 6px;")
+            grid.addWidget(btn, i // 2, i % 2)
+            self.gal_filter_btns[value] = btn
+        scol.addLayout(grid)
+        head = QLabel(tr("vr_gallery_cols"))
+        head.setObjectName("vrsection")
+        scol.addWidget(head)
+        self.gal_cols_row, self.gal_cols_btns = self.choice_row(
+            [(str(c), str(c)) for c in GALLERY_COLS], lambda v: self.set_choice("gallery_cols", v))
+        scol.addWidget(self.gal_cols_row)
+        row = QHBoxLayout()
+        self.gal_up = self.button("▲", lambda: self.gal_turn(-1))
+        row.addWidget(self.gal_up, 1)
+        self.gal_label = QLabel()
+        self.gal_label.setObjectName("dim")
+        self.gal_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.gal_label.setMinimumWidth(64)
+        row.addWidget(self.gal_label)
+        self.gal_down = self.button("▼", lambda: self.gal_turn(1))
+        row.addWidget(self.gal_down, 1)
+        scol.addLayout(row)
+        scol.addStretch(1)
+        prow.addWidget(self.gal_side)
+        # eingeklappt: schmale Leiste mit ‹ und „Einstellungen“ senkrecht
+        self.gal_strip = self.button("", self.toggle_gal_side)
+        self.gal_strip.setObjectName("strip")
+        self.gal_strip.setFixedWidth(STRIP_W)
+        self.gal_strip.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        strip_pix = vertical_pixmap(tr("panel_settings"))
+        self.gal_strip.setIcon(QIcon(strip_pix))
+        self.gal_strip.setIconSize(strip_pix.size())
+        prow.addWidget(self.gal_strip)
         return page
 
     def build_single(self) -> QWidget:
@@ -910,25 +1167,28 @@ class VRPanel(QWidget):
 
     @staticmethod
     def tile_size() -> tuple[int, int]:
-        cw = (WIDTH - 36 - (GRID_COLS - 1) * GRID_GAP) // GRID_COLS
+        """Kachel-Größe: Breite der linken Spalte (Seitenpanel offen / zu) durch die Spalten."""
+        cols = gallery_cols()
+        cw = (main_w(bool(layer_config.load().get("gallery_side_closed"))) - (cols - 1) * GRID_GAP) // cols
         return cw, round(cw * THUMB_RATIO)
 
     def grid_height(self) -> int:
-        """So viel Platz hat das Raster: ganze Panel-Höhe minus Rand, Kopf, Filter-Zeile und ◀ ▶-Zeile."""
-        total = fixed_height_px() or GALLERY_H
-        return max(MONTH_H + self.tile_size()[1], total - 32 - 2 * (48 + 10) - (NAV_H + 10))
+        """So viel Platz hat das Raster: ganze Panel-Höhe minus Rand, Kopf und Tab-Leiste."""
+        total = fixed_height_px("gallery") or GALLERY_H
+        return max(MONTH_H + self.tile_size()[1], total - 32 - (48 + 10) - (NAV_H + 10))
 
     def gallery_pages(self, photos: list[Path]) -> list[list[tuple]]:
         """Fotos → Raster-Seiten. Jede Seite: Zeilen ("month", Text) / ("row", [Fotos]),
         so viele, wie in die Höhe passen. Ein Monat, der auf der neuen Seite weitergeht,
         bekommt oben nochmal seinen Trenner."""
         _cw, ch = self.tile_size()
+        cols = gallery_cols()
         room = self.grid_height()
         rows = []  # (Monat, Zeile)
         month, cur = None, []
         for photo in photos:
             ym = paths.month_key(photo)
-            if ym != month or len(cur) == GRID_COLS:
+            if ym != month or len(cur) == cols:
                 if cur:
                     rows.append((month, cur))
                 cur = []
@@ -973,6 +1233,11 @@ class VRPanel(QWidget):
 
     def fill_gallery(self):
         self.mark(self.gal_filter_btns, self.gal_filter)
+        cols = gallery_cols()
+        self.mark(self.gal_cols_btns, str(cols))
+        closed = bool(layer_config.load().get("gallery_side_closed"))
+        self.gal_side.setVisible(not closed)
+        self.gal_strip.setVisible(closed)
         photos = self.gallery_photos()
         pages = self.gallery_pages(photos)
         self.gal_pages_cache = pages
@@ -986,7 +1251,7 @@ class VRPanel(QWidget):
         for r, (kind, value) in enumerate(pages[self.gal_page]):
             if kind == "month":
                 w = self.month_row(value)
-                self.gal_grid.addWidget(w, r, 0, 1, GRID_COLS)
+                self.gal_grid.addWidget(w, r, 0, 1, cols)
                 w.show()
                 continue
             for c, photo in enumerate(value):
@@ -998,13 +1263,12 @@ class VRPanel(QWidget):
                 btn.clicked.connect(lambda _=False, p=photo: (self.open_photo(p), self.refresh(force=True)))
                 self.gal_grid.addWidget(btn, r, c)
                 btn.show()  # das Panel ist „offen“ – neue Kacheln sofort sichtbar machen
-        for c in range(GRID_COLS):
-            self.gal_grid.setColumnMinimumWidth(c, cw)
+        for c in range(max(GALLERY_COLS)):  # weniger Spalten → die übrigen ohne Mindestbreite
+            self.gal_grid.setColumnMinimumWidth(c, cw if c < cols else 0)
+            self.gal_grid.setColumnStretch(c, 0)
+        self.gal_grid.setColumnStretch(max(GALLERY_COLS), 1)
         self.gal_host.setVisible(bool(photos))
         self.gal_empty.setVisible(not photos)
-        many = len(pages) > 1
-        for w in (self.gal_up, self.gal_label, self.gal_down):
-            w.setVisible(many)
         self.gal_up.setEnabled(self.gal_page > 0)
         self.gal_down.setEnabled(self.gal_page < len(pages) - 1)
         self.gal_label.setText(f"{self.gal_page + 1} / {len(pages)}")
@@ -1281,6 +1545,10 @@ class VRPanel(QWidget):
     def set_gal_filter(self, key: str):
         self.gal_filter, self.gal_page = key, 0
 
+    def toggle_gal_side(self):
+        """🖼 Seitenpanel der Galerie ein-/ausklappen (eingeklappt → größere Kacheln)."""
+        layer_config.update("gallery_side_closed", not layer_config.load().get("gallery_side_closed"))
+
     def bind_udp(self, tries: int = 0):
         """Port für Klicks aus VR. Hatte ihn gerade noch der ⚙ Hintergrund-Dienst
         (er gibt ihn ab, sobald die App offen ist) → kurz danach nochmal."""
@@ -1315,7 +1583,7 @@ class VRPanel(QWidget):
         except OSError:
             pose = (0, button_cm())
         old = (layer_install.outdated(), self.old_open)
-        settings = (self.set_tab, self.set_open, self.size_page,
+        settings = (self.set_tab, self.set_open, tuple(sorted(self.set_folded)), self.size_page,
                     page_width_cm(self.size_page) if self.mode == "settings" else None)
         return (str(photo), mtime, pose, old, json.dumps(lcfg, sort_keys=True), settings, p.tr_result,
                 p.tr_status.text(), p.cfg.get("tr_method"),
@@ -1325,7 +1593,7 @@ class VRPanel(QWidget):
                 self.choosing, self.stack.currentIndex(), self.result_page,
                 tuple(self.lines_for(photo, live)),
                 self.mode, self.gal_page, str(self.gal_open), self.gal_confirm, self.gal_toast,
-                tuple(sorted(map(str, self.uploading))), fixed_height_px(),
+                tuple(sorted(map(str, self.uploading))), fixed_height_px(self.mode),
                 tuple(self.gallery_photos()) if self.mode == "gallery" else ())
 
     def lines_for(self, photo, live: bool) -> list:
@@ -1342,23 +1610,31 @@ class VRPanel(QWidget):
         photo = live_photo() if live else p.last_photo
         lines = getattr(p, "live_lines", []) if live else (translation.cached_lines(photo) if photo else [])
         lcfg = layer_config.load()
+        self.setFixedWidth(PAGE_WIDTH.get(self.mode, WIDE))
+        closed = bool(lcfg.get("panel_side_closed"))
+        self.side.setVisible(not closed)
+        self.strip.setVisible(closed)
         self.edit_help.setVisible(bool(lcfg.get("panel_edit")))
+        hide_photo = bool(lcfg.get("panel_hide_photo"))
+        self.pic_btn.setText("🖼 ▼" if hide_photo else "🖼 ▲")
+        self.mark({True: self.pic_btn}, hide_photo)
+        self.mark(self.gesture_btns, lcfg.get("gesture_mode"))
+        overlay_on = bool(lcfg.get("overlay"))
+        self.overlay_btn.setText(("✔  " if overlay_on else "✕  ") + elide(tr("vr_overlay_short"), SIDE_W - 2 * 14 - 70))
+        self.mark({True: self.overlay_btn}, overlay_on)
         self.rec_btn.setText(layer_config.rec_label(bool(lcfg.get("rec_video"))))
         outdated = layer_install.outdated()
         self.old_btn.setVisible(outdated)
         self.old_note.setVisible(outdated and self.old_open)
         if outdated:
             self.old_note.setText(tr("layer_old_vr", old=layer_install.installed_version() or "?", new=VERSION))
-        self.method_btn.setText(tr("tr_m_" + cfg["tr_method"]) + "  ▸")
-        self.src_btn.setText(language_name(cfg.get("tr_source", ""), True) + "  ▸")
-        self.dst_btn.setText(language_name(cfg["tr_target"], False) + "  ▸")
-        self.mode_btn.setText(p.mode_combo.currentText() + "  ▸")
+        full_w = SIDE_W - 2 * 14 - 2 * 16  # Seitenpanel minus Innenrand minus Knopf-Rand
+        self.method_btn.setText(elide(tr("tr_m_" + cfg["tr_method"]), full_w - 48 - 10 - 30) + "  ▸")
+        self.src_btn.setText(elide(language_name(cfg.get("tr_source", ""), True), full_w - 30) + "  ▸")
+        self.dst_btn.setText("→  " + elide(language_name(cfg["tr_target"], False), full_w - 60) + "  ▸")
+        self.mode_btn.setText(elide(p.mode_combo.currentText(), full_w - 30) + "  ▸")
         self.last_ai.setText(tr("tr_last_ai") + ":  " + p.last_ai_label.text())
-        pix = photo_with_numbers(photo, lines, self.content_w(PAGE_MAIN))
-        self.photo.setVisible(pix is not None)
-        if pix is not None:
-            self.photo.setPixmap(pix)
-            self.photo.setFixedHeight(pix.height())  # nie zusammendrücken
+        self.photo_pix = photo_with_numbers(photo, lines, self.content_w(PAGE_MAIN))  # Kasten: fill_pages
         prefix = "🔁 " + tr("live_title") + " · " if live else ""
         self.status.setText(prefix + p.tr_status.text())
         full = numbered(lines, p.tr_result) or ("…" if p.translating else "")
@@ -1375,24 +1651,53 @@ class VRPanel(QWidget):
             self.fill_single()
 
     def fill_pages(self):
-        """Lange Übersetzung in Seiten teilen, die ins Panel passen (▼ / ▲)."""
+        """Foto-Kasten + Übersetzungs-Kasten auf ihre feste Größe bringen, lange Übersetzung in
+        Seiten teilen, die in den Kasten passen (▼ / ▲ darunter)."""
         self.result.ensurePolished()
+        self.status.ensurePolished()
         font = self.result.font()
-        lines = wrap_lines(self.result_full, font, self.content_w(PAGE_MAIN))
+        text_w = self.content_w(PAGE_MAIN) - 26  # Innenrand des Kastens
+        lines = wrap_lines(self.result_full, font, text_w)
         line_h = max(1, QFontMetrics(font).lineSpacing())
-        fixed = fixed_height_px()
-        max_h = RESULT_MAX_H
+        hide_photo = bool(layer_config.load().get("panel_hide_photo"))
+        fixed = fixed_height_px(self.mode)
+        area = PHOTO_MAX_H + 10 + RESULT_MAX_H + 48 + 10  # Foto + Übersetzung + ▲ ▼-Zeile
         if fixed is not None:
-            # Höhe von Hand gezogen: Platz = was übrig bleibt
-            self.result.setText("")
+            # Höhe von Hand gezogen: Platz = was über den Kästen übrig bleibt
+            self.photo_box.hide()
+            self.result_box.hide()
             self.page_row.hide()
-            pl = self.stack.widget(0).layout()
+            pl = self.main_left.layout()
             pl.activate()
             used = pl.heightForWidth(self.content_w(PAGE_MAIN)) if pl.hasHeightForWidth() else pl.totalSizeHint().height()
-            max_h = max(line_h * 2, fixed - 32 - used - 58 - (NAV_H + 10))  # ◀ ▶-Zeile unten
-        pages = paginate(lines, max_h // line_h)
+            area = max(2 * 48, fixed - 32 - used - 10 - (NAV_H + 10))
+        photo_h = 0 if hide_photo else min(PHOTO_MAX_H, int((area - 10) * 0.55))
+        self.photo_box.setVisible(not hide_photo)
+        self.photo_box.setFixedHeight(max(photo_h, 1))
+        pix = self.photo_pix
+        if pix is not None and pix.height() > photo_h - 2:  # von Hand kleiner gezogen → Foto kleiner
+            pix = pix.scaledToHeight(max(1, photo_h - 2), Qt.TransformationMode.SmoothTransformation)
+        self.photo.setPixmap(pix if pix is not None else QPixmap())
+        box_h = area - (photo_h + 10 if not hide_photo else 0)
+        status = self.status.text()
+        status_h = 0
+        if status:
+            fm = QFontMetrics(self.status.font())
+            status_h = fm.boundingRect(0, 0, text_w, 10000, Qt.TextFlag.TextWordWrap, status).height() + 8
+        self.status.setVisible(bool(status))
+
+        def per_page(h: int) -> int:
+            return max(1, (h - 24 - 3 - status_h) // line_h)
+
+        pages = paginate(lines, per_page(box_h))
+        if len(pages) > 1:
+            box_h -= 48 + 10
+            pages = paginate(lines, per_page(box_h))
+        self.result_box.setVisible(True)
+        self.result_box.setFixedHeight(box_h)
         self.result_page = max(0, min(self.result_page, len(pages) - 1))
         self.result.setText(pages[self.result_page])
+        self.result.setMinimumHeight(self.result.sizeHint().height())  # im festen Kasten nie zusammendrücken
         self.page_row.setVisible(len(pages) > 1)
         self.up_btn.setEnabled(self.result_page > 0)
         self.down_btn.setEnabled(self.result_page < len(pages) - 1)
@@ -1425,12 +1730,16 @@ class VRPanel(QWidget):
         """Inhalt füllen, Höhe anpassen, als Bild holen (mit Deckkraft)."""
         self.fill()
         # ⚙ Einstellungen: immer so hoch wie der Inhalt (Gruppen klappen auf und zu)
-        fixed = None if self.stack.currentIndex() == PAGE_SETTINGS else fixed_height_px()
+        fixed = None if self.stack.currentIndex() == PAGE_SETTINGS else fixed_height_px(self.mode)
         if fixed is None:
             self.fit_height()  # automatisch: so hoch wie der Inhalt
         else:
             self.setFixedHeight(fixed)  # in VR von Hand gezogen (Ecke oben links)
             self.layout().activate()
+        # Foto / Seitenpanel gerade ein- oder ausgeblendet → Spalten neu verteilen, bevor das Bild entsteht
+        for lay in (self.main_left.layout(), self.stack.currentWidget().layout(), self.layout()):
+            lay.invalidate()
+            lay.activate()
         img = self.grab().toImage()
         alpha = opacity()
         if alpha < 1.0:  # Deckkraft: ganzes Bild durchsichtiger
@@ -1444,7 +1753,7 @@ class VRPanel(QWidget):
         return img
 
     def shrink_to_page(self, index: int):
-        self.nav.setVisible(index in NAV_PAGES)  # ◀ ▶ nur auf den Hauptseiten
+        self.nav.setVisible(index in NAV_PAGES)  # Tabs nur auf den Hauptseiten
         for i in range(self.stack.count()):
             pol = QSizePolicy.Policy.Preferred if i == index else QSizePolicy.Policy.Ignored
             self.stack.widget(i).setSizePolicy(QSizePolicy.Policy.Preferred, pol)
@@ -1507,6 +1816,14 @@ class VRPanel(QWidget):
         """An/aus-Schalter in layer.json."""
         layer_config.update(key, not bool(layer_config.load().get(key, layer_config.DEFAULTS.get(key, True))))
         self.page.layer_changed.emit()
+
+    def toggle_photo(self):
+        """🖼 ▲ / ▼: Foto aus-/einblenden – ohne Foto nutzt die Übersetzung die ganze Fläche."""
+        layer_config.update("panel_hide_photo", not layer_config.load().get("panel_hide_photo"))
+
+    def toggle_side(self):
+        """🌐 Seitenpanel rechts ein-/ausklappen (layer.json, gilt auch für den ⚙ Dienst)."""
+        layer_config.update("panel_side_closed", not side_closed())
 
     def set_choice(self, key: str, value: str):
         if key == "panel_anchor":

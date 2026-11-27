@@ -219,8 +219,8 @@ fn control_socket() -> Option<UdpSocket> {
     Some(sock)
 }
 
-/// (Foto, Änderungszeit, Zeilen) → verkleinertes Bild mit Nummern
-type PhotoCache = ((PathBuf, Option<SystemTime>, Vec<Line>), Option<image::RgbaImage>);
+/// (Foto, Änderungszeit, Zeilen) → verkleinertes Bild mit Nummern (+ Breite, die ändert das Seitenpanel)
+type PhotoCache = ((PathBuf, Option<SystemTime>, Vec<Line>, u32), Option<image::RgbaImage>);
 /// (Foto, Änderungszeit) → Foto in der Galerie-Einzelansicht (verkleinert)
 type BigCache = Option<((PathBuf, Option<SystemTime>), Option<image::RgbaImage>)>;
 
@@ -264,6 +264,8 @@ struct State {
     /// ⚙ Einstellungs-Seite: Tab "shot" / "vr", aufgeklappte Gruppe, 🪟 Größe für welche Seite
     set_tab: String,
     set_open: Option<String>,
+    /// ⚙ eingeklappte Überschriften links ("shot" / "vr")
+    set_folded: Vec<String>,
     size_page: Page,
     /// Hauptseite im Panel: Übersetzung / Galerie / ⚙ Einstellungen (◀ ▶ am Rand)
     page: Page,
@@ -280,6 +282,8 @@ struct State {
     old_open: bool,
     /// wann die Ordner zuletzt durchsucht wurden (höchstens alle 2 s)
     gal_scan: Option<Instant>,
+    /// 🖼 Raster gebaut für: (Seitenpanel eingeklappt, Spalten)
+    gal_grid: (bool, usize),
     /// Raster-Seiten (Monats-Trenner + Zeilen), passend zu gal_list
     gal_pages: Vec<Vec<GRow>>,
     /// Rückmeldung in der Einzelansicht („✔ Link kopiert“)
@@ -291,6 +295,8 @@ struct State {
     chosen: Option<PathBuf>,
     newest_mtime: Option<SystemTime>,
     thumbs: HashMap<(PathBuf, Option<SystemTime>), Option<image::RgbaImage>>,
+    /// Kachel-Größe der Vorschaubilder in `thumbs`
+    thumb_size: (u32, u32),
     big_cache: BigCache,
     gif_play: Option<GifPlay>,
     result_page: usize,
@@ -338,6 +344,10 @@ impl State {
         if force || lm != self.lcfg_mtime {
             self.lcfg = settings::load_layer();
             self.lcfg_mtime = lm;
+            // 🖼 Spalten / Seitenpanel geändert (hier oder in der App) → Raster neu aufteilen
+            if self.page == Page::Gallery && self.gal_grid != self.gal_grid_now() {
+                self.scan_gallery(true);
+            }
         }
         changed
     }
@@ -729,13 +739,18 @@ impl State {
             settings: (self.page == Page::Settings).then(|| panel::SettingsView {
                 tab: self.set_tab.clone(),
                 open: self.set_open.clone(),
+                folded: self.set_folded.clone(),
                 layer: self.lcfg.0.clone(),
                 size_page: self.size_page,
                 size_cm: panel::page_width_cm(self.size_page),
                 button_cm: panel::button_cm(),
             }),
             result_page: self.result_page,
-            fixed_height: panel::fixed_height(),
+            fixed_height: panel::fixed_height(self.page),
+            side_closed: self.lcfg.b("panel_side_closed"),
+            hide_photo: self.lcfg.b("panel_hide_photo"),
+            gesture_mode: self.lcfg.s("gesture_mode"),
+            overlay: self.lcfg.b("overlay"),
             page: self.page,
             gallery: (self.page == Page::Gallery).then(|| self.gallery_view()),
         }
@@ -756,12 +771,20 @@ impl State {
         let months: Vec<(i32, u32)> = self.gal_list.iter().map(|p| p.month).collect();
         let lang = self.lang();
         let titles = |y: i32, m: u32| format!("{y} {}", tr(&lang, &format!("month_{m}"), &[]));
-        self.gal_pages = panel::gallery_pages(&months, titles, panel::grid_room(panel::fixed_height()));
+        let (side_closed, cols) = self.gal_grid_now();
+        let tile_h = panel::tile_size(side_closed, cols).1;
+        self.gal_pages = panel::gallery_pages(&months, titles, panel::grid_room(panel::fixed_height(Page::Gallery), tile_h), cols, tile_h);
+        self.gal_grid = (side_closed, cols);
         self.gal_page = self.gal_page.min(self.gal_pages.len().saturating_sub(1));
         if self.gal_open.as_ref().is_some_and(|p| self.gal_index(p).is_none()) {
             self.gal_open = None; // inzwischen gelöscht → zurück ins Raster
             self.gal_sub = None;
         }
+    }
+
+    /// 🖼 Seitenpanel eingeklappt? + Spalten – ändert sich das, braucht das Raster neue Seiten
+    fn gal_grid_now(&self) -> (bool, usize) {
+        (self.lcfg.b("gallery_side_closed"), panel::gallery_cols(self.lcfg.f("gallery_cols", panel::GRID_COLS as f64)))
     }
 
     /// Raster-Seite, auf der dieses Foto steht
@@ -801,7 +824,8 @@ impl State {
                 sub: self.gal_sub.clone(),
             })
         });
-        GalleryView { total, page, pages, rows, tiles, open, filter: self.gal_filter.clone() }
+        let (side_closed, cols) = self.gal_grid;
+        GalleryView { total, page, pages, rows, tiles, open, filter: self.gal_filter.clone(), cols, side_closed }
     }
 
     /// ⓘ Info-Zeilen: Ordner, Datum, Größe, Typ, Link
@@ -843,9 +867,11 @@ impl State {
     /// Kacheln / großes Foto verkleinern – nur was noch fehlt (teuer, wird gemerkt)
     fn prepare_gallery_images(&mut self, v: &View) {
         let Some(g) = &v.gallery else { return };
-        let (tw, th) = panel::tile_size();
-        if self.thumbs.len() > 80 {
+        let (tw, th) = panel::tile_size(g.side_closed, g.cols);
+        // andere Kachel-Größe (Spalten / Seitenpanel) → alte Vorschaubilder passen nicht mehr
+        if self.thumbs.len() > 80 || self.thumb_size != (tw, th) {
             self.thumbs.clear();
+            self.thumb_size = (tw, th);
         }
         for t in &g.tiles {
             self.thumbs.entry((t.path.clone(), t.mtime)).or_insert_with(|| panel::thumb(&t.path, tw - 4, th - 4));
@@ -935,10 +961,11 @@ impl State {
             return;
         }
         self.pose_mtime = pose;
-        // verkleinertes Foto mit Nummern nur neu machen, wenn sich Foto/Zeilen geändert haben
-        let key = v.photo.as_ref().map(|p| (p.clone(), v.photo_mtime, v.lines.clone()));
+        // verkleinertes Foto mit Nummern nur neu machen, wenn sich Foto/Zeilen/Breite geändert haben
+        let width = panel::photo_w(v.side_closed);
+        let key = v.photo.as_ref().map(|p| (p.clone(), v.photo_mtime, v.lines.clone(), width as u32));
         if self.photo_cache.as_ref().map(|c| &c.0) != key.as_ref() {
-            let img = v.photo.as_ref().and_then(|p| panel::photo_with_numbers(&mut self.fonts, p, &v.lines, panel::content_w()));
+            let img = v.photo.as_ref().and_then(|p| panel::photo_with_numbers(&mut self.fonts, p, &v.lines, width));
             self.photo_cache = key.map(|k| (k, img));
         }
         if let Some(canvas) = self.render_view(&v) {
@@ -990,13 +1017,14 @@ impl State {
                     self.switch_page(Page::Settings);
                 }
             }
-            Action::SetTab(tab) => {
-                if tab != self.set_tab {
-                    self.set_tab = tab;
-                    self.set_open = None;
+            Action::Group(g) => self.set_open = Some(g),
+            Action::FoldTab(t) => {
+                if let Some(i) = self.set_folded.iter().position(|f| *f == t) {
+                    self.set_folded.remove(i);
+                } else {
+                    self.set_folded.push(t);
                 }
             }
-            Action::Group(g) => self.set_open = if self.set_open.as_deref() == Some(g.as_str()) { None } else { Some(g) },
             Action::SizePage(p) => self.size_page = Page::from_key(&p),
             Action::ListRemove(key, name) => {
                 let list: Vec<Value> = self.lcfg.0.get(&key).and_then(|v| v.as_array()).cloned().unwrap_or_default();
@@ -1063,7 +1091,11 @@ impl State {
             Action::Page(step) => {
                 self.result_page = (self.result_page as i64 + step as i64).clamp(0, self.pages.saturating_sub(1) as i64) as usize;
             }
-            Action::Nav(step) => self.switch_page(self.page.step(step)),
+            Action::Goto(page) => {
+                if page != self.page {
+                    self.switch_page(page);
+                }
+            }
             Action::GalFilter(key) => {
                 self.gal_filter = key;
                 self.gal_page = 0;
@@ -1272,6 +1304,7 @@ pub fn run(stay: bool) {
         photo_cache: None,
         set_tab: "shot".into(),
         set_open: None,
+        set_folded: Vec::new(),
         size_page: Page::Translate,
         page: panel::current_page(),
         gal_page: 0,
@@ -1281,6 +1314,7 @@ pub fn run(stay: bool) {
         gal_filter: String::new(),
         old_open: false,
         gal_scan: None,
+        gal_grid: (false, panel::GRID_COLS),
         gal_pages: Vec::new(),
         gal_toast: String::new(),
         gal_sub: None,
@@ -1288,6 +1322,7 @@ pub fn run(stay: bool) {
         chosen: None,
         newest_mtime: None,
         thumbs: HashMap::new(),
+        thumb_size: (0, 0),
         big_cache: None,
         gif_play: None,
         result_page: 0,

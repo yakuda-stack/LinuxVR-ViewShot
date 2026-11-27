@@ -325,6 +325,9 @@ TEXTS = {
                         "en": "❓ Answer question (else translate)"},
     "tr_model":        {"de": "Modell",          "en": "Model"},
     "tr_model_other":  {"de": "Anderes Modell …", "en": "Other model …"},
+    "tr_model_best_translate": {"de": "⭐ Am besten zum Übersetzen", "en": "⭐ Best for translation"},
+    "tr_model_good_translate": {"de": "⭐ Gut zum Übersetzen (schnell)",
+                                "en": "⭐ Good for translation (fast)"},
     "tr_llm_info":     {"de": "Nutzt das installierte Programm mit deinem Login – kein API-Key in "
                               "dieser App. Einmal auf „Anmelden“ klicken. Dauert ein paar "
                               "Sekunden. Klappt es nicht, übernimmt automatisch Lingva.",
@@ -621,6 +624,9 @@ TEXTS = {
     "panel_settings":  {"de": "Einstellungen", "en": "Settings"},
     "vr_tab_shot":     {"de": "📸 Shot", "en": "📸 Shot"},
     "vr_tab_vr":       {"de": "🥽 VR", "en": "🥽 VR"},
+    "vr_overlay_short": {"de": "🥽 Overlay", "en": "🥽 Overlay"},
+    "vr_gallery_filter": {"de": "Filter", "en": "Filter"},
+    "vr_gallery_cols": {"de": "Spalten", "en": "Columns"},
     "vr_gif_hold":     {"de": "Auslöser halten = GIF/VID", "en": "Hold shutter = GIF/VID"},
     "gif_stab_short_off": {"de": "Aus", "en": "Off"},
     "gif_stab_short_smooth": {"de": "Glätten", "en": "Smooth"},

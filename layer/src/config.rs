@@ -12,7 +12,7 @@
 //!                                 "manual" = Typ in VR wählen (Symbol am Rahmen)
 //!   "shutter": "right",           Auslöser: "left" / "right" / "both"
 //!   "mode_button": "left",        Typ wechseln (nur manual): "left" / "right" / "both"
-//!   "gesture_mode": "on",         🖐 Rahmen-Geste: "on" / "off" (nie) / "auto" (🔫 Waffen-Schutz)
+//!   "gesture_mode": "auto",       🖐 Rahmen-Geste: "on" / "off" (nie) / "auto" (🔫 Waffen-Schutz, Standard)
 //!   "aspect": "free",             📐 Seitenverhältnis des Fotos: "free" / "1:1" / "16:9"
 //!   "gif_hold": true,             🎞 Auslöser gedrückt halten = GIF aufnehmen (max. gif_max_s)
 //!   "gif_max_s": 15,              längste GIF-Aufnahme in Sekunden (1–15)
@@ -174,7 +174,7 @@ impl Default for LayerConfig {
             detect_mode: DetectMode::Auto,
             shutter: Combo::Right,
             mode_button: Combo::Left,
-            gesture_mode: "on".into(),
+            gesture_mode: "auto".into(),
             icon_position: IconPosition::BottomLeft,
             aspect: Aspect::Free,
             gif_hold: true,
@@ -407,9 +407,9 @@ mod tests {
     #[test]
     fn gesture_mode_from_json() {
         use crate::gesture::Mode;
-        assert_eq!(LayerConfig::default().gesture_mode(), Mode::On);
-        let c: LayerConfig = serde_json::from_str(r#"{"gesture_mode": "auto"}"#).unwrap();
-        assert_eq!(c.gesture_mode(), Mode::Auto);
+        assert_eq!(LayerConfig::default().gesture_mode(), Mode::Auto, "neue Nutzer: 🔫 Auto");
+        let c: LayerConfig = serde_json::from_str(r#"{"gesture_mode": "on"}"#).unwrap();
+        assert_eq!(c.gesture_mode(), Mode::On);
         let c: LayerConfig = serde_json::from_str(r#"{"gesture_mode": "off"}"#).unwrap();
         assert_eq!(c.gesture_mode(), Mode::Off);
     }

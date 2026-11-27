@@ -69,7 +69,7 @@ pub const LAYER_DEFAULTS: &str = r##"{
   "detect_mode": "auto",
   "shutter": "right",
   "mode_button": "left",
-  "gesture_mode": "on",
+  "gesture_mode": "auto",
   "panel_button": true,
   "panel_button_color": "#5b8dc9",
   "panel_open_on_shot": true,
